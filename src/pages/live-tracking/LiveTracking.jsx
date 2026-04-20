@@ -1,11 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Navigation, Bike, User, RefreshCw, MapPin, Search, ChevronRight, LocateFixed } from 'lucide-react';
+import {
+    Bike,
+    Clock,
+    LocateFixed,
+    MapPin,
+    Navigation,
+    Package,
+    RefreshCw,
+    Search,
+    Store,
+    User,
+} from 'lucide-react';
 import { getLivePartnerLocations } from '../../services/api';
 
-// Fix Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -13,84 +24,162 @@ L.Icon.Default.mergeOptions({
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Custom marker component for delivery partners
-const PartnerMarker = ({ partner, isFocused }) => {
+const DEFAULT_CENTER = [12.9716, 77.5946];
+
+const ChangeView = ({ center, zoom }) => {
+    const map = useMap();
+
+    useEffect(() => {
+        if (center) {
+            map.flyTo(center, zoom, { duration: 1.2 });
+        }
+    }, [center, zoom, map]);
+
+    return null;
+};
+
+const PartnerMarker = ({ partner, isFocused, onFocus }) => {
     const customIcon = new L.DivIcon({
         html: `
-      <div class="relative">
-        <div class="p-2 ${isFocused ? 'bg-red-600' : 'bg-blue-600'} rounded-full border-2 border-white shadow-lg animate-pulse">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
-        </div>
-        ${isFocused ? `
-          <div class="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-3 py-1 rounded-full text-[12px] font-bold shadow-xl border-2 border-white whitespace-nowrap z-50">
-            Target: ${partner.name}
-          </div>
-        ` : `
-          <div class="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-white px-2 py-0.5 rounded text-[10px] font-bold shadow-sm whitespace-nowrap border border-gray-100">
-            ${partner.name}
-          </div>
-        `}
-      </div>
-    `,
+            <div class="relative">
+                <div class="h-11 w-11 rounded-full border-4 border-white shadow-xl flex items-center justify-center ${isFocused ? 'bg-red-500' : 'bg-slate-900'}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="5.5" cy="17.5" r="2.5"></circle>
+                        <circle cx="18.5" cy="17.5" r="2.5"></circle>
+                        <path d="M15 6h2l3 5"></path>
+                        <path d="M5 17.5 8 8h7"></path>
+                    </svg>
+                </div>
+                <div class="absolute -top-9 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-bold text-slate-700 shadow-sm whitespace-nowrap">
+                    ${partner.name}
+                </div>
+            </div>
+        `,
         className: 'custom-div-icon',
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
     });
 
     return (
-        <Marker position={[partner.lat, partner.lng]} icon={customIcon} zIndexOffset={isFocused ? 1000 : 0}>
-            <Popup className="partner-popup">
-                <div className="p-1">
-                    <h3 className="font-bold text-gray-800">{partner.name}</h3>
-                    <p className="text-xs text-gray-500 mt-1">ID: {partner.uid}</p>
-                    <div className="flex items-center mt-2 text-xs">
-                        <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                        <span className="text-green-600 font-medium">{partner.status}</span>
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-2">Last seen: {partner.lastUpdated ? new Date(partner.lastUpdated).toLocaleTimeString() : 'N/A'}</p>
+        <Marker
+            position={[partner.lat, partner.lng]}
+            icon={customIcon}
+            zIndexOffset={isFocused ? 1000 : 0}
+            eventHandlers={{ click: () => onFocus?.(partner) }}
+        >
+            <Popup>
+                <div className="min-w-[180px] p-1">
+                    <p className="font-bold text-slate-900">{partner.name}</p>
+                    <p className="mt-1 text-xs text-slate-500">ID: {partner.uid}</p>
+                    <p className="mt-2 text-xs text-slate-600">
+                        Status: <span className="font-semibold text-slate-900">{partner.status}</span>
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                        Last seen: {partner.lastUpdated ? new Date(partner.lastUpdated).toLocaleTimeString() : 'N/A'}
+                    </p>
                 </div>
             </Popup>
         </Marker>
     );
 };
 
-// Component to handle map center changes
-const ChangeView = ({ center, zoom }) => {
-    const map = useMap();
-    useEffect(() => {
-        if (center) {
-            map.flyTo(center, zoom, {
-                duration: 1.5
-            });
-        }
-    }, [center, zoom, map]);
-    return null;
+const formatDateTime = (value) => {
+    if (!value) return 'Not available';
+
+    return new Date(value).toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Kolkata',
+    });
+};
+
+const formatStatus = (value) => {
+    if (!value) return 'Unknown';
+    return value.replace(/_/g, ' ');
+};
+
+const normalizeCoordinate = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getOrderBadgeLabel = (order) => {
+    if (!order) return 'No Active Order';
+    if (order.deliveryStatus === 'delivered') return 'Order Delivered';
+    return 'Active Order';
+};
+
+const formatCoordinatePair = (lat, lng) => {
+    const normalizedLat = normalizeCoordinate(lat);
+    const normalizedLng = normalizeCoordinate(lng);
+
+    if (normalizedLat === null || normalizedLng === null) return null;
+    return `${normalizedLat.toFixed(6)}, ${normalizedLng.toFixed(6)}`;
+};
+
+const getDeliveredLocationText = (order) => {
+    if (!order) return 'Location not available';
+    if (order.deliveredLocationAddress) return order.deliveredLocationAddress;
+
+    const coordinates = formatCoordinatePair(order.deliveredLocationLat, order.deliveredLocationLng);
+    return coordinates || 'Location not available';
+};
+
+const SummaryCard = ({ icon: Icon, label, value, hint, tone }) => {
+    const toneClasses = {
+        red: 'border-red-100 bg-red-50 text-red-600',
+        blue: 'border-blue-100 bg-blue-50 text-blue-600',
+        amber: 'border-amber-100 bg-amber-50 text-amber-600',
+        emerald: 'border-emerald-100 bg-emerald-50 text-emerald-600',
+    };
+
+    return (
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start gap-4">
+                <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border ${toneClasses[tone]}`}>
+                    <Icon size={20} />
+                </div>
+                <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</p>
+                    <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+                    <p className="mt-1 text-sm text-slate-500">{hint}</p>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const LiveTracking = () => {
+    const navigate = useNavigate();
     const [partners, setPartners] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [mapCenter, setMapCenter] = useState([12.9716, 77.5946]); // Default to Bangalore
+    const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
     const [zoom, setZoom] = useState(13);
     const [lastRefreshed, setLastRefreshed] = useState(new Date());
     const [searchQuery, setSearchQuery] = useState('');
     const [focusedPartnerId, setFocusedPartnerId] = useState(null);
-    const isInitialLoad = React.useRef(true);
+    const isInitialLoad = useRef(true);
 
     const fetchLocations = async (isManual = false) => {
         if (isManual) setLoading(true);
+
         try {
             const response = await getLivePartnerLocations();
-            const docs = response.data?.data || [];
-
+            const docs = (response.data?.data || []).map((partner) => ({
+                ...partner,
+                lat: normalizeCoordinate(partner.lat) ?? 0,
+                lng: normalizeCoordinate(partner.lng) ?? 0,
+            }));
             setPartners(docs);
 
-            const onlineDocs = docs.filter(p => p.status === 'Online');
-
-            // Initial auto-center if it's the very first successful load with partners
+            const onlineDocs = docs.filter((partner) => partner.status === 'Online');
             if (onlineDocs.length > 0 && isInitialLoad.current) {
-                const lat = onlineDocs.reduce((acc, p) => acc + Number(p.lat), 0) / onlineDocs.length;
-                const lng = onlineDocs.reduce((acc, p) => acc + Number(p.lng), 0) / onlineDocs.length;
+                const lat = onlineDocs.reduce((sum, partner) => sum + Number(partner.lat), 0) / onlineDocs.length;
+                const lng = onlineDocs.reduce((sum, partner) => sum + Number(partner.lng), 0) / onlineDocs.length;
                 setMapCenter([lat, lng]);
                 isInitialLoad.current = false;
             }
@@ -99,225 +188,489 @@ const LiveTracking = () => {
         } catch (error) {
             console.error('Failed to fetch live locations:', error);
         } finally {
-            if (isManual) setLoading(false);
-            // After first load, we stop showing the full screen loader
             setLoading(false);
         }
     };
 
     useEffect(() => {
         fetchLocations();
-        const interval = setInterval(fetchLocations, 10000); // Pulse every 10s
+        const interval = setInterval(fetchLocations, 10000);
         return () => clearInterval(interval);
     }, []);
 
-    const onlinePartners = useMemo(() => partners.filter(p => p.status === 'Online'), [partners]);
-
+    const onlinePartners = useMemo(
+        () => partners.filter((partner) => partner.status === 'Online'),
+        [partners]
+    );
+    const offlinePartnersCount = useMemo(
+        () => Math.max(partners.length - onlinePartners.length, 0),
+        [partners.length, onlinePartners.length]
+    );
+    const partnersWithActiveOrders = useMemo(
+        () => partners.filter((partner) => partner.orderDetails).length,
+        [partners]
+    );
+    const visiblePartners = useMemo(
+        () => partners.filter((partner) => partner.isActive || partner.status === 'Online' || partner.orderDetails),
+        [partners]
+    );
     const filteredPartners = useMemo(() => {
-        return onlinePartners.filter(p =>
-            p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            p.uid.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-    }, [onlinePartners, searchQuery]);
+        return visiblePartners.filter((partner) => {
+            const query = searchQuery.toLowerCase();
+            return (
+                (partner.name || '').toLowerCase().includes(query) ||
+                (partner.uid || '').toLowerCase().includes(query)
+            );
+        });
+    }, [visiblePartners, searchQuery]);
+    const focusedPartner = useMemo(
+        () => partners.find((partner) => partner.uid === focusedPartnerId) || null,
+        [partners, focusedPartnerId]
+    );
+    const partnersWithMapLocation = useMemo(() => {
+        return partners.filter((partner) => {
+            const lat = normalizeCoordinate(partner.lat);
+            const lng = normalizeCoordinate(partner.lng);
+            return lat !== null && lng !== null && !(lat === 0 && lng === 0);
+        });
+    }, [partners]);
+
+    useEffect(() => {
+        if (focusedPartnerId && !partners.some((partner) => partner.uid === focusedPartnerId)) {
+            setFocusedPartnerId(null);
+        }
+    }, [partners, focusedPartnerId]);
+
+    useEffect(() => {
+        if (focusedPartnerId || partners.length === 0) return;
+
+        const defaultPartner =
+            partners.find((partner) => partner.orderDetails) ||
+            partners.find((partner) => partner.status === 'Online') ||
+            partners.find((partner) => partner.isActive);
+
+        if (defaultPartner) {
+            setFocusedPartnerId(defaultPartner.uid);
+        }
+    }, [partners, focusedPartnerId]);
 
     const handleFocusPartner = (partner) => {
         setFocusedPartnerId(partner.uid);
-        setMapCenter([partner.lat, partner.lng]);
-        setZoom(16);
+
+        const lat = Number(partner.lat);
+        const lng = Number(partner.lng);
+
+        if (Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0)) {
+            setMapCenter([lat, lng]);
+            setZoom(16);
+        }
+    };
+
+    const handleResetMap = () => {
+        if (onlinePartners.length > 0) {
+            const lat = onlinePartners.reduce((sum, partner) => sum + Number(partner.lat), 0) / onlinePartners.length;
+            const lng = onlinePartners.reduce((sum, partner) => sum + Number(partner.lng), 0) / onlinePartners.length;
+            setMapCenter([lat, lng]);
+            setZoom(13);
+            return;
+        }
+
+        setMapCenter(DEFAULT_CENTER);
+        setZoom(13);
     };
 
     return (
-        <div className="p-6 h-[calc(100vh-100px)] flex flex-col">
-            {/* Header */}
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                        <Navigation className="text-red-500" />
-                        Live Partner Tracking
-                    </h1>
-                    <p className="text-gray-500 text-sm mt-1">
-                        Find and follow your delivery partners in real-time
-                    </p>
-                </div>
-                <div className="flex items-center gap-4 text-sm">
-                    <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm">
-                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                        <span className="font-bold text-gray-700">{onlinePartners.length} Live</span>
-                        <span className="text-gray-400">/ {partners.length} On Duty</span>
+        <div className="min-h-[calc(100vh-100px)] bg-slate-50 p-6">
+            <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                    <div>
+                        <h1 className="flex items-center gap-3 text-3xl font-bold text-slate-900">
+                            <Navigation className="text-red-500" />
+                            Live Partner Tracking
+                        </h1>
+                        <p className="mt-2 text-sm text-slate-500">
+                            Track the current partner location on the map and open order details from the partner list.
+                        </p>
                     </div>
-                    <button
-                        onClick={() => fetchLocations(true)}
-                        className="flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-sm disabled:opacity-50"
-                        disabled={loading}
-                    >
-                        <RefreshCw size={16} className={`${loading ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </button>
-                    <span className="text-gray-400 italic">Last updated: {lastRefreshed.toLocaleTimeString()}</span>
-                </div>
-            </div>
 
-            <div className="flex-1 flex gap-6 min-h-0">
-                {/* Search & List Panel */}
-                <div className="w-80 flex flex-col gap-4">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-                        <input
-                            type="text"
-                            placeholder="Search by name or ID..."
-                            className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all shadow-sm"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">
+                            <span className="font-semibold text-slate-900">{onlinePartners.length} live</span>
+                            <span className="text-slate-400"> / {partners.length} total partners</span>
+                        </div>
+                        <button
+                            onClick={() => fetchLocations(true)}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                            disabled={loading}
+                        >
+                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                            Refresh
+                        </button>
+                        <span className="text-sm text-slate-400">
+                            Last updated: {lastRefreshed.toLocaleTimeString()}
+                        </span>
+                    </div>
+                </div>
+
+                <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-5 flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+                                Tracking Summary
+                            </p>
+                            <p className="mt-1 text-sm text-slate-500">
+                                Quick view of who is live, offline, and currently carrying an order.
+                            </p>
+                        </div>
+                        <div className="rounded-full bg-emerald-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                            Live Sync Active
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <SummaryCard
+                            icon={Bike}
+                            label="Live Partners"
+                            value={onlinePartners.length}
+                            hint="Partners sending GPS right now"
+                            tone="blue"
+                        />
+                        <SummaryCard
+                            icon={MapPin}
+                            label="Offline"
+                            value={offlinePartnersCount}
+                            hint="No signal or currently offline"
+                            tone="amber"
+                        />
+                        <SummaryCard
+                            icon={Package}
+                            label="Active Orders"
+                            value={partnersWithActiveOrders}
+                            hint="Partners currently linked to an order"
+                            tone="emerald"
+                        />
+                        <SummaryCard
+                            icon={User}
+                            label="Trackable"
+                            value={filteredPartners.length}
+                            hint="Partners matching the current filter"
+                            tone="red"
                         />
                     </div>
+                </section>
 
-                    <div className="flex-1 bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                        <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-                            <h3 className="font-bold text-gray-800 text-sm flex items-center gap-2">
-                                <User size={16} className="text-gray-400" />
-                                Online Partners ({filteredPartners.length})
-                            </h3>
+                <section className="grid min-h-0 grid-cols-1 gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+                    <div className="flex h-[720px] min-h-0 flex-col rounded-[28px] border border-slate-200 bg-white shadow-sm">
+                        <div className="border-b border-slate-100 p-5">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-900">Trackable Partners</h2>
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        Choose a partner to focus the map. Details will open in the same card.
+                                    </p>
+                                </div>
+                                <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                                    {filteredPartners.length} shown
+                                </div>
+                            </div>
+
+                            <div className="relative mt-4">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    placeholder="Search by partner name or ID"
+                                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-50"
+                                    value={searchQuery}
+                                    onChange={(event) => setSearchQuery(event.target.value)}
+                                />
+                            </div>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
+
+                        <div className="min-h-0 flex-1 overflow-y-auto p-4">
                             {filteredPartners.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-                                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3">
-                                        <Search size={20} className="text-gray-400" />
-                                    </div>
-                                    <p className="text-gray-500 text-sm font-medium">No active partners found matching "{searchQuery}"</p>
+                                <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+                                    <Search className="mb-3 text-slate-300" size={28} />
+                                    <p className="text-sm font-semibold text-slate-700">No partners match this search</p>
+                                    <p className="mt-1 text-sm text-slate-500">Try a different name or partner ID.</p>
                                 </div>
                             ) : (
-                                filteredPartners.map(partner => (
-                                    <button
-                                        key={partner.uid}
-                                        onClick={() => handleFocusPartner(partner)}
-                                        className={`w-full p-3 rounded-xl border transition-all flex items-center gap-3 text-left ${focusedPartnerId === partner.uid
-                                            ? 'bg-red-50 border-red-200 ring-1 ring-red-100'
-                                            : 'bg-white border-transparent hover:bg-gray-50 hover:border-gray-100'
-                                            }`}
-                                    >
-                                        <div className={`p-2 rounded-lg ${focusedPartnerId === partner.uid ? 'bg-red-500 text-white' : 'bg-blue-100 text-blue-600'}`}>
-                                            <Bike size={18} />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-gray-800 text-sm truncate">{partner.name}</p>
-                                            <p className="text-[10px] text-gray-500 truncate">ID: {partner.uid}</p>
-                                        </div>
-                                        <ChevronRight size={16} className={focusedPartnerId === partner.uid ? 'text-red-400' : 'text-gray-300'} />
-                                    </button>
-                                ))
+                                <div className="space-y-3">
+                                    {filteredPartners.map((partner) => {
+                                        const isFocused = focusedPartnerId === partner.uid;
+                                        const order = partner.orderDetails;
+
+                                        return (
+                                            <div
+                                                key={partner.uid}
+                                                className={`overflow-hidden rounded-3xl border transition ${
+                                                    isFocused
+                                                        ? 'border-red-200 bg-red-50/60 shadow-sm'
+                                                        : 'border-slate-200 bg-white'
+                                                }`}
+                                            >
+                                                <button
+                                                    onClick={() => handleFocusPartner(partner)}
+                                                    className="w-full p-4 text-left"
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        <div
+                                                            className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
+                                                                isFocused ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-700'
+                                                            }`}
+                                                        >
+                                                            <Bike size={20} />
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="min-w-0">
+                                                                    <p className="truncate text-base font-bold text-slate-900">
+                                                                        {partner.name}
+                                                                    </p>
+                                                                    <p className="mt-1 truncate text-xs text-slate-500">
+                                                                        Partner ID: {partner.uid}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
+                                                                    {partner.status}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                                {partner.isActive && (
+                                                                    <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                                                                        On Duty
+                                                                    </span>
+                                                                )}
+                                                                {order && (
+                                                                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                                                        order.deliveryStatus === 'delivered'
+                                                                            ? 'bg-violet-100 text-violet-700'
+                                                                            : 'bg-emerald-100 text-emerald-700'
+                                                                    }`}>
+                                                                        {getOrderBadgeLabel(order)}
+                                                                    </span>
+                                                                )}
+                                                                {!order && (
+                                                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                                                                        No Active Order
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </button>
+
+                                                {isFocused && (
+                                                    <div className="border-t border-red-100 bg-white/80 p-4">
+                                                        <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-3">
+                                                            <div>
+                                                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                                    Current status
+                                                                </p>
+                                                                <p className="mt-1 text-sm font-semibold text-slate-900">
+                                                                    {partner.status}
+                                                                </p>
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                                    Last update
+                                                                </p>
+                                                                <p className="mt-1 text-sm font-semibold text-slate-900">
+                                                                    {partner.lastUpdated
+                                                                        ? new Date(partner.lastUpdated).toLocaleTimeString()
+                                                                        : 'N/A'}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        {order ? (
+                                                            <div className="mt-4 space-y-4">
+                                                                <div className="flex items-center justify-between gap-3">
+                                                                    <div>
+                                                                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                                            Order Details
+                                                                        </p>
+                                                                        <p className="mt-1 text-base font-bold text-slate-900">
+                                                                            {order.orderId}
+                                                                        </p>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={(event) => {
+                                                                            event.stopPropagation();
+                                                                            navigate(`/orders/${order.orderId}`);
+                                                                        }}
+                                                                        className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+                                                                    >
+                                                                        View Full Order
+                                                                    </button>
+                                                                </div>
+
+                                                                <div className="space-y-3">
+                                                                    <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3">
+                                                                        <Store size={16} className="mt-0.5 text-orange-500" />
+                                                                        <div>
+                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                                                Restaurant
+                                                                            </p>
+                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                                                                                {order.restaurantName || 'Unknown restaurant'}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3">
+                                                                        <Package size={16} className="mt-0.5 text-emerald-500" />
+                                                                        <div>
+                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                                                Items
+                                                                            </p>
+                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                                                                                {order.foodNames || 'Item details unavailable'}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                                        <div className="rounded-2xl bg-slate-50 p-3">
+                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                                                Delivery Status
+                                                                            </p>
+                                                                            <p className={`mt-1 text-sm font-semibold capitalize ${
+                                                                                order.deliveryStatus === 'delivered'
+                                                                                    ? 'text-violet-700'
+                                                                                    : 'text-slate-900'
+                                                                            }`}>
+                                                                                {formatStatus(order.deliveryStatus)}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="rounded-2xl bg-slate-50 p-3">
+                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                                                {order.deliveryStatus === 'delivered' ? 'Delivered Location' : 'Picked Up At'}
+                                                                            </p>
+                                                                            {order.deliveryStatus === 'delivered' ? (
+                                                                                <>
+                                                                                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                                                                                        {getDeliveredLocationText(order)}
+                                                                                    </p>
+                                                                                    <p className="mt-2 text-xs text-slate-500">
+                                                                                        Delivered at: {formatDateTime(order.deliveredAt)}
+                                                                                    </p>
+                                                                                </>
+                                                                            ) : (
+                                                                                <p className="mt-1 text-sm font-semibold text-slate-900">
+                                                                                    {formatDateTime(order.pickedUpAt)}
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                                                                This partner does not have an active order right now.
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             )}
                         </div>
                     </div>
-                </div>
 
-                {/* Map View */}
-                <div className="flex-1 rounded-3xl overflow-hidden border border-gray-200 shadow-2xl relative bg-white">
-                    {loading && partners.length === 0 && (
-                        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
-                            <div className="flex flex-col items-center">
-                                <RefreshCw className="animate-spin text-red-500 mb-2" size={32} />
-                                <p className="text-gray-600 font-medium tracking-wide">Initializing Live Map...</p>
+                    <div className="relative h-[720px] min-h-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+                        {loading && partners.length === 0 && (
+                            <div className="absolute inset-0 z-[1100] flex items-center justify-center bg-white/85 backdrop-blur-sm">
+                                <div className="text-center">
+                                    <RefreshCw className="mx-auto animate-spin text-red-500" size={30} />
+                                    <p className="mt-3 text-sm font-semibold text-slate-700">Loading live map...</p>
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    <MapContainer
-                        center={mapCenter}
-                        zoom={zoom}
-                        style={{ height: '100%', width: '100%' }}
-                        zoomControl={false}
-                    >
-                        <TileLayer
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        />
-                        {onlinePartners.map((partner) => (
-                            <PartnerMarker
-                                key={partner.uid}
-                                partner={partner}
-                                isFocused={focusedPartnerId === partner.uid}
+                        <MapContainer center={mapCenter} zoom={zoom} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                            <TileLayer
+                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                             />
-                        ))}
-                        <ChangeView center={mapCenter} zoom={zoom} />
-                    </MapContainer>
+                            {partnersWithMapLocation.map((partner) => (
+                                <PartnerMarker
+                                    key={partner.uid}
+                                    partner={partner}
+                                    isFocused={focusedPartnerId === partner.uid}
+                                    onFocus={handleFocusPartner}
+                                />
+                            ))}
+                            <ChangeView center={mapCenter} zoom={zoom} />
+                        </MapContainer>
 
-                    {/* Controls Overlay */}
-                    <div className="absolute top-6 right-6 flex flex-col gap-3 z-[1000]">
-                        <button
-                            onClick={() => {
-                                if (onlinePartners.length > 0) {
-                                    const lat = onlinePartners.reduce((acc, p) => acc + Number(p.lat), 0) / onlinePartners.length;
-                                    const lng = onlinePartners.reduce((acc, p) => acc + Number(p.lng), 0) / onlinePartners.length;
-                                    setMapCenter([lat, lng]);
-                                    setZoom(13);
-                                    setFocusedPartnerId(null);
-                                }
-                            }}
-                            className="bg-white p-3 rounded-2xl shadow-xl border border-gray-100 hover:bg-gray-50 transition-colors text-gray-700"
-                            title="Recenter Map"
-                        >
-                            <LocateFixed size={20} />
-                        </button>
-                    </div>
-
-                    {/* Legend/Info Panel Overlay */}
-                    <div className="absolute bottom-10 left-10 bg-white/90 backdrop-blur-md p-5 rounded-3xl shadow-2xl border border-gray-100 z-[1000] w-72 hover:bg-white transition-all transform hover:-translate-y-1">
-                        <h3 className="font-bold text-xs text-gray-400 mb-4 uppercase tracking-[0.2em]">Map Systems</h3>
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                                        <Bike size={18} className="text-blue-600" />
-                                    </div>
-                                    <div>
-                                        <span className="block text-xs font-bold text-gray-800">Live Partners</span>
-                                        <span className="text-[10px] text-gray-500">Active GPS Signal</span>
-                                    </div>
+                        <div className="pointer-events-none absolute inset-x-4 top-4 z-[1000] flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div className="pointer-events-auto max-w-md rounded-3xl border border-white/80 bg-white/95 p-4 shadow-lg backdrop-blur">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                                    Current Partner Location
+                                </p>
+                                <p className="mt-2 text-xl font-bold text-slate-900">
+                                    {focusedPartner?.name || 'Select a partner'}
+                                </p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {focusedPartner ? (
+                                        <>
+                                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                                {focusedPartner.status}
+                                            </span>
+                                            {focusedPartner.locationSource && focusedPartner.locationSource !== 'none' && (
+                                                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                                                    Location: {focusedPartner.locationSource}
+                                                </span>
+                                            )}
+                                            {focusedPartner.isActive && (
+                                                <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
+                                                    On Duty
+                                                </span>
+                                            )}
+                                            {focusedPartner.orderDetails && (
+                                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                                    focusedPartner.orderDetails.deliveryStatus === 'delivered'
+                                                        ? 'bg-violet-100 text-violet-700'
+                                                        : 'bg-emerald-100 text-emerald-700'
+                                                }`}>
+                                                    {focusedPartner.orderDetails.deliveryStatus === 'delivered'
+                                                        ? 'Order Delivered'
+                                                        : 'Order Attached'}
+                                                </span>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <p className="text-sm text-slate-500">
+                                            Choose a partner from the left panel to center the map.
+                                        </p>
+                                    )}
                                 </div>
-                                <span className="text-sm font-black text-blue-600">{onlinePartners.length}</span>
+                                {focusedPartner &&
+                                    (() => {
+                                        const lat = normalizeCoordinate(focusedPartner.lat);
+                                        const lng = normalizeCoordinate(focusedPartner.lng);
+                                        return (lat === null || lng === null || (lat === 0 && lng === 0));
+                                    })() && (
+                                    <p className="mt-3 text-sm text-amber-600">
+                                        Current location is not available for this partner yet.
+                                    </p>
+                                )}
                             </div>
 
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
-                                        <MapPin size={18} className="text-orange-600" />
-                                    </div>
-                                    <div>
-                                        <span className="block text-xs font-bold text-gray-800">Offline Peers</span>
-                                        <span className="text-[10px] text-gray-500">No Signal / On Duty</span>
-                                    </div>
-                                </div>
-                                <span className="text-sm font-black text-orange-600">{partners.length - onlinePartners.length}</span>
-                            </div>
-                        </div>
-                        <div className="mt-5 pt-5 border-t border-gray-100">
-                            <div className="flex items-center gap-2 text-[10px] text-green-600 font-bold uppercase tracking-wider bg-green-50 p-2 rounded-lg">
-                                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping"></div>
-                                Live Sync Active
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Status Badge */}
-                    {focusedPartnerId && (
-                        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-gray-900/90 text-white px-6 py-3 rounded-2xl shadow-2xl backdrop-blur-md z-[1000] flex items-center gap-3 border border-gray-700 animate-in fade-in slide-in-from-top-4">
-                            <div className="p-2 bg-red-500 rounded-lg animate-pulse">
-                                <Bike size={16} />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-400 font-medium">Following</p>
-                                <p className="text-sm font-bold">{onlinePartners.find(p => p.uid === focusedPartnerId)?.name}</p>
-                            </div>
                             <button
-                                onClick={() => setFocusedPartnerId(null)}
-                                className="ml-4 p-1 hover:bg-white/10 rounded-lg transition-colors"
+                                onClick={handleResetMap}
+                                className="pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-lg transition hover:bg-slate-50"
+                                title="Recenter map"
                             >
-                                <ChevronRight size={20} className="rotate-90 transform" />
+                                <LocateFixed size={18} />
                             </button>
                         </div>
-                    )}
-                </div>
+                    </div>
+                </section>
             </div>
         </div>
     );
