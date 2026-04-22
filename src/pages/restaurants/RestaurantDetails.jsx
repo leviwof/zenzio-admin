@@ -45,6 +45,19 @@ const RestaurantDetails = () => {
   const [isUpdatingDocs, setIsUpdatingDocs] = useState(false);
   const [docsFormData, setDocsFormData] = useState({});
 
+  const displayEmail =
+    restaurant?.profile?.contact_email ||
+    restaurant?.contact?.encryptedEmail ||
+    restaurant?.contact?.email ||
+    restaurant?.contact?.encryptedUsername ||
+    'Not provided';
+
+  const displayPhone =
+    restaurant?.profile?.contact_number ||
+    restaurant?.contact?.encryptedPhone ||
+    restaurant?.contact?.phone ||
+    '-';
+
   useEffect(() => {
     if (!uid || uid === 'undefined') {
       setError('Invalid restaurant ID');
@@ -497,7 +510,7 @@ const RestaurantDetails = () => {
           <div className="flex-1">
             <h2 className="text-xl font-bold text-gray-900">{profile?.restaurant_name || 'Restaurant'}</h2>
             <p className="text-sm text-gray-500 mt-1">
-              ID: {restaurant.uid} • {contact?.encryptedEmail || contact?.email || contact?.encryptedUsername || 'No email'}
+              ID: {restaurant.uid} • {displayEmail}
             </p>
             <p className="text-xs text-gray-400 mt-2">Hover over logo to upload new image</p>
           </div>
@@ -588,11 +601,11 @@ const RestaurantDetails = () => {
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Email</label>
-                <p className="text-gray-900 mt-1">{contact?.encryptedEmail || contact?.email || contact?.encryptedUsername || 'Not provided'}</p>
+                <p className="text-gray-900 mt-1">{displayEmail}</p>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Phone</label>
-                <p className="text-gray-900 mt-1">{contact?.encryptedPhone || '-'}</p>
+                <p className="text-gray-900 mt-1">{displayPhone}</p>
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Contact Person</label>
