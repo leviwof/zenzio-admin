@@ -3,10 +3,15 @@ import axios from 'axios';
 
 const CLIENT_ID = import.meta.env.VITE_CLIENT_ID;
 const CLIENT_SECRET = import.meta.env.VITE_CLIENT_SECRET;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim();
+
+const normalizedApiBaseUrl = API_BASE_URL
+  ? API_BASE_URL.replace(/\/+$/, '')
+  : '/';
 
 
 const api = axios.create({
-  baseURL: '/',
+  baseURL: normalizedApiBaseUrl,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
