@@ -68,7 +68,9 @@ const RestaurantsList = () => {
             let phone = '-';
 
             // Try different possible locations for email
-            if (restaurantDetail?.contact?.encryptedEmail) {
+            if (restaurantDetail?.profile?.contact_email) {
+              email = restaurantDetail.profile.contact_email;
+            } else if (restaurantDetail?.contact?.encryptedEmail) {
               email = restaurantDetail.contact.encryptedEmail;
             } else if (restaurantDetail?.contact?.email) {
               email = restaurantDetail.contact.email;
@@ -79,12 +81,12 @@ const RestaurantsList = () => {
             }
 
             // Try different possible locations for phone
-            if (restaurantDetail?.contact?.encryptedPhone) {
+            if (restaurantDetail?.profile?.contact_number) {
+              phone = restaurantDetail.profile.contact_number;
+            } else if (restaurantDetail?.contact?.encryptedPhone) {
               phone = restaurantDetail.contact.encryptedPhone;
             } else if (restaurantDetail?.contact?.phone) {
               phone = restaurantDetail.contact.phone;
-            } else if (restaurantDetail?.profile?.contact_number) {
-              phone = restaurantDetail.profile.contact_number;
             } else if (basic.phoneNumber) {
               phone = basic.phoneNumber;
             }
