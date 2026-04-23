@@ -28,8 +28,8 @@ const normalizeCustomer = (response) => {
         ? `${user.profile.first_name ?? ""} ${user.profile.last_name ?? ""}`.trim()
         : "N/A",
 
-      email: user?.email ?? "N/A",
-      mobile: user?.mobile ?? "N/A",
+      email: user?.contact?.encryptedEmail ?? "N/A",
+      mobile: user?.contact?.encryptedPhone ?? "N/A",
 
       birthday: user?.profile?.dob ?? null,
       anniversary: user?.profile?.anniversary ?? null,
@@ -170,8 +170,16 @@ const CustomerDetails = () => {
       <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div>
           <div className="bg-white p-6 rounded-lg shadow mb-6 text-center">
-            <div className="w-20 h-20 mx-auto rounded-full bg-pink-500 flex items-center justify-center text-white text-2xl font-bold">
-              {personalInfo.name.charAt(0)}
+            <div className="w-20 h-20 mx-auto rounded-full bg-pink-500 flex items-center justify-center text-white text-2xl font-bold overflow-hidden">
+              {personalInfo.profilePhoto ? (
+                <img
+                  src={personalInfo.profilePhoto}
+                  alt={personalInfo.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                personalInfo.name.charAt(0)
+              )}
             </div>
 
             <h2 className="mt-3 text-lg font-semibold">
