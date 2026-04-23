@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Search, Download } from "lucide-react";
 import {
   getAllCustomers,
+  getCustomerStats,
   updateCustomerStatus,
   getCustomerById,
 } from "../../services/api";
@@ -45,6 +46,8 @@ const CustomersList = () => {
     totalPages: 1,
   });
 
+  const [totalCustomers, setTotalCustomers] = useState(0);
+
   const fetchCustomers = async () => {
     try {
       setLoading(true);
@@ -79,6 +82,16 @@ const CustomersList = () => {
   useEffect(() => {
     setCurrentPage(1);
     fetchCustomers();
+
+    const fetchStats = async () => {
+      try {
+        const statsRes = await getCustomerStats();
+        setTotalCustomers(statsRes.data?.totalUsers || 0);
+      } catch (err) {
+        console.error("Failed to fetch stats:", err);
+      }
+    };
+    fetchStats();
   }, [searchTerm, statusFilter, sortBy, pagination.limit]);
 
   useEffect(() => {
@@ -163,7 +176,12 @@ const CustomersList = () => {
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-semibold mb-6">User Management</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-semibold">User Management</h1>
+        <div className="text-sm text-gray-600">
+          Total Users: <span className="font-semibold text-gray-900">{totalCustomers}</span>
+        </div>
+      </div>
 
       <div className="bg-white rounded-lg shadow-sm">
         {/* Tabs */}
