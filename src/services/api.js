@@ -80,7 +80,7 @@ export const confirmPasswordReset = (data) => api.post('/user/auth/confirm-reset
 
 
 export const getAllCustomers = (params) => api.get('/users', { params });
-export const getCustomerStats = () => api.get('/customers/stats');
+export const getCustomerStats = () => api.get('/users/stats');
 export const getCustomerById = (id) => api.get(`/users/${id}`);
 export const updateCustomerStatus = (uid, payload) =>
   api.patch(`/users/${uid}/status/admin`, payload);

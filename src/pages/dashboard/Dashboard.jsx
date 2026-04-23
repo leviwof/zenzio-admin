@@ -21,7 +21,8 @@ import {
   getBookingStats,
   getPendingOffers,
   getAdminAnalytics,
-  getAllOrders
+  getAllOrders,
+  getCustomerStats
 } from "../../services/api";
 
 const Dashboard = () => {
@@ -136,26 +137,8 @@ const Dashboard = () => {
 
   const fetchCustomers = async () => {
     try {
-      const params = {
-        page: 1,
-        limit: 10,
-        search: "",
-        sortBy: "",
-        status: "",
-        statusFilter: "All",
-        startDate: "",
-        endDate: "",
-      };
-
-      // Remove empty keys to avoid sending ?status=&search=
-      const cleanParams = Object.fromEntries(
-        Object.entries(params).filter(([_, v]) => v !== "" && v !== null && v !== undefined)
-      );
-
-      const response = await getAllCustomers(cleanParams);
-      const users = response?.data?.data ?? [];
-
-      setTotalCustomers(Array.isArray(users) ? users.length : 0);
+      const res = await getCustomerStats();
+      setTotalCustomers(res.data?.data?.total || 0);
     } catch (error) {
       console.error("❌ Error fetching customers:", error);
       setTotalCustomers(0);

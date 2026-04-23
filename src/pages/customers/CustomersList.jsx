@@ -86,7 +86,7 @@ const CustomersList = () => {
     const fetchStats = async () => {
       try {
         const statsRes = await getCustomerStats();
-        setTotalCustomers(statsRes.data?.totalUsers || 0);
+        setTotalCustomers(statsRes.data?.data?.total || 0);
       } catch (err) {
         console.error("Failed to fetch stats:", err);
       }
