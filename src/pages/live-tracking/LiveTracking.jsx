@@ -14,6 +14,7 @@ import {
     Search,
     Store,
     User,
+    X,
 } from 'lucide-react';
 import { getLivePartnerLocations } from '../../services/api';
 
@@ -162,6 +163,7 @@ const LiveTracking = () => {
     const [lastRefreshed, setLastRefreshed] = useState(new Date());
     const [searchQuery, setSearchQuery] = useState('');
     const [focusedPartnerId, setFocusedPartnerId] = useState(null);
+    const [hiddenPartnerIds, setHiddenPartnerIds] = useState(new Set());
     const isInitialLoad = useRef(true);
 
     const fetchLocations = async (isManual = false) => {
@@ -217,12 +219,22 @@ const LiveTracking = () => {
     const filteredPartners = useMemo(() => {
         return visiblePartners.filter((partner) => {
             const query = searchQuery.toLowerCase();
-            return (
+            return !hiddenPartnerIds.has(partner.uid) && (
                 (partner.name || '').toLowerCase().includes(query) ||
                 (partner.uid || '').toLowerCase().includes(query)
             );
         });
-    }, [visiblePartners, searchQuery]);
+    }, [visiblePartners, searchQuery, hiddenPartnerIds]);
+    const hiddenPartners = useMemo(
+        () => {
+            const query = searchQuery.toLowerCase();
+            return partners.filter((partner) => hiddenPartnerIds.has(partner.uid) && (
+                (partner.name || '').toLowerCase().includes(query) ||
+                (partner.uid || '').toLowerCase().includes(query)
+            ));
+        },
+        [partners, hiddenPartnerIds, searchQuery]
+    );
     const focusedPartner = useMemo(
         () => partners.find((partner) => partner.uid === focusedPartnerId) || null,
         [partners, focusedPartnerId]
@@ -277,6 +289,25 @@ const LiveTracking = () => {
 
         setMapCenter(DEFAULT_CENTER);
         setZoom(13);
+    };
+
+    const handleHidePartner = (partnerId) => {
+        setHiddenPartnerIds((prev) => new Set([...prev, partnerId]));
+        if (focusedPartnerId === partnerId) {
+            setFocusedPartnerId(null);
+        }
+    };
+
+    const handleShowHiddenPartner = (partnerId) => {
+        setHiddenPartnerIds((prev) => {
+            const newSet = new Set(prev);
+            newSet.delete(partnerId);
+            return newSet;
+        });
+    };
+
+    const handleClearHiddenPartners = () => {
+        setHiddenPartnerIds(new Set());
     };
 
     return (
@@ -431,8 +462,20 @@ const LiveTracking = () => {
                                                                         Partner ID: {partner.uid}
                                                                     </p>
                                                                 </div>
-                                                                <div className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
-                                                                    {partner.status}
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
+                                                                        {partner.status}
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleHidePartner(partner.uid);
+                                                                        }}
+                                                                        className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-red-100 hover:text-red-500"
+                                                                        title="Hide from list"
+                                                                    >
+                                                                        <X size={14} />
+                                                                    </button>
                                                                 </div>
                                                             </div>
 
@@ -534,7 +577,26 @@ const LiveTracking = () => {
                                                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                                                         <div className="rounded-2xl bg-slate-50 p-3">
                                                                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                                Delivery Status
+                                                                                Ordered At
+                                                                            </p>
+                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                                                                                {formatDateTime(order.createdAt)}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="rounded-2xl bg-slate-50 p-3">
+                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                                                Accepted At
+                                                                            </p>
+                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                                                                                {formatDateTime(order.orderAcceptedAt)}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                                        <div className="rounded-2xl bg-slate-50 p-3">
+                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                                                                Status
                                                                             </p>
                                                                             <p className={`mt-1 text-sm font-semibold capitalize ${
                                                                                 order.deliveryStatus === 'delivered'
@@ -546,7 +608,7 @@ const LiveTracking = () => {
                                                                         </div>
                                                                         <div className="rounded-2xl bg-slate-50 p-3">
                                                                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                                {order.deliveryStatus === 'delivered' ? 'Delivered Location' : 'Picked Up At'}
+                                                                                {order.deliveryStatus === 'delivered' ? 'Delivered At' : 'Picked Up At'}
                                                                             </p>
                                                                             {order.deliveryStatus === 'delivered' ? (
                                                                                 <>
@@ -554,7 +616,7 @@ const LiveTracking = () => {
                                                                                         {getDeliveredLocationText(order)}
                                                                                     </p>
                                                                                     <p className="mt-2 text-xs text-slate-500">
-                                                                                        Delivered at: {formatDateTime(order.deliveredAt)}
+                                                                                        {formatDateTime(order.deliveredAt)}
                                                                                     </p>
                                                                                 </>
                                                                             ) : (
@@ -579,6 +641,46 @@ const LiveTracking = () => {
                                 </div>
                             )}
                         </div>
+
+                        {hiddenPartners.length > 0 && (
+                            <div className="mt-4 border-t border-slate-100 pt-4">
+                                <div className="mb-3 flex items-center justify-between">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                        Hidden ({hiddenPartners.length})
+                                    </p>
+                                    <button
+                                        onClick={handleClearHiddenPartners}
+                                        className="text-xs font-semibold text-red-500 hover:text-red-600"
+                                    >
+                                        Show all
+                                    </button>
+                                </div>
+                                <div className="space-y-2">
+                                    {hiddenPartners.map((partner) => (
+                                        <div
+                                            key={partner.uid}
+                                            className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2"
+                                        >
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm font-semibold text-slate-700">
+                                                    {partner.name}
+                                                </p>
+                                                <p className="truncate text-xs text-slate-500">
+                                                    {partner.uid}
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => handleShowHiddenPartner(partner.uid)}
+                                                className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-100"
+                                            >
+                                                <Search size={12} />
+                                                Show
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="relative h-[720px] min-h-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
