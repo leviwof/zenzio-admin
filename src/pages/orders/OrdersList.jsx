@@ -4,8 +4,8 @@
 // =============================================
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Download, RefreshCw, Calendar } from "lucide-react";
-import { getAllOrders, getOrderStats, getOrderMonitoringStats } from "../../services/api";
+import { Search, Download, RefreshCw, Calendar, X, AlertTriangle } from "lucide-react";
+import { getAllOrders, getOrderStats, getOrderMonitoringStats, updateDeliveryStatusByAdmin } from "../../services/api";
 import { saveAs } from "file-saver";
 
 const OrdersList = () => {
@@ -31,6 +31,22 @@ const OrdersList = () => {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [loadingStats, setLoadingStats] = useState(true);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [selectedOrderForCancel, setSelectedOrderForCancel] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [otherReason, setOtherReason] = useState("");
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const CANCEL_REASONS = [
+    "Customer requested cancellation",
+    "Restaurant closed/unavailable",
+    "Delivery partner unavailable",
+    "Order cannot be fulfilled",
+    "Payment failed",
+    "Suspected fraud",
+    "Duplicate order",
+    "Other"
+  ];
 
   useEffect(() => {
     fetchStats();
@@ -93,6 +109,37 @@ const OrdersList = () => {
   // Removed client-side filterOrders function 
   const filterOrders = () => {
     // No-op or removed
+  };
+
+  const handleOpenCancelModal = (order) => {
+    setSelectedOrderForCancel(order);
+    setShowCancelModal(true);
+    setCancelReason("");
+    setOtherReason("");
+  };
+
+  const handleCancelOrder = async () => {
+    const finalReason = cancelReason === "Other" ? otherReason : cancelReason;
+    if (!finalReason.trim()) {
+      alert("Please select or enter a reason for cancellation");
+      return;
+    }
+
+    setIsCancelling(true);
+    try {
+      await updateDeliveryStatusByAdmin(selectedOrderForCancel.orderId, "admin_cancelled", finalReason);
+      setShowCancelModal(false);
+      setSelectedOrderForCancel(null);
+      setCancelReason("");
+      setOtherReason("");
+      alert("Order cancelled successfully!");
+      fetchOrders();
+    } catch (error) {
+      console.error("Error cancelling order:", error);
+      alert(error.response?.data?.message || "Failed to cancel order. Please try again.");
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
   const handleExport = () => {
@@ -337,12 +384,22 @@ const OrdersList = () => {
                       </td>
 
                       <td className="px-4 py-4">
-                        <button
-                          onClick={() => navigate(`/orders/${order.orderId}`)}
-                          className="text-red-500 hover:text-red-700 text-sm font-medium"
-                        >
-                          View Details
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => navigate(`/orders/${order.orderId}`)}
+                            className="text-red-500 hover:text-red-700 text-sm font-medium"
+                          >
+                            View Details
+                          </button>
+                          {order.restaurantStatus?.toUpperCase() !== 'CANCELLED' && order.restaurantStatus?.toUpperCase() !== 'DELIVERED' && (
+                            <button
+                              onClick={() => handleOpenCancelModal(order)}
+                              className="text-gray-500 hover:text-red-600 text-sm font-medium px-2 py-1 border border-gray-300 rounded hover:border-red-300 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -392,6 +449,99 @@ const OrdersList = () => {
           </>
         )}
       </div>
+
+      {/* Cancel Order Modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+                <AlertTriangle className="text-red-500" size={20} />
+                Cancel Order
+              </h3>
+              <button
+                onClick={() => {
+                  setShowCancelModal(false);
+                  setSelectedOrderForCancel(null);
+                  setCancelReason("");
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="text-sm text-gray-600">Order ID: <span className="font-semibold text-gray-900">#{selectedOrderForCancel?.orderId}</span></p>
+                <p className="text-sm text-gray-600">Customer: <span className="font-semibold text-gray-900">{selectedOrderForCancel?.customer_name || 'Guest'}</span></p>
+                <p className="text-sm text-gray-600">Amount: <span className="font-semibold text-gray-900">₹{selectedOrderForCancel?.price}</span></p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Cancellation Reason <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  <option value="">-- Select Reason --</option>
+                  {CANCEL_REASONS.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {reason}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {cancelReason === "Other" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Please specify reason
+                  </label>
+                  <textarea
+                    value={otherReason}
+                    onChange={(e) => setOtherReason(e.target.value)}
+                    placeholder="Enter reason..."
+                    rows={2}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+              )}
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                <p className="text-sm text-yellow-800">
+                  <strong>Warning:</strong> This action will cancel the order and notify all parties (Customer, Restaurant, Delivery Partner).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 rounded-b-lg">
+              <button
+                onClick={() => {
+                  setShowCancelModal(false);
+                  setSelectedOrderForCancel(null);
+                  setCancelReason("");
+                  setOtherReason("");
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100"
+                disabled={isCancelling}
+              >
+                Close
+              </button>
+              <button
+                onClick={handleCancelOrder}
+                disabled={!cancelReason.trim() || isCancelling}
+                className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCancelling ? "Cancelling..." : "Confirm Cancellation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

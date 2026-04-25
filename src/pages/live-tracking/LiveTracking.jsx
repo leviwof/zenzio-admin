@@ -27,6 +27,11 @@ L.Icon.Default.mergeOptions({
 
 const DEFAULT_CENTER = [12.9716, 77.5946];
 
+const normalizeCoordinate = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
 const ChangeView = ({ center, zoom }) => {
     const map = useMap();
 
@@ -84,6 +89,111 @@ const PartnerMarker = ({ partner, isFocused, onFocus }) => {
     );
 };
 
+const DeliveryLocationMarker = ({ order, isFocused }) => {
+    const lat = normalizeCoordinate(
+        order.deliveredLocationLat || 
+        order.deliveryLat || 
+        order.deliveryLocation?.lat ||
+        order.addressLat
+    );
+    const lng = normalizeCoordinate(
+        order.deliveredLocationLng || 
+        order.deliveryLng || 
+        order.deliveryLocation?.lng ||
+        order.addressLng
+    );
+
+    console.log('Delivery Location Data:', {
+        deliveredLocationLat: order.deliveredLocationLat,
+        deliveredLocationLng: order.deliveredLocationLng,
+        deliveryLat: order.deliveryLat,
+        deliveryLng: order.deliveryLng,
+        deliveryLocation: order.deliveryLocation,
+        addressLat: order.addressLat,
+        addressLng: order.addressLng,
+        orderId: order.orderId
+    });
+
+    if (lat === null || lng === null || (lat === 0 && lng === 0)) {
+        return null;
+    }
+
+    const deliveryIcon = new L.DivIcon({
+        html: `
+            <div class="relative">
+                <div class="h-10 w-10 rounded-full border-4 border-white shadow-xl bg-violet-500 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                </div>
+            </div>
+        `,
+        className: 'delivery-marker-icon',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+    });
+
+    return (
+        <Marker position={[lat, lng]} icon={deliveryIcon} zIndexOffset={isFocused ? 999 : -1}>
+            <Popup>
+                <div className="min-w-[200px] p-1">
+                    <p className="font-bold text-violet-900">Delivery Location</p>
+                    <p className="mt-1 text-xs text-slate-500">Order: {order.orderId}</p>
+                    <p className="mt-2 text-xs text-slate-600">
+                        Address: <span className="font-semibold text-slate-900">{order.deliveredLocationAddress || 'N/A'}</span>
+                    </p>
+                    {order.deliveredAt && (
+                        <p className="mt-1 text-xs text-slate-500">
+                            Delivered: {new Date(order.deliveredAt).toLocaleTimeString()}
+                        </p>
+                    )}
+                </div>
+            </Popup>
+        </Marker>
+    );
+};
+
+const RestaurantMarker = ({ order, isFocused }) => {
+    const lat = normalizeCoordinate(order.restaurantLat);
+    const lng = normalizeCoordinate(order.restaurantLng);
+
+    if (lat === null || lng === null || (lat === 0 && lng === 0)) {
+        return null;
+    }
+
+    const restaurantIcon = new L.DivIcon({
+        html: `
+            <div class="relative">
+                <div class="h-10 w-10 rounded-full border-4 border-white shadow-xl bg-orange-500 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"></path>
+                        <path d="M7 2v20"></path>
+                        <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"></path>
+                    </svg>
+                </div>
+            </div>
+        `,
+        className: 'restaurant-marker-icon',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+    });
+
+    return (
+        <Marker position={[lat, lng]} icon={restaurantIcon} zIndexOffset={isFocused ? 998 : -1}>
+            <Popup>
+                <div className="min-w-[200px] p-1">
+                    <p className="font-bold text-orange-900">Restaurant</p>
+                    <p className="mt-1 text-xs text-slate-500">Order: {order.orderId}</p>
+                    <p className="mt-2 text-xs text-slate-600">
+                        Name: <span className="font-semibold text-slate-900">{order.restaurantName || 'N/A'}</span>
+                    </p>
+                </div>
+            </Popup>
+        </Marker>
+    );
+};
+
 const formatDateTime = (value) => {
     if (!value) return 'Not available';
 
@@ -101,11 +211,6 @@ const formatDateTime = (value) => {
 const formatStatus = (value) => {
     if (!value) return 'Unknown';
     return value.replace(/_/g, ' ');
-};
-
-const normalizeCoordinate = (value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
 };
 
 const getOrderBadgeLabel = (order) => {
@@ -706,6 +811,18 @@ const LiveTracking = () => {
                                     onFocus={handleFocusPartner}
                                 />
                             ))}
+                            {focusedPartner?.orderDetails && (
+                                <>
+                                    <DeliveryLocationMarker
+                                        order={focusedPartner.orderDetails}
+                                        isFocused={true}
+                                    />
+                                    <RestaurantMarker
+                                        order={focusedPartner.orderDetails}
+                                        isFocused={true}
+                                    />
+                                </>
+                            )}
                             <ChangeView center={mapCenter} zoom={zoom} />
                         </MapContainer>
 
