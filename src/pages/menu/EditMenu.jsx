@@ -188,7 +188,12 @@ const EditMenu = () => {
                 submitData.append('files', imageFile);
             }
 
-            await editMenuByAdminWithImage(menuUid, submitData);
+            console.log('📤 Submitting menu update for UID:', menuUid);
+            console.log('📤 Form data:', Object.fromEntries(submitData));
+
+            const response = await editMenuByAdminWithImage(menuUid, submitData);
+            console.log('✅ Menu update response:', response);
+            
             setSuccessMessage('Menu item updated successfully!');
             
             // Scroll to top using ref
