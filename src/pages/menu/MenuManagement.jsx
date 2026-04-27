@@ -1,11 +1,8 @@
-
-
-
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Eye, Power, PowerOff, Loader2, AlertCircle, ChevronDown, Trash2, Edit } from 'lucide-react';
-import { getAllMenus, getMenusByRestaurant, toggleMenuStatus, getAllRestaurants, deleteMenu } from '../../services/api';
+import { Search, Eye, Edit, Trash2, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { getAllMenus, getMenusByRestaurant, toggleMenuStatus, bulkUpdateMenuStatus, deleteMenu, bulkDeleteMenu, getAllRestaurants } from '../../services/api';
 import { getImageUrl } from '../../utils/imageUtils';
 
 const MenuManagement = () => {
@@ -27,6 +24,10 @@ const MenuManagement = () => {
     totalPages: 1,
   });
 
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ show: false, id: null, name: '' });
+
   useEffect(() => {
     fetchRestaurantsList();
   }, []);
@@ -44,49 +45,34 @@ const MenuManagement = () => {
     setPagination({ total: 0, page: 1, limit: 10, totalPages: 1 });
   }, [searchQuery]);
 
-
   const fetchRestaurantsList = async () => {
     try {
       const response = await getAllRestaurants({ limit: 500 });
-      console.log('📤 Full restaurants response:', response.data);
-
-
       let restaurantData = [];
       if (Array.isArray(response.data)) {
-
         restaurantData = response.data;
       } else if (response.data?.data?.restaurants) {
-
         restaurantData = response.data.data.restaurants;
       } else if (response.data?.restaurants) {
-
         restaurantData = response.data.restaurants;
       } else if (response.data?.data && Array.isArray(response.data.data)) {
-
         restaurantData = response.data.data;
       }
-
-      console.log('📥 Restaurant data extracted:', restaurantData.length, 'items');
-
 
       const restaurantList = restaurantData.map(r => ({
         uid: r.uid,
         name: r.profile?.restaurant_name || r.restaurant_name || r.name || `Restaurant ${r.uid?.substring(0, 8) || 'Unknown'}`
       })).filter(r => r.uid).sort((a, b) => a.name.localeCompare(b.name));
 
-      console.log('🏪 Restaurants loaded:', restaurantList.length);
-      console.log('📋 Sample restaurant:', restaurantList[0]);
       setRestaurants(restaurantList);
     } catch (error) {
-      console.error('❌ Error fetching restaurants:', error);
+      console.error('Error fetching restaurants:', error);
     }
   };
 
   const fetchMenus = async () => {
     try {
       setLoading(true);
-      console.log('📤 Fetching all menus... (Page:', currentPage, ')');
-
       const params = {
         page: currentPage,
         limit: itemsPerPage,
@@ -94,8 +80,6 @@ const MenuManagement = () => {
       };
 
       const response = await getAllMenus(params);
-      console.log('📥 Full Response:', response.data);
-
       let menuData = [];
       if (response.data?.data?.restaurant_menus) {
         menuData = response.data.data.restaurant_menus;
@@ -104,16 +88,12 @@ const MenuManagement = () => {
       }
 
       const meta = response.data?.meta || response.data?.data?.meta;
-      if (meta) {
-        setPagination(meta);
-      }
+      if (meta) setPagination(meta);
 
-      console.log('✅ Loaded menus:', menuData.length);
       setMenus(menuData);
-
     } catch (error) {
-      console.error('❌ Error fetching menus:', error);
-      setMenus([]);
+      console.error('Error fetching menus:', error);
+      toast.error('Failed to load menus');
     } finally {
       setLoading(false);
     }
@@ -122,8 +102,6 @@ const MenuManagement = () => {
   const fetchMenusByRestaurant = async (restaurantUid) => {
     try {
       setLoading(true);
-      console.log('📤 Fetching menus for restaurant:', restaurantUid, '(Page:', currentPage, ')');
-
       const params = {
         page: currentPage,
         limit: itemsPerPage,
@@ -131,8 +109,6 @@ const MenuManagement = () => {
       };
 
       const response = await getMenusByRestaurant(restaurantUid, params);
-      console.log('📥 Response:', response.data);
-
       let menuData = [];
       if (response.data?.data?.restaurant_menus) {
         menuData = response.data.data.restaurant_menus;
@@ -141,16 +117,12 @@ const MenuManagement = () => {
       }
 
       const meta = response.data?.meta || response.data?.data?.meta;
-      if (meta) {
-        setPagination(meta);
-      }
+      if (meta) setPagination(meta);
 
-      console.log('✅ Loaded menus:', menuData.length);
       setMenus(menuData);
-
     } catch (error) {
-      console.error('❌ Error fetching menus:', error);
-      setMenus([]);
+      console.error('Error fetching menus:', error);
+      toast.error('Failed to load menus');
     } finally {
       setLoading(false);
     }
@@ -160,50 +132,97 @@ const MenuManagement = () => {
     setSelectedRestaurant(restaurantUid);
     setCurrentPage(1);
     setPagination({ total: 0, page: 1, limit: 10, totalPages: 1 });
+    setSelectedIds([]);
+  };
+
+  const getRestaurantName = (uid) => {
+    const restaurant = restaurants.find(r => r.uid === uid);
+    return restaurant ? restaurant.name : uid;
   };
 
   const handleToggleStatus = async (menuUid, currentStatus) => {
     try {
-      console.log('🔄 Toggling menu UID:', menuUid);
-
-
       await toggleMenuStatus(menuUid, !currentStatus);
-
-      alert(`✅ Menu ${currentStatus ? 'deactivated' : 'activated'} successfully!`);
-
-      if (selectedRestaurant === 'all') {
-        fetchMenus();
-      } else {
-        fetchMenusByRestaurant(selectedRestaurant);
-      }
+      toast.success(`Menu ${currentStatus ? 'deactivated' : 'activated'}`);
+      setMenus(prev => prev.map(m => m.menu_uid === menuUid ? { ...m, isActive: !currentStatus } : m));
     } catch (error) {
-      console.error('❌ Error toggling menu:', error);
-      alert(`❌ Failed to toggle: ${error.message}`);
+      toast.error('Failed to update status');
     }
   };
 
-  const handleDeleteMenu = async (menuUid, menuName) => {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete "${menuName}"? This action cannot be undone.`
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedIds(menus.map(m => m.menu_uid));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectOne = (menuUid) => {
+    setSelectedIds(prev =>
+      prev.includes(menuUid)
+        ? prev.filter(id => id !== menuUid)
+        : [...prev, menuUid]
     );
+  };
 
-    if (!confirmDelete) return;
-
+  const handleBulkActivate = async () => {
+    if (selectedIds.length === 0) return;
     try {
-      console.log('🗑️ Deleting menu UID:', menuUid);
-
-      await deleteMenu(menuUid);
-
-      alert(`✅ Menu "${menuName}" deleted successfully!`);
-
-      if (selectedRestaurant === 'all') {
-        fetchMenus();
-      } else {
-        fetchMenusByRestaurant(selectedRestaurant);
-      }
+      setBulkLoading(true);
+      await bulkUpdateMenuStatus(selectedIds, true);
+      toast.success(`${selectedIds.length} menus activated`);
+      setMenus(prev => prev.map(m => selectedIds.includes(m.menu_uid) ? { ...m, isActive: true } : m));
+      setSelectedIds([]);
     } catch (error) {
-      console.error('❌ Error deleting menu:', error);
-      alert(`❌ Failed to delete menu: ${error.message}`);
+      toast.error('Failed to activate menus');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkDeactivate = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      setBulkLoading(true);
+      await bulkUpdateMenuStatus(selectedIds, false);
+      toast.success(`${selectedIds.length} menus deactivated`);
+      setMenus(prev => prev.map(m => selectedIds.includes(m.menu_uid) ? { ...m, isActive: false } : m));
+      setSelectedIds([]);
+    } catch (error) {
+      toast.error('Failed to deactivate menus');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      setBulkLoading(true);
+      await bulkDeleteMenu(selectedIds);
+      toast.success(`${selectedIds.length} menus deleted`);
+      setMenus(prev => prev.filter(m => !selectedIds.includes(m.menu_uid)));
+      setSelectedIds([]);
+    } catch (error) {
+      toast.error('Failed to delete menus');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleDeleteClick = (menuUid, menuName) => {
+    setDeleteModal({ show: true, id: menuUid, name: menuName });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteMenu(deleteModal.id);
+      toast.success('Menu deleted');
+      setMenus(prev => prev.filter(m => m.menu_uid !== deleteModal.id));
+      setDeleteModal({ show: false, id: null, name: '' });
+    } catch (error) {
+      toast.error('Failed to delete menu');
     }
   };
 
@@ -215,35 +234,12 @@ const MenuManagement = () => {
     return null;
   };
 
-
-  const getRestaurantName = (uid) => {
-    const restaurant = restaurants.find(r => r.uid === uid);
-    return restaurant ? restaurant.name : uid;
-  };
-
-  // Use server-side pagination data
-  const currentMenus = menus;
-
-  const getStatusBadge = (isActive) => {
-    return isActive
-      ? 'bg-green-100 text-green-800'
-      : 'bg-gray-100 text-gray-800';
-  };
-
   const filteredRestaurants = restaurants.filter(restaurant =>
     restaurant.name.toLowerCase().includes(restaurantSearch.toLowerCase())
   );
 
-  const handleSearch = () => {
-    setSearchQuery(searchTerm);
-  };
-
-  const handleSearchKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      setSearchQuery(searchTerm);
-    }
-  };
-
+  const handleSearch = () => setSearchQuery(searchTerm);
+  const handleSearchKeyPress = (e) => e.key === 'Enter' && setSearchQuery(searchTerm);
   const handleClearSearch = () => {
     setSearchTerm('');
     setSearchQuery('');
@@ -251,37 +247,37 @@ const MenuManagement = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      { }
+      {deleteModal.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 max-w-md">
+            <h3 className="text-lg font-semibold mb-2">Delete Menu</h3>
+            <p className="text-gray-600 mb-4">Are you sure you want to delete "{deleteModal.name}"?</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeleteModal({ show: false, id: null, name: '' })} className="px-4 py-2 border rounded">Cancel</button>
+              <button onClick={confirmDelete} className="px-4 py-2 bg-red-500 text-white rounded">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Restaurant Menu Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/menu/bulk-upload')}
-              className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-all shadow-sm flex items-center gap-2"
-            >
-              Bulk Upload
-            </button>
-            <button
-              onClick={() => navigate('/menu/add')}
-              className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg font-medium hover:from-red-600 hover:to-red-700 transition-all shadow-md flex items-center gap-2"
-            >
-              <span className="text-lg">+</span>
-              Add Menu
-            </button>
+            <button onClick={() => navigate('/menu/bulk-upload')} className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Bulk Upload</button>
+            <button onClick={() => navigate('/menu/add')} className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg font-medium">+ Add Menu</button>
           </div>
         </div>
       </div>
 
       <div className="p-6">
-        { }
         <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
           <div className="flex gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
               <input
                 type="text"
-                placeholder="Search by menu name, category, cuisine, or restaurant..."
+                placeholder="Search by menu name, category, cuisine..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyPress={handleSearchKeyPress}
@@ -289,7 +285,6 @@ const MenuManagement = () => {
               />
             </div>
 
-            { }
             <div className="relative min-w-[250px] z-50">
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -305,10 +300,7 @@ const MenuManagement = () => {
 
               {dropdownOpen && (
                 <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setDropdownOpen(false)}
-                  ></div>
+                  <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)}></div>
                   <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-50">
                     <div className="p-3 border-b border-gray-200 sticky top-0 bg-white">
                       <div className="relative">
@@ -358,19 +350,13 @@ const MenuManagement = () => {
             </div>
 
             {searchTerm && (
-              <button
-                onClick={handleClearSearch}
-                className="px-4 py-2 text-red-500 border border-red-500 rounded-md hover:bg-red-50"
-              >
-                Clear
-              </button>
+              <button onClick={handleClearSearch} className="px-4 py-2 text-red-500 border border-red-500 rounded-md hover:bg-red-50">Clear</button>
             )}
           </div>
         </div>
 
-        { }
         <div className="mb-4 text-sm text-gray-600">
-          Showing {currentMenus.length} of {pagination.total} menu items
+          Showing {menus.length} of {pagination.total} menu items
           {selectedRestaurant !== 'all' && (
             <span className="ml-2 text-red-600 font-medium">
               • {getRestaurantName(selectedRestaurant)}
@@ -378,14 +364,33 @@ const MenuManagement = () => {
           )}
         </div>
 
-        { }
+        {selectedIds.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-center justify-between">
+            <span className="text-blue-700">{selectedIds.length} item(s) selected</span>
+            <div className="flex gap-2">
+              <button onClick={handleBulkActivate} disabled={bulkLoading} className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50 flex items-center gap-1">
+                {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                Activate
+              </button>
+              <button onClick={handleBulkDeactivate} disabled={bulkLoading} className="px-3 py-1 bg-orange-500 text-white rounded text-sm hover:bg-orange-600 disabled:opacity-50 flex items-center gap-1">
+                {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                Deactivate
+              </button>
+              <button onClick={handleBulkDelete} disabled={bulkLoading} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50 flex items-center gap-1">
+                {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64">
               <Loader2 className="animate-spin text-red-500 mb-4" size={40} />
               <p className="text-sm text-gray-500">Loading menu items...</p>
             </div>
-          ) : currentMenus.length === 0 ? (
+          ) : menus.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64">
               <AlertCircle className="text-gray-300 mb-3" size={48} />
               <p className="text-gray-500">No menu items found</p>
@@ -397,129 +402,62 @@ const MenuManagement = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Image
+                      <th className="px-4 py-3 text-left">
+                        <input type="checkbox" checked={selectedIds.length === menus.length && menus.length > 0} onChange={handleSelectAll} className="rounded" />
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Menu Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Price
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Cuisine
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Category
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Image</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cuisine</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Delete</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {currentMenus.map((menu) => (
-                      <tr key={menu.menu_uid} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="w-20 h-20 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center border border-gray-200">
+                    {menus.map((menu) => (
+                      <tr key={menu.menu_uid} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <input type="checkbox" checked={selectedIds.includes(menu.menu_uid)} onChange={() => handleSelectOne(menu.menu_uid)} className="rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100">
                             {getFirstImage(menu.images) ? (
-                              <img
-                                src={getFirstImage(menu.images)}
-                                alt={menu.menu_name}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  e.target.onerror = null;
-                                  e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="80"%3E%3Crect fill="%23e5e7eb" width="80" height="80"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="10"%3ENo Image%3C/text%3E%3C/svg%3E';
-                                }}
-                              />
+                              <img src={getFirstImage(menu.images)} alt={menu.menu_name} className="w-full h-full object-cover" />
                             ) : (
-                              <span className="text-xs text-gray-400 text-center p-2">No Image</span>
+                              <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">No Image</div>
                             )}
                           </div>
                         </td>
-
-                        <td className="px-6 py-4">
+                        <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">{menu.menu_name}</div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {menu.description ? menu.description.substring(0, 50) + (menu.description.length > 50 ? '...' : '') : '-'}
+                          <div className="text-xs text-gray-500">{menu.description ? menu.description.substring(0, 40) + (menu.description.length > 40 ? '...' : '') : '-'}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-sm font-semibold text-gray-900">₹{menu.finalPrice || menu.price}</div>
+                          {menu.discount > 0 && <div className="text-xs text-green-600">{menu.discount}% off</div>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs">{menu.cuisine_type || '-'}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">{menu.category || '-'}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked={menu.isActive} onChange={() => handleToggleStatus(menu.menu_uid, menu.isActive)} className="sr-only peer" />
+                            <div className={`w-11 h-6 rounded-full transition-colors peer-focus:ring-2 ${menu.isActive ? 'bg-green-500 peer-focus:ring-green-300' : 'bg-gray-300 peer-focus:ring-gray-300'} after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${menu.isActive ? 'peer-checked:after:translate-x-full after:border-white' : 'after:border-gray-300'} `}></div>
+                          </label>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2">
+                            <button onClick={() => navigate(`/menu/view/${menu.menu_uid}`)} className="p-2 text-green-600 hover:bg-green-50 rounded" title="View"><Eye size={16} /></button>
+                            <button onClick={() => navigate(`/menu/edit/${menu.menu_uid}`)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit"><Edit size={16} /></button>
                           </div>
                         </td>
-
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-gray-900">
-                            ₹{menu.finalPrice || menu.price}
-                          </div>
-                          {menu.discount > 0 && (
-                            <div className="text-xs text-green-600">{menu.discount}% off</div>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4">
-                          {menu.cuisine_type ? (
-                            <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs">
-                              {menu.cuisine_type}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-xs">-</span>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4">
-                          {menu.category ? (
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
-                              {menu.category}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-xs">-</span>
-                          )}
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(menu.isActive)}`}>
-                            {menu.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => navigate(`/menu/view/${menu.menu_uid}`)}
-                              className="p-2 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition-colors"
-                              title="View Details"
-                            >
-                              <Eye size={16} />
-                            </button>
-
-                            <button
-                              onClick={() => navigate(`/menu/edit/${menu.menu_uid}`)}
-                              className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Edit Menu"
-                            >
-                              <Edit size={16} />
-                            </button>
-
-                            <button
-                              onClick={() => handleToggleStatus(menu.menu_uid, menu.isActive)}
-                              className={`p-2 rounded-lg transition-colors ${menu.isActive
-                                ? 'text-orange-600 hover:text-orange-800 hover:bg-orange-50'
-                                : 'text-green-600 hover:text-green-800 hover:bg-green-50'
-                                }`}
-                              title={menu.isActive ? 'Deactivate' : 'Activate'}
-                            >
-                              {menu.isActive ? <PowerOff size={16} /> : <Power size={16} />}
-                            </button>
-
-                            <button
-                              onClick={() => handleDeleteMenu(menu.id, menu.menu_name)}
-                              className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Delete Menu"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
+                        <td className="px-4 py-3">
+                          <button onClick={() => handleDeleteClick(menu.menu_uid, menu.menu_name)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete"><Trash2 size={16} /></button>
                         </td>
                       </tr>
                     ))}
@@ -527,54 +465,18 @@ const MenuManagement = () => {
                 </table>
               </div>
 
-              { }
               {pagination.totalPages > 1 && (
                 <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-                  <span className="text-sm text-gray-500">
-                    Page {currentPage} of {pagination.totalPages}
-                  </span>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      ←
-                    </button>
-
-                    {Array.from(
-                      { length: Math.min(5, pagination.totalPages) },
-                      (_, i) => {
-                        const startPage = Math.max(
-                          1,
-                          Math.min(currentPage - 2, pagination.totalPages - 4)
-                        );
-                        return startPage + i;
-                      }
-                    ).map((page) => (
-                      <button
-                        key={page}
-                        onClick={() => setCurrentPage(page)}
-                        className={`px-3 py-1 rounded ${currentPage === page
-                            ? "bg-red-500 text-white"
-                            : "border border-gray-300 hover:bg-gray-50"
-                          }`}
-                      >
-                        {page}
-                      </button>
+                  <span className="text-sm text-gray-500">Page {currentPage} of {pagination.totalPages}</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1 border rounded disabled:opacity-50">← Prev</button>
+                    {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                      const startPage = Math.max(1, Math.min(currentPage - 2, pagination.totalPages - 4));
+                      return startPage + i;
+                    }).map(page => (
+                      <button key={page} onClick={() => setCurrentPage(page)} className={`px-3 py-1 rounded ${currentPage === page ? 'bg-red-500 text-white' : 'border'}`}>{page}</button>
                     ))}
-
-                    {pagination.totalPages > 5 && currentPage < pagination.totalPages - 2 && (
-                      <span className="px-2">...</span>
-                    )}
-
-                    <button
-                      onClick={() => setCurrentPage(p => Math.min(pagination.totalPages, p + 1))}
-                      disabled={currentPage === pagination.totalPages}
-                      className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      →
-                    </button>
+                    <button onClick={() => setCurrentPage(p => Math.min(pagination.totalPages, p + 1))} disabled={currentPage === pagination.totalPages} className="px-3 py-1 border rounded disabled:opacity-50">Next →</button>
                   </div>
                 </div>
               )}
