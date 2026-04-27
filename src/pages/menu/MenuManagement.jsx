@@ -26,6 +26,7 @@ const MenuManagement = () => {
     limit: 10,
     totalPages: 1,
   });
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   useEffect(() => {
     fetchRestaurantsList();
@@ -249,6 +250,42 @@ const MenuManagement = () => {
     setSearchQuery('');
   };
 
+  const handleActivateAll = async () => {
+    const inactiveMenus = menus.filter(m => !m.isActive);
+    if (inactiveMenus.length === 0) {
+      alert('All menus are already active!');
+      return;
+    }
+
+    const confirmActivate = window.confirm(
+      `Are you sure you want to activate ${inactiveMenus.length} menu item(s)?`
+    );
+
+    if (!confirmActivate) return;
+
+    try {
+      setBulkLoading(true);
+      console.log('🔄 Activating all inactive menus...');
+
+      for (const menu of inactiveMenus) {
+        await toggleMenuStatus(menu.menu_uid, true);
+      }
+
+      alert(`✅ Activated ${inactiveMenus.length} menu(s) successfully!`);
+
+      if (selectedRestaurant === 'all') {
+        fetchMenus();
+      } else {
+        fetchMenusByRestaurant(selectedRestaurant);
+      }
+    } catch (error) {
+      console.error('❌ Error activating menus:', error);
+      alert(`❌ Failed to activate menus: ${error.message}`);
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       { }
@@ -256,6 +293,14 @@ const MenuManagement = () => {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Restaurant Menu Management</h1>
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleActivateAll}
+              disabled={bulkLoading}
+              className="px-4 py-2 bg-green-600 text-white border border-green-600 rounded-lg font-medium hover:bg-green-700 transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
+            >
+              {bulkLoading ? <Loader2 size={16} className="animate-spin" /> : <Power size={16} />}
+              Activate All
+            </button>
             <button
               onClick={() => navigate('/menu/bulk-upload')}
               className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-all shadow-sm flex items-center gap-2"
@@ -511,7 +556,7 @@ const MenuManagement = () => {
                             </button>
 
                             <button
-                              onClick={() => handleDeleteMenu(menu.id, menu.menu_name)}
+                              onClick={() => handleDeleteMenu(menu.menu_uid, menu.menu_name)}
                               className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
                               title="Delete Menu"
                             >
