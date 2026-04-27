@@ -449,7 +449,9 @@ const MenuManagement = () => {
                         </td>
 
                         <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-gray-900">₹{menu.price}</div>
+                          <div className="text-sm font-semibold text-gray-900">
+                            ₹{menu.finalPrice || menu.price}
+                          </div>
                           {menu.discount > 0 && (
                             <div className="text-xs text-green-600">{menu.discount}% off</div>
                           )}
