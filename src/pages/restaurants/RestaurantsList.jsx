@@ -134,9 +134,9 @@ const RestaurantsList = () => {
     let filtered = [...restaurants];
 
     if (activeTab === "active") {
-      filtered = filtered.filter(r => r.isActive === true);
+      filtered = filtered.filter(r => r.statusLabel === 'ON');
     } else if (activeTab === "inactive") {
-      filtered = filtered.filter(r => r.isActive === false);
+      filtered = filtered.filter(r => r.statusLabel === 'OFF' || r.statusLabel === 'BLOCKED');
     }
 
     if (searchTerm.trim()) {
@@ -217,17 +217,24 @@ const RestaurantsList = () => {
     setCurrentPage(1);
   };
 
-  const getStatusBadge = (isActive) => {
-    if (isActive === true) {
+  const getStatusBadge = (restaurant) => {
+    const statusLabel = restaurant.statusLabel;
+    if (statusLabel === 'ON') {
       return (
         <span className="px-3 py-1 rounded-md text-xs font-medium bg-green-100 text-green-700">
-          Approved
+          ON
         </span>
       );
-    } else if (isActive === false) {
+    } else if (statusLabel === 'OFF') {
+      return (
+        <span className="px-3 py-1 rounded-md text-xs font-medium bg-yellow-100 text-yellow-700">
+          OFF
+        </span>
+      );
+    } else if (statusLabel === 'BLOCKED') {
       return (
         <span className="px-3 py-1 rounded-md text-xs font-medium bg-red-100 text-red-700">
-          Blocked
+          BLOCKED
         </span>
       );
     }
@@ -240,8 +247,8 @@ const RestaurantsList = () => {
 
   const tabs = [
     { label: "All Restaurants", value: "all" },
-    { label: "Active", value: "active" },
-    { label: "Inactive", value: "inactive" },
+    { label: "ON", value: "active" },
+    { label: "OFF/BLOCKED", value: "inactive" },
   ];
 
   return (
@@ -428,7 +435,7 @@ const RestaurantsList = () => {
 
                         {/* Status */}
                         <td className="px-4 py-4">
-                          {getStatusBadge(restaurant.isActive)}
+                          {getStatusBadge(restaurant)}
                         </td>
 
                         {/* Actions */}
@@ -442,15 +449,16 @@ const RestaurantsList = () => {
                               View Details
                             </button>
 
-                            {/* Block/Unblock Button */}
+                            {/* Block/Unblock Button - Admin only toggles isActive */}
                             <button
                               onClick={() => handleToggleActive(restaurant.uid, restaurant.isActive)}
-                              className={`text-sm font-medium ${restaurant.isActive
-                                ? 'text-red-600 hover:text-red-700'
-                                : 'text-green-600 hover:text-green-700'
-                                }`}
+                              className={`text-sm font-medium ${
+                                restaurant.statusLabel === 'BLOCKED'
+                                  ? 'text-green-600 hover:text-green-700'
+                                  : 'text-red-600 hover:text-red-700'
+                              }`}
                             >
-                              {restaurant.isActive ? 'Block' : 'Unblock'}
+                              {restaurant.statusLabel === 'BLOCKED' ? 'Unblock' : 'Block'}
                             </button>
 
                             <button
