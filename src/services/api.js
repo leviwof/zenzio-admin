@@ -141,6 +141,13 @@ export const getWorkTypes = () => api.get('/work-types');
 export const updatePartnerProfile = (uid, data) =>
   api.patch(`/fleets/${uid}/profile`, data);
 
+// Shift Management
+export const getShiftConfig = () => api.get('/shift/config');
+export const getMyShift = () => api.get('/shift/my');
+export const assignShift = (shiftId) => api.post('/shift/assign', { shiftId });
+export const getFleetShift = (userId) => api.get(`/shift/admin/${userId}`);
+export const adminUpdateShift = (userId, data) => api.put('/shift/admin/update', { userId, ...data });
+
 export const getPartnerAttendance = (partnerId, params) =>
   api.get('/attendance/admin/range-summary', { params: { fleet_uid: partnerId, ...params } });
 export const downloadAttendanceReport = (partnerId, params) =>
