@@ -4,9 +4,10 @@
 // =============================================
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Search, Download, AlertCircle, Eye, Power, PowerOff, Loader2, Edit, Trash2 } from "lucide-react";
-import { getAllRestaurants, getRestaurantById, toggleRestaurantActive, permanentlyDeleteRestaurant } from "../../services/api";
+import { Search, Download, AlertCircle, Eye, Loader2, Trash2, Power } from "lucide-react";
+import { getAllRestaurants, getRestaurantById, toggleRestaurantActive, toggleRestaurantOff, permanentlyDeleteRestaurant } from "../../services/api";
 import { saveAs } from "file-saver";
+import toast from "react-hot-toast";
 
 const RestaurantsList = () => {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ const RestaurantsList = () => {
   const [activeTab, setActiveTab] = useState(location.state?.tab || "all");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [toggleLoading, setToggleLoading] = useState({});
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -97,6 +99,9 @@ const RestaurantsList = () => {
               id: basic.id,
               uid: basic.uid,
               isActive: basic.isActive,
+              isManuallyOff: basic.isManuallyOff,
+              isOpen: basic.isOpen,
+              statusLabel: basic.statusLabel,
               createdAt: basic.createdAt,
               restaurant_name: restaurantDetail?.profile?.restaurant_name || '-',
               city: restaurantDetail?.address?.city || '-',
@@ -110,6 +115,9 @@ const RestaurantsList = () => {
               id: basic.id,
               uid: basic.uid,
               isActive: basic.isActive,
+              isManuallyOff: basic.isManuallyOff,
+              isOpen: basic.isOpen,
+              statusLabel: basic.statusLabel,
               restaurant_name: '-',
               city: '-',
               email: '-',
@@ -134,9 +142,11 @@ const RestaurantsList = () => {
     let filtered = [...restaurants];
 
     if (activeTab === "active") {
-      filtered = filtered.filter(r => r.isActive === true);
+      filtered = filtered.filter(r => r.isOpen !== false);
     } else if (activeTab === "inactive") {
-      filtered = filtered.filter(r => r.isActive === false);
+      filtered = filtered.filter(r => r.isOpen === false);
+    } else if (activeTab === "off") {
+      filtered = filtered.filter(r => r.isOpen === false);
     }
 
     if (searchTerm.trim()) {
@@ -156,14 +166,18 @@ const RestaurantsList = () => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentRestaurants = filteredRestaurants.slice(startIndex, startIndex + itemsPerPage);
 
-  const handleToggleActive = async (restaurantId, currentIsActive) => {
+  const handleToggleActive = async (restaurantId) => {
     try {
+      setToggleLoading(prev => ({ ...prev, [restaurantId]: true }));
       await toggleRestaurantActive(restaurantId);
-      alert(`✅ Restaurant ${currentIsActive ? 'blocked' : 'unblocked'} successfully!`);
+      const restaurant = restaurants.find(r => r.uid === restaurantId);
+      toast.success(restaurant?.isActive === false ? 'Restaurant unblocked successfully' : 'Restaurant blocked successfully');
       fetchRestaurants();
     } catch (error) {
       console.error("❌ Error:", error);
-      alert(`❌ Failed: ${error.message}`);
+      toast.error(error.response?.data?.message || 'Failed to update restaurant');
+    } finally {
+      setToggleLoading(prev => ({ ...prev, [restaurantId]: false }));
     }
   };
 
@@ -171,18 +185,18 @@ const RestaurantsList = () => {
     if (window.confirm(`Are you sure you want to PERMANENTLY delete restaurant ${name}? This action cannot be undone and will delete their Firebase account too.`)) {
       try {
         await permanentlyDeleteRestaurant(uid);
-        alert('✅ Restaurant deleted successfully');
+        toast.success('Restaurant deleted successfully');
         fetchRestaurants();
       } catch (error) {
         console.error('Error deleting restaurant:', error);
-        alert(`❌ Failed: ${error.message}`);
+        toast.error(error.response?.data?.message || 'Failed to delete restaurant');
       }
     }
   };
 
   const handleViewClick = (restaurant) => {
     if (!restaurant.uid || restaurant.uid === 'undefined') {
-      alert('❌ Invalid restaurant UID');
+      toast.error('Invalid restaurant UID');
       return;
     }
     navigate(`/restaurants/${restaurant.uid}`);
@@ -190,7 +204,7 @@ const RestaurantsList = () => {
 
   const handleExport = () => {
     if (!filteredRestaurants.length) {
-      alert('No data to export');
+      toast.error('No data to export');
       return;
     }
 
@@ -217,31 +231,36 @@ const RestaurantsList = () => {
     setCurrentPage(1);
   };
 
-  const getStatusBadge = (isActive) => {
-    if (isActive === true) {
-      return (
-        <span className="px-3 py-1 rounded-md text-xs font-medium bg-green-100 text-green-700">
-          Approved
-        </span>
-      );
-    } else if (isActive === false) {
+  const getStatusBadge = (restaurant) => {
+    const { isOpen, isActive } = restaurant;
+    
+    // If blocked by admin (isActive = false), show Off with red tint
+    if (isActive === false) {
       return (
         <span className="px-3 py-1 rounded-md text-xs font-medium bg-red-100 text-red-700">
-          Blocked
+          Off
+        </span>
+      );
+    }
+    
+    if (isOpen === false) {
+      return (
+        <span className="px-3 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
+          Off
         </span>
       );
     }
     return (
-      <span className="px-3 py-1 rounded-md text-xs font-medium bg-yellow-100 text-yellow-700">
-        Pending Review
+      <span className="px-3 py-1 rounded-md text-xs font-medium bg-green-100 text-green-700">
+        On
       </span>
     );
   };
 
   const tabs = [
-    { label: "All Restaurants", value: "all" },
-    { label: "Active", value: "active" },
-    { label: "Inactive", value: "inactive" },
+    { label: "All", value: "all" },
+    { label: "On", value: "active" },
+    { label: "Off", value: "off" },
   ];
 
   return (
@@ -355,6 +374,12 @@ const RestaurantsList = () => {
                         Status
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Block / Unblock
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Delete
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
@@ -428,39 +453,50 @@ const RestaurantsList = () => {
 
                         {/* Status */}
                         <td className="px-4 py-4">
-                          {getStatusBadge(restaurant.isActive)}
+                          {getStatusBadge(restaurant)}
+                        </td>
+
+                        {/* Block / Unblock */}
+                        <td className="px-4 py-4">
+                          <button
+                            onClick={() => handleToggleActive(restaurant.uid)}
+                            disabled={toggleLoading[restaurant.uid]}
+                            title={toggleLoading[restaurant.uid] ? 'Updating...' : restaurant.isActive === false ? 'Click to unblock restaurant' : 'Click to block restaurant'}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                              toggleLoading[restaurant.uid] ? 'opacity-70' : ''
+                            } ${restaurant.isActive === false ? 'bg-red-500' : 'bg-green-500'}`}
+                          >
+                            {toggleLoading[restaurant.uid] ? (
+                              <Loader2 className="mx-auto h-3 w-3 animate-spin text-white" />
+                            ) : (
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${
+                                  restaurant.isActive === false ? 'translate-x-0.5' : 'translate-x-5'
+                                }`}
+                              />
+                            )}
+                          </button>
+                        </td>
+
+                        {/* Delete */}
+                        <td className="px-4 py-4">
+                          <button
+                            onClick={() => handleDeleteRestaurant(restaurant.uid, restaurant.restaurant_name)}
+                            className="text-red-500 hover:text-red-700 transition p-1"
+                            title="Permanently Delete"
+                          >
+                            <Trash2 size={18} />
+                          </button>
                         </td>
 
                         {/* Actions */}
                         <td className="px-4 py-4">
-                          <div className="flex items-center gap-2">
-                            {/* View Details Button */}
-                            <button
-                              onClick={() => handleViewClick(restaurant)}
-                              className="text-red-600 hover:text-red-700 text-sm font-medium"
-                            >
-                              View Details
-                            </button>
-
-                            {/* Block/Unblock Button */}
-                            <button
-                              onClick={() => handleToggleActive(restaurant.uid, restaurant.isActive)}
-                              className={`text-sm font-medium ${restaurant.isActive
-                                ? 'text-red-600 hover:text-red-700'
-                                : 'text-green-600 hover:text-green-700'
-                                }`}
-                            >
-                              {restaurant.isActive ? 'Block' : 'Unblock'}
-                            </button>
-
-                            <button
-                              onClick={() => handleDeleteRestaurant(restaurant.uid, restaurant.restaurant_name)}
-                              className="text-red-500 hover:text-red-700 transition p-1"
-                              title="Permanently Delete"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => handleViewClick(restaurant)}
+                            className="text-red-600 hover:text-red-700 text-sm font-medium"
+                          >
+                            View Details
+                          </button>
                         </td>
                       </tr>
                     ))}

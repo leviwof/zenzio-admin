@@ -92,6 +92,7 @@ export const deleteCustomer = (uid) => api.delete(`/users/${uid}`);
 export const getAllRestaurants = (params) => api.get('/restaurants', { params });
 export const getRestaurantById = (uid) => api.get(`/restaurants/${uid}/admin`);
 export const toggleRestaurantActive = (id) => api.patch(`/restaurants/${id}/toggle-active`);
+export const toggleRestaurantOff = (id) => api.patch(`/restaurants/${id}/toggle-off`);
 export const getRestaurantStats = () => api.get('/restaurants/stats');
 export const getRestaurantAdminStats = (uid, params) => api.get(`/restaurants/${uid}/admin-stats`, { params });
 export const getCuisineTypes = () => api.get('/restaurants/cuisines');
