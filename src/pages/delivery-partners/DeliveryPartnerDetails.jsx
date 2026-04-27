@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ChevronLeft, AlertCircle, CheckCircle, FileText, ExternalLink, Edit2, X } from "lucide-react";
+import { ChevronLeft, AlertCircle, CheckCircle, FileText, ExternalLink, Edit2, X, Lock, Unlock } from "lucide-react";
 import {
   getDeliveryPartnerById,
   updatePartnerStatus,
   getWorkTypes,
-  updatePartnerProfile
+  updatePartnerProfile,
+  getShiftConfig,
+  getFleetShift,
+  adminUpdateShift
 } from "../../services/api";
 
 const normalizePartner = (data) => {
@@ -65,6 +68,8 @@ const normalizePartner = (data) => {
     workAndAttendance: {
       workType: data.profile?.work_type?.name ?? data.profile?.work_type_uid ?? "N/A",
       workTypeUid: data.profile?.work_type_uid ?? null,
+      shiftId: data.shift_id ?? null,
+      shiftLocked: data.shift_locked ?? false,
       startTime: data.profile?.start_time ?? "N/A",
       endTime: data.profile?.end_time ?? "N/A",
       breakStartTime: data.profile?.break_start_time ?? "N/A",
@@ -119,13 +124,19 @@ const DeliveryPartnerDetails = () => {
 
   
   const [showTimeModal, setShowTimeModal] = useState(false);
+  const [showShiftModal, setShowShiftModal] = useState(false);
   const [workTypes, setWorkTypes] = useState([]);
+  const [shifts, setShifts] = useState([]);
   const [timeForm, setTimeForm] = useState({
     work_type_uid: "",
     start_time: "",
     end_time: "",
     break_start_time: "",
     break_end_time: ""
+  });
+  const [shiftForm, setShiftForm] = useState({
+    shiftId: "",
+    locked: false
   });
 
 
@@ -174,6 +185,17 @@ const DeliveryPartnerDetails = () => {
       }
     } catch (err) {
       console.error("Failed to fetch work types", err);
+    }
+  };
+
+  const fetchShiftConfig = async () => {
+    try {
+      const response = await getShiftConfig();
+      if (response.data) {
+        setShifts(response.data.data || response.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch shift config", err);
     }
   };
 
@@ -252,6 +274,50 @@ const DeliveryPartnerDetails = () => {
     } catch (err) {
       console.error(err);
       showAlert("error", err.response?.data?.message || "Failed to update timings");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEditShiftClick = () => {
+    if (!partner) return;
+    if (shifts.length === 0) fetchShiftConfig();
+
+    const wa = partner.workAndAttendance;
+    setShiftForm({
+      shiftId: wa.shiftId || "",
+      locked: wa.shiftLocked || false
+    });
+    setShowShiftModal(true);
+  };
+
+  const handleShiftChange = (e) => {
+    const shiftId = e.target.value;
+    setShiftForm(prev => ({ ...prev, shiftId }));
+  };
+
+  const handleLockToggle = () => {
+    setShiftForm(prev => ({ ...prev, locked: !prev.locked }));
+  };
+
+  const submitShiftUpdate = async (e) => {
+    e.preventDefault();
+    if (!partner) return;
+
+    setActionLoading(true);
+    try {
+      await adminUpdateShift(partner.partnerCode, {
+        shiftId: shiftForm.shiftId,
+        locked: shiftForm.locked
+      });
+
+      showAlert("success", "Shift updated successfully!");
+      setShowShiftModal(false);
+      fetchPartnerDetails();
+
+    } catch (err) {
+      console.error(err);
+      showAlert("error", err.response?.data?.message || "Failed to update shift");
     } finally {
       setActionLoading(false);
     }
@@ -455,6 +521,94 @@ const DeliveryPartnerDetails = () => {
         </div>
       )}
 
+      {showShiftModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+            <button
+              onClick={() => setShowShiftModal(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-black"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h2 className="text-xl font-bold mb-4">Assign Shift</h2>
+
+            <form onSubmit={submitShiftUpdate} className="space-y-4">
+              <div>
+                <label className="block text-xs uppercase text-gray-500 mb-1">Select Shift</label>
+                <select
+                  name="shiftId"
+                  value={shiftForm.shiftId}
+                  onChange={handleShiftChange}
+                  className="w-full border rounded p-2 text-sm bg-gray-50"
+                  required
+                >
+                  <option value="">-- Choose a Shift --</option>
+                  {shifts.map(shift => (
+                    <option key={shift.id} value={shift.id}>
+                      {shift.name} ({shift.start} - {shift.end})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {shiftForm.shiftId && (
+                <div className="bg-gray-50 p-3 rounded border">
+                  {(() => {
+                    const selectedShift = shifts.find(s => s.id === shiftForm.shiftId);
+                    if (!selectedShift) return null;
+                    return (
+                      <div className="text-sm space-y-1">
+                        <p><span className="font-medium">Work Hours:</span> {selectedShift.workHours}h</p>
+                        <p><span className="font-medium">Break:</span> {selectedShift.breakMinutes} min ({selectedShift.breakType || 'SPLIT'})</p>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded border">
+                <div className="flex items-center gap-2">
+                  {shiftForm.locked ? <Lock className="w-4 h-4 text-red-500" /> : <Unlock className="w-4 h-4 text-green-500" />}
+                  <span className="text-sm font-medium">Lock Shift Assignment</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLockToggle}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${shiftForm.locked ? 'bg-red-500' : 'bg-gray-300'}`}
+                >
+                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${shiftForm.locked ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
+
+              {shiftForm.locked && (
+                <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
+                  When locked, the partner cannot change their shift. Only admin can modify.
+                </p>
+              )}
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowShiftModal(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="px-4 py-2 bg-black text-white rounded hover:bg-gray-800 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
 
       <button
         onClick={() => navigate("/delivery-partners")}
@@ -552,19 +706,35 @@ const DeliveryPartnerDetails = () => {
           {}
           <div className="bg-white p-6 rounded-xl shadow border border-gray-100 group relative">
             <div className="flex justify-between items-center border-b pb-2 mb-4">
-              <h3 className="font-bold text-lg">Work Preferences</h3>
+              <h3 className="font-bold text-lg">Shift Details</h3>
               <button
-                onClick={handleEditTimeClick}
-                className="text-gray-400 hover:text-black p-1 rounded-full hover:bg-gray-100 transition"
-                title="Edit Shift Timings"
+                onClick={handleEditShiftClick}
+                className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-50 transition text-xs px-3 py-1 border border-blue-200"
+                title="Manage Shift"
               >
-                <Edit2 className="w-4 h-4" />
+                {workAndAttendance.shiftLocked ? 'Change Shift' : 'Assign Shift'}
               </button>
             </div>
 
             <div className="space-y-3 text-sm">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                <div className="flex items-center gap-2">
+                  {workAndAttendance.shiftLocked ? (
+                    <Lock className="w-4 h-4 text-red-500" />
+                  ) : (
+                    <Unlock className="w-4 h-4 text-green-500" />
+                  )}
+                  <div>
+                    <label className="text-gray-500 block text-xs uppercase">Shift Status</label>
+                    <p className="font-medium">{workAndAttendance.shiftLocked ? 'Locked' : 'Unlocked'}</p>
+                  </div>
+                </div>
+                <span className={`px-2 py-1 rounded text-xs ${workAndAttendance.shiftLocked ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                  {workAndAttendance.shiftLocked ? 'Cannot change' : 'Can change'}
+                </span>
+              </div>
               <div>
-                <label className="text-gray-500 block text-xs uppercase">Work Type UID</label>
+                <label className="text-gray-500 block text-xs uppercase">Work Type</label>
                 <p className="font-medium">{workAndAttendance.workType}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -578,14 +748,14 @@ const DeliveryPartnerDetails = () => {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 pt-2 border-t mt-2">
-                <div>
+                {/* <div>
                   <label className="text-gray-500 block text-xs uppercase">Break Start</label>
                   <p className="font-medium text-gray-700">{workAndAttendance.breakStartTime}</p>
                 </div>
                 <div>
                   <label className="text-gray-500 block text-xs uppercase">Break End</label>
                   <p className="font-medium text-gray-700">{workAndAttendance.breakEndTime}</p>
-                </div>
+                </div> */}
               </div>
             </div>
           </div>
