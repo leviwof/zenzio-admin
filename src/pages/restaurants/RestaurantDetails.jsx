@@ -6,9 +6,21 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, AlertCircle, Building2, FileText, Image as ImageIcon, Download, ShoppingBag, IndianRupee, Calendar, Tag, X, CheckCircle, Edit } from 'lucide-react';
-import { getRestaurantById, toggleRestaurantActive, getRestaurantAdminStats, updateRestaurantProfileAdmin, updateRestaurantAddressAdmin, uploadRestaurantLogoAdmin, updateRestaurantDocumentsAdmin, uploadRestaurantDocumentFileAdmin, deleteRestaurantDocumentAdmin, deleteRestaurantDocumentFileAdmin } from '../../services/api';
+import { getRestaurantById, toggleRestaurantActive, toggleRestaurantOff, getRestaurantAdminStats, updateRestaurantProfileAdmin, updateRestaurantAddressAdmin, uploadRestaurantLogoAdmin, updateRestaurantDocumentsAdmin, uploadRestaurantDocumentFileAdmin, deleteRestaurantDocumentAdmin, deleteRestaurantDocumentFileAdmin } from '../../services/api';
 import { getRestaurantImageUrl, getRestaurantLogoUrl } from '../../utils/imageUtils'; 
 import { saveAs } from 'file-saver';
+import toast from 'react-hot-toast';
+
+const getStatusDisplay = (restaurant) => {
+  if (!restaurant) return { label: 'Unknown', className: 'bg-gray-100 text-gray-800' };
+  
+  const { isOpen } = restaurant;
+  
+  if (isOpen === false) {
+    return { label: 'Off', className: 'bg-gray-100 text-gray-800' };
+  }
+  return { label: 'On', className: 'bg-green-100 text-green-800' };
+};
 
 const RestaurantDetails = () => {
   const { uid } = useParams();
@@ -34,7 +46,6 @@ const RestaurantDetails = () => {
   const [isEditAddressOpen, setIsEditAddressOpen] = useState(false);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isUpdatingAddress, setIsUpdatingAddress] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
 
   // Form states
   const [profileFormData, setProfileFormData] = useState({});
@@ -97,13 +108,7 @@ const RestaurantDetails = () => {
 
       console.log('✅ Restaurant loaded:', restaurantData);
       setRestaurant(restaurantData);
-
-      
       fetchStats();
-
-      
-      
-
     } catch (err) {
       console.error('❌ Error:', err);
       setError(err.response?.data?.message || err.message || 'Failed to load');
@@ -128,11 +133,31 @@ const RestaurantDetails = () => {
 
     try {
       await toggleRestaurantActive(restaurant.uid);
-      alert(`✅ Restaurant ${restaurant.isActive ? 'blocked' : 'unblocked'} successfully!`);
+      toast.success(restaurant.isActive ? 'Restaurant blocked successfully' : 'Restaurant unblocked successfully');
       fetchRestaurantDetails();
     } catch (err) {
-      console.error('❌ Toggle error:', err);
-      alert(`❌ Failed: ${err.message}`);
+      console.error('Error:', err);
+      toast.error(err.response?.data?.message || 'Failed to update restaurant');
+    }
+  };
+
+  const handleUpdateAddress = async (e) => {
+    e.preventDefault();
+    if (!addressFormData.address || !addressFormData.city || !addressFormData.state) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setIsUpdatingAddress(true);
+      await updateRestaurantAddressAdmin(restaurant.uid, addressFormData);
+      toast.success('Address updated successfully');
+      await toggleRestaurantActive(restaurant.uid);
+      toast.success(restaurant.isActive ? 'Restaurant blocked successfully' : 'Restaurant unblocked successfully');
+      fetchRestaurantDetails();
+    } catch (err) {
+      console.error('Error:', err);
+      toast.error(err.response?.data?.message || 'Failed to update address');
     }
   };
 
@@ -158,19 +183,18 @@ const RestaurantDetails = () => {
   const submitProfileUpdate = async (e) => {
     e.preventDefault();
     if (!profileFormData.restaurant_name || !profileFormData.contact_number) {
-      alert('Please fill in required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
 
     try {
       setIsUpdatingProfile(true);
       await updateRestaurantProfileAdmin(uid, profileFormData);
-      setSuccessMessage('✅ Profile updated successfully!');
+      toast.success('Profile updated successfully');
       setIsEditProfileOpen(false);
       fetchRestaurantDetails();
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
-      alert('❌ Failed to update profile: ' + (err.response?.data?.message || err.message));
+      toast.error(err.response?.data?.message || 'Failed to update profile');
     } finally {
       setIsUpdatingProfile(false);
     }
@@ -200,7 +224,7 @@ const RestaurantDetails = () => {
   const submitAddressUpdate = async (e) => {
     e.preventDefault();
     if (!addressFormData.address || !addressFormData.city || !addressFormData.pincode) {
-      alert('Please fill in required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
 
@@ -212,12 +236,11 @@ const RestaurantDetails = () => {
         lng: Number(addressFormData.lng),
       }
       await updateRestaurantAddressAdmin(uid, requestData);
-      setSuccessMessage('✅ Address updated successfully!');
+      toast.success('Address updated successfully');
       setIsEditAddressOpen(false);
       fetchRestaurantDetails();
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
-      alert('❌ Failed to update address: ' + (err.response?.data?.message || err.message));
+      toast.error(err.response?.data?.message || 'Failed to update address');
     } finally {
       setIsUpdatingAddress(false);
     }
@@ -230,13 +253,13 @@ const RestaurantDetails = () => {
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      alert('❌ Please select a valid image file');
+      toast.error('Please select a valid image file');
       return;
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      alert('❌ Image size must be less than 5MB');
+      toast.error('Image size must be less than 5MB');
       return;
     }
 
@@ -244,11 +267,10 @@ const RestaurantDetails = () => {
       setIsUpdatingProfile(true);
       
       await uploadRestaurantLogoAdmin(uid, file);
-      setSuccessMessage('✅ Logo updated successfully!');
+      toast.success('Logo updated successfully');
       fetchRestaurantDetails();
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
-      alert('❌ Failed to upload logo: ' + (err.response?.data?.message || err.message));
+      toast.error(err.response?.data?.message || 'Failed to upload logo');
     } finally {
       setIsUpdatingProfile(false);
       // Reset input
@@ -277,12 +299,11 @@ const RestaurantDetails = () => {
     try {
       setIsUpdatingDocs(true);
       await updateRestaurantDocumentsAdmin(uid, docsFormData);
-      setSuccessMessage('✅ Document numbers updated successfully!');
+      toast.success('Document details updated successfully');
       setIsEditDocsOpen(false);
       fetchRestaurantDetails();
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
-      alert('❌ Failed to update documents: ' + (err.response?.data?.message || err.message));
+      toast.error(err.response?.data?.message || 'Failed to update documents');
     } finally {
       setIsUpdatingDocs(false);
     }
@@ -293,13 +314,11 @@ const RestaurantDetails = () => {
     if (!files || files.length === 0) return;
     try {
       await uploadRestaurantDocumentFileAdmin(uid, docType, files);
-      setSuccessMessage(`✅ ${docType.toUpperCase()} file uploaded successfully!`);
+      toast.success(`${docType.toUpperCase()} file uploaded successfully`);
       fetchRestaurantDetails();
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
-      alert(`❌ Failed to upload ${docType} file: ` + (err.response?.data?.message || err.message));
-    } finally {
-      if (event.target) event.target.value = '';
+      console.error('File upload error:', err);
+      toast.error(err.response?.data?.message || `Failed to upload ${docType} file`);
     }
   };
 
@@ -308,11 +327,10 @@ const RestaurantDetails = () => {
     if (!window.confirm(`Remove all ${label} documents including the license number? This cannot be undone.`)) return;
     try {
       await deleteRestaurantDocumentAdmin(uid, docType);
-      setSuccessMessage(`✅ ${label} removed successfully!`);
+      toast.success(`${label} removed successfully`);
       fetchRestaurantDetails();
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
-      alert(`❌ Failed to remove ${label}: ` + (err.response?.data?.message || err.message));
+      toast.error(err.response?.data?.message || `Failed to remove ${label}`);
     }
   };
 
@@ -321,11 +339,10 @@ const RestaurantDetails = () => {
     if (!window.confirm('Remove this file? This cannot be undone.')) return;
     try {
       await deleteRestaurantDocumentFileAdmin(uid, docType, filename);
-      setSuccessMessage('✅ File removed successfully!');
+      toast.success('File removed successfully');
       fetchRestaurantDetails();
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
-      alert('❌ Failed to remove file: ' + (err.response?.data?.message || err.message));
+      toast.error(err.response?.data?.message || 'Failed to remove file');
     }
   };
 
@@ -516,9 +533,8 @@ const RestaurantDetails = () => {
           </div>
 
           <div>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${restaurant.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-              }`}>
-              {restaurant.isActive ? 'Active' : 'Inactive'}
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusDisplay(restaurant).className}`}>
+              {getStatusDisplay(restaurant).label}
             </span>
           </div>
         </div>
@@ -809,8 +825,8 @@ const RestaurantDetails = () => {
             <div className="space-y-3">
               <div>
                 <label className="text-sm font-medium text-gray-500">Current Status</label>
-                <p className={`mt-1 font-semibold ${restaurant.isActive ? 'text-green-600' : 'text-gray-600'}`}>
-                  {restaurant.isActive ? 'Active' : 'Inactive'}
+                <p className={`mt-1 font-semibold ${getStatusDisplay(restaurant).className.includes('green') ? 'text-green-600' : getStatusDisplay(restaurant).className.includes('red') ? 'text-red-600' : 'text-gray-600'}`}>
+                  {getStatusDisplay(restaurant).label}
                 </p>
               </div>
             </div>

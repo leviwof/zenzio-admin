@@ -5,6 +5,7 @@ import {
   Navigate,
 } from "react-router-dom";
 import Layout from "./components/layout/Layout";
+import { Toaster } from "react-hot-toast";
 
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
@@ -59,6 +60,7 @@ function App() {
 
   return (
     <Router>
+      <Toaster position="top-right" />
       <Routes>
         {}
         <Route path="/login" element={<Login />} />
