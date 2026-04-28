@@ -572,6 +572,15 @@ const OrderDetails = () => {
                   </p>
                 </div>
               </div>
+              {order.distance_km !== null && order.distance_km !== undefined && (
+                <div className="flex items-start space-x-2">
+                  <Navigation size={16} className="text-blue-500 mt-1" />
+                  <div>
+                    <p className="text-sm text-gray-500">Total Distance Traveled</p>
+                    <p className="font-bold text-lg text-blue-600">{Number(order.distance_km).toFixed(2)} km</p>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-gray-500 text-sm">No delivery partner assigned yet</p>
