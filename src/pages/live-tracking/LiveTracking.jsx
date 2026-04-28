@@ -695,10 +695,21 @@ const LiveTracking = () => {
                                                                             <p className="mt-1 text-sm font-semibold text-slate-900">
                                                                                 {formatDateTime(order.orderAcceptedAt)}
                                                                             </p>
-                                                                        </div>
                                                                     </div>
+                                                                </div>
 
-                                                                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                                {order.distance_km !== null && order.distance_km !== undefined && (
+                                                                    <div className="rounded-2xl bg-blue-50 p-3">
+                                                                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-400">
+                                                                            Total Distance Traveled
+                                                                        </p>
+                                                                        <p className="mt-1 text-lg font-bold text-blue-600">
+                                                                            {Number(order.distance_km).toFixed(2)} km
+                                                                        </p>
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                                                                         <div className="rounded-2xl bg-slate-50 p-3">
                                                                             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                                                                                 Status
