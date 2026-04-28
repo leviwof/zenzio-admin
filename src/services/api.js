@@ -249,7 +249,7 @@ export const deleteMenu = (menuUid) =>
 
 export const bulkUpdateMenuStatus = (menuUids, newStatus) =>
   api.patch('/restaurant-menu/bulk-status', {
-    menu_uids: menuUids,
+    ids: menuUids,
     status: newStatus ? 1 : 0,
     isActive: newStatus ? 1 : 0
   });
