@@ -142,11 +142,9 @@ const RestaurantsList = () => {
     let filtered = [...restaurants];
 
     if (activeTab === "active") {
-      filtered = filtered.filter(r => r.isOpen !== false);
-    } else if (activeTab === "inactive") {
-      filtered = filtered.filter(r => r.isOpen === false);
+      filtered = filtered.filter(r => r.isOpen !== false && r.isManuallyOff !== true && r.isActive !== false);
     } else if (activeTab === "off") {
-      filtered = filtered.filter(r => r.isOpen === false);
+      filtered = filtered.filter(r => r.isOpen === false || r.isManuallyOff === true || r.isActive === false);
     }
 
     if (searchTerm.trim()) {
@@ -232,10 +230,10 @@ const RestaurantsList = () => {
   };
 
   const getStatusBadge = (restaurant) => {
-    const { isOpen, isActive } = restaurant;
+    const { isOpen, isActive, isManuallyOff } = restaurant;
     
-    // If blocked by admin (isActive = false), show Off with red tint
-    if (isActive === false) {
+    // If blocked, not active, or closed → Off
+    if (isManuallyOff === true || isActive === false || isOpen === false) {
       return (
         <span className="px-3 py-1 rounded-md text-xs font-medium bg-red-100 text-red-700">
           Off
@@ -243,13 +241,6 @@ const RestaurantsList = () => {
       );
     }
     
-    if (isOpen === false) {
-      return (
-        <span className="px-3 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-700">
-          Off
-        </span>
-      );
-    }
     return (
       <span className="px-3 py-1 rounded-md text-xs font-medium bg-green-100 text-green-700">
         On
@@ -374,7 +365,7 @@ const RestaurantsList = () => {
                         Status
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Block / Unblock
+                        On/Off
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Delete
@@ -461,7 +452,7 @@ const RestaurantsList = () => {
                           <button
                             onClick={() => handleToggleActive(restaurant.uid)}
                             disabled={toggleLoading[restaurant.uid]}
-                            title={toggleLoading[restaurant.uid] ? 'Updating...' : restaurant.isActive === false ? 'Click to unblock restaurant' : 'Click to block restaurant'}
+                            title={toggleLoading[restaurant.uid] ? 'Updating...' : restaurant.isActive === false ? 'Click to on restaurant' : 'Click to off restaurant'}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
                               toggleLoading[restaurant.uid] ? 'opacity-70' : ''
                             } ${restaurant.isActive === false ? 'bg-red-500' : 'bg-green-500'}`}
