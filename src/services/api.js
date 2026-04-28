@@ -250,12 +250,11 @@ export const deleteMenu = (menuUid) =>
 export const bulkUpdateMenuStatus = (menuUids, newStatus) =>
   api.patch('/restaurant-menu/bulk-status', {
     ids: menuUids,
-    status: newStatus ? 1 : 0,
-    isActive: newStatus ? 1 : 0
+    isActive: newStatus
   });
 
 export const bulkDeleteMenu = (menuUids) =>
-  api.delete('/restaurant-menu/bulk', { data: { menu_uids: menuUids } });
+  api.delete('/restaurant-menu/bulk-soft', { data: { ids: menuUids } });
 
 
 
