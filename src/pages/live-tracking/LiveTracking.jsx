@@ -103,17 +103,6 @@ const DeliveryLocationMarker = ({ order, isFocused }) => {
         order.addressLng
     );
 
-    console.log('Delivery Location Data:', {
-        deliveredLocationLat: order.deliveredLocationLat,
-        deliveredLocationLng: order.deliveredLocationLng,
-        deliveryLat: order.deliveryLat,
-        deliveryLng: order.deliveryLng,
-        deliveryLocation: order.deliveryLocation,
-        addressLat: order.addressLat,
-        addressLng: order.addressLng,
-        orderId: order.orderId
-    });
-
     if (lat === null || lng === null || (lat === 0 && lng === 0)) {
         return null;
     }
@@ -235,7 +224,7 @@ const getDeliveredLocationText = (order) => {
     return coordinates || 'Location not available';
 };
 
-const SummaryCard = ({ icon: Icon, label, value, hint, tone }) => {
+const SummaryCard = ({ icon, label, value, hint, tone }) => {
     const toneClasses = {
         red: 'border-red-100 bg-red-50 text-red-600',
         blue: 'border-blue-100 bg-blue-50 text-blue-600',
@@ -247,7 +236,7 @@ const SummaryCard = ({ icon: Icon, label, value, hint, tone }) => {
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start gap-4">
                 <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border ${toneClasses[tone]}`}>
-                    <Icon size={20} />
+                    {React.createElement(icon, { size: 20 })}
                 </div>
                 <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</p>
@@ -276,6 +265,7 @@ const LiveTracking = () => {
 
         try {
             const response = await getLivePartnerLocations();
+
             const docs = (response.data?.data || []).map((partner) => ({
                 ...partner,
                 lat: normalizeCoordinate(partner.lat) ?? 0,
@@ -680,32 +670,27 @@ const LiveTracking = () => {
                                                                     </div>
 
                                                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                                                        <div className="rounded-2xl bg-slate-50 p-3">
-                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                                Ordered At
-                                                                            </p>
-                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                                                                                {formatDateTime(order.createdAt)}
-                                                                            </p>
-                                                                        </div>
-                                                                        <div className="rounded-2xl bg-slate-50 p-3">
-                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                                Accepted At
-                                                                            </p>
-                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                                                                                {formatDateTime(order.orderAcceptedAt)}
-                                                                            </p>
+                                                                        {/* Ordered At and Accepted At removed as requested */}
                                                                     </div>
-                                                                </div>
 
-                                                                {order.distance_km !== null && order.distance_km !== undefined && (
+                                                                {(order.totalDistance ?? order.distance_km) !== null && (order.totalDistance ?? order.distance_km) !== undefined ? (
                                                                     <div className="rounded-2xl bg-blue-50 p-3">
                                                                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-400">
                                                                             Total Distance Traveled
                                                                         </p>
                                                                         <p className="mt-1 text-lg font-bold text-blue-600">
-                                                                            {Number(order.distance_km).toFixed(2)} km
+                                                                            {Number(order.totalDistance ?? order.distance_km).toFixed(2)} km
                                                                         </p>
+                                                                        <p className="mt-1 text-xs text-blue-500">
+                                                                            Partner - Restaurant - Customer
+                                                                        </p>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="rounded-2xl bg-gray-50 p-3">
+                                                                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">
+                                                                            Total Distance
+                                                                        </p>
+                                                                        <p className="mt-1 text-lg font-bold text-gray-400">-</p>
                                                                     </div>
                                                                 )}
 
