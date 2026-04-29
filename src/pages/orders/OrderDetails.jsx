@@ -2,10 +2,11 @@
 
 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Mail, Phone, MapPin, CheckCircle, Circle, Printer, AlertTriangle, X } from 'lucide-react';
+import { ChevronLeft, Mail, Phone, MapPin, CheckCircle, Circle, Printer, AlertTriangle, X, Navigation } from 'lucide-react';
 import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder } from '../../services/api';
+import DeliveryMap from '../../components/DeliveryMap';
 
 const OrderDetails = () => {
   const { orderId } = useParams();
@@ -41,27 +42,15 @@ const OrderDetails = () => {
     { value: 'admin_cancelled', label: 'Admin Cancelled', color: 'bg-red-100 text-red-700' },
   ];
 
-  useEffect(() => {
-    if (orderId) {
-      fetchOrderDetails();
-    } else {
-      setError('No order ID provided');
-      setLoading(false);
-    }
-  }, [orderId]);
-
-  const fetchOrderDetails = async () => {
+  const fetchOrderDetails = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('🔍 Fetching order details for orderId:', orderId);
 
       const response = await getOrderDetails(orderId);
-      console.log('✅ Order details response:', response);
 
       if (response?.data) {
         setOrder(response.data);
-        console.log('✅ Order data set successfully:', response.data);
       } else {
         console.error('❌ No data in response:', response);
         setError('Order data not found in response');
@@ -74,19 +63,16 @@ const OrderDetails = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [orderId]);
 
-  const getStatusColor = (status) => {
-    const colors = {
-      DELIVERED: 'text-green-600',
-      OUT_FOR_DELIVERY: 'text-red-600',
-      PREPARING: 'text-orange-600',
-      CONFIRMED: 'text-blue-600',
-      PENDING: 'text-yellow-600',
-      CANCELLED: 'text-red-600'
-    };
-    return colors[status] || 'text-gray-600';
-  };
+  useEffect(() => {
+    if (orderId) {
+      fetchOrderDetails();
+    } else {
+      setError('No order ID provided');
+      setLoading(false);
+    }
+  }, [orderId, fetchOrderDetails]);
 
   const getDeliveryStatusBadge = (status) => {
     const statusConfig = DELIVERY_STATUSES.find(s => s.value === status);
@@ -337,7 +323,7 @@ const OrderDetails = () => {
       <div className="bg-white rounded-lg shadow mb-6 p-6">
         <div className="flex items-center justify-between">
           <div>
-            {/* <h1 className={`text-3xl font-bold ${getStatusColor(order.status)}`}>
+            {/* <h1 className="text-3xl font-bold text-gray-900">
               {order.status.replace('_', ' ')}
             </h1> */}
             <p className="text-sm text-gray-500 mt-1">
@@ -475,6 +461,19 @@ const OrderDetails = () => {
         </div>
 
         {}
+        {order.partner && order.restaurant && order.customer && (
+          <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <h3 className="font-bold text-lg mb-4 text-gray-800">Delivery Route Map</h3>
+            <DeliveryMap
+              partner={order.partner}
+              restaurant={order.restaurant}
+              customer={order.customer}
+              totalDistance={order.totalDistance}
+            />
+          </div>
+        )}
+
+        {}
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="font-bold text-lg mb-4 text-gray-800">Items Ordered</h3>
           <div className="space-y-3 text-sm mb-4">
@@ -521,6 +520,28 @@ const OrderDetails = () => {
                 <span>Total:</span>
                 <span>₹{order.priceSummary.total}</span>
               </div>
+            </div>
+          )}
+
+          {/* ===== Total Distance Traveled ===== */}
+          {order.totalDistance !== null && order.totalDistance !== undefined ? (
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">
+                Total Distance Traveled
+              </p>
+              <p className="mt-1 text-lg font-bold text-blue-600">
+                {Number(order.totalDistance).toFixed(2)} km
+              </p>
+              <p className="mt-1 text-xs text-blue-500">
+                Partner - Restaurant - Customer
+              </p>
+            </div>
+          ) : (
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
+                Total Distance
+              </p>
+              <p className="mt-1 text-lg font-bold text-gray-400">-</p>
             </div>
           )}
         </div>
@@ -572,12 +593,22 @@ const OrderDetails = () => {
                   </p>
                 </div>
               </div>
-              {order.distance_km !== null && order.distance_km !== undefined && (
+              {/* ===== Total Distance Display ===== */}
+              {order.totalDistance !== null && order.totalDistance !== undefined ? (
                 <div className="flex items-start space-x-2">
                   <Navigation size={16} className="text-blue-500 mt-1" />
                   <div>
                     <p className="text-sm text-gray-500">Total Distance Traveled</p>
-                    <p className="font-bold text-lg text-blue-600">{Number(order.distance_km).toFixed(2)} km</p>
+                    <p className="font-bold text-lg text-blue-600">{Number(order.totalDistance).toFixed(2)} km</p>
+                    <p className="text-xs text-gray-400">Partner - Restaurant - Customer</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start space-x-2">
+                  <Navigation size={16} className="text-gray-400 mt-1" />
+                  <div>
+                    <p className="text-sm text-gray-400">Total Distance</p>
+                    <p className="font-bold text-lg text-gray-400">-</p>
                   </div>
                 </div>
               )}
