@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Eye, Edit, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
+import { Search, Eye, Edit, Trash2, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { getAllMenus, getMenusByRestaurant, toggleMenuStatus, bulkUpdateMenuStatus, getAllRestaurants } from '../../services/api';
+import { getAllMenus, getMenusByRestaurant, toggleMenuStatus, bulkUpdateMenuStatus, deleteMenu, bulkDeleteMenu, getAllRestaurants } from '../../services/api';
 import { getImageUrl } from '../../utils/imageUtils';
 
 const MenuManagement = () => {
@@ -26,6 +26,7 @@ const MenuManagement = () => {
 
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ show: false, id: null, name: '' });
 
   useEffect(() => {
     fetchRestaurantsList();
@@ -158,11 +159,14 @@ const MenuManagement = () => {
   };
 
   const handleSelectOne = (menuUid) => {
-    setSelectedIds(prev =>
-      prev.includes(menuUid)
+    console.log('Select One clicked:', menuUid);
+    setSelectedIds(prev => {
+      const newIds = prev.includes(menuUid)
         ? prev.filter(id => id !== menuUid)
-        : [...prev, menuUid]
-    );
+        : [...prev, menuUid];
+      console.log('Selected IDs after select one:', newIds);
+      return newIds;
+    });
   };
 
   const handleBulkActivate = async () => {
@@ -195,6 +199,36 @@ const MenuManagement = () => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      setBulkLoading(true);
+      await bulkDeleteMenu(selectedIds);
+      toast.success(`${selectedIds.length} menus deleted`);
+      setMenus(prev => prev.filter(m => !selectedIds.includes(m.menu_uid)));
+      setSelectedIds([]);
+    } catch (error) {
+      toast.error('Failed to delete menus');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleDeleteClick = (menuUid, menuName) => {
+    setDeleteModal({ show: true, id: menuUid, name: menuName });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteMenu(deleteModal.id);
+      toast.success('Menu deleted');
+      setMenus(prev => prev.filter(m => m.menu_uid !== deleteModal.id));
+      setDeleteModal({ show: false, id: null, name: '' });
+    } catch (error) {
+      toast.error('Failed to delete menu');
+    }
+  };
+
   const getFirstImage = (images) => {
     if (!images) return null;
     if (Array.isArray(images) && images.length > 0) {
@@ -216,6 +250,19 @@ const MenuManagement = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {deleteModal.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 max-w-md">
+            <h3 className="text-lg font-semibold mb-2">Delete Menu</h3>
+            <p className="text-gray-600 mb-4">Are you sure you want to delete "{deleteModal.name}"?</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeleteModal({ show: false, id: null, name: '' })} className="px-4 py-2 border rounded">Cancel</button>
+              <button onClick={confirmDelete} className="px-4 py-2 bg-red-500 text-white rounded">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
@@ -329,10 +376,14 @@ const MenuManagement = () => {
                  Activate
                </button>
                <button onClick={handleBulkDeactivate} disabled={bulkLoading} className="px-3 py-1 bg-orange-500 text-white rounded text-sm hover:bg-orange-600 disabled:opacity-50 flex items-center gap-1">
-                 {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
-                 Deactivate
-               </button>
-             </div>
+                  {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Deactivate
+                </button>
+                <button onClick={handleBulkDelete} disabled={bulkLoading} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50 flex items-center gap-1">
+                  {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Delete
+                </button>
+              </div>
           </div>
         )}
 
@@ -404,6 +455,7 @@ const MenuManagement = () => {
                          <td className="px-4 py-3">
                             <div className="flex gap-2">
                               <button onClick={() => navigate(`/menu/edit/${menu.menu_uid}`)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit"><Edit size={16} /></button>
+                              <button onClick={() => handleDeleteClick(menu.menu_uid, menu.menu_name)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete"><Trash2 size={16} /></button>
                             </div>
                           </td>
                         </tr>
