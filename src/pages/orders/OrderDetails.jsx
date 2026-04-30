@@ -363,18 +363,22 @@ const OrderDetails = () => {
               </p>
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={() => { setShowReassignModal(true); fetchAvailablePartners(); }}
-                className="px-4 py-2 border border-blue-500 text-blue-500 rounded-md hover:bg-blue-50 transition-colors font-medium"
-              >
-                Reassign Partner
-              </button>
-              <button
-                onClick={() => setShowStatusModal(true)}
-                className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors font-medium"
-              >
-                Change Delivery Status
-              </button>
+              {order.status?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'DELIVERED' && order.status?.toUpperCase() !== 'CANCELLED' && (
+                <button
+                  onClick={() => { setShowReassignModal(true); fetchAvailablePartners(); }}
+                  className="px-4 py-2 border border-blue-500 text-blue-500 rounded-md hover:bg-blue-50 transition-colors font-medium"
+                >
+                  Reassign Partner
+                </button>
+              )}
+              {order.status?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'DELIVERED' && order.status?.toUpperCase() !== 'CANCELLED' && (
+                <button
+                  onClick={() => setShowStatusModal(true)}
+                  className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors font-medium"
+                >
+                  Change Delivery Status
+                </button>
+              )}
             </div>
           </div>
 
