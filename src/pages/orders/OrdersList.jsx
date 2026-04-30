@@ -391,7 +391,7 @@ const OrdersList = () => {
                           >
                             View Details
                           </button>
-                          {order.restaurantStatus?.toUpperCase() !== 'CANCELLED' && order.restaurantStatus?.toUpperCase() !== 'DELIVERED' && (
+                          {order.restaurantStatus?.toUpperCase() !== 'CANCELLED' && order.restaurantStatus?.toUpperCase() !== 'DELIVERED' && order.restaurantStatus?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'COMPLETED' && (
                             <button
                               onClick={() => handleOpenCancelModal(order)}
                               className="text-gray-500 hover:text-red-600 text-sm font-medium px-2 py-1 border border-gray-300 rounded hover:border-red-300 transition-colors"
