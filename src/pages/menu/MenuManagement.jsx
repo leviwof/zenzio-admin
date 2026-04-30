@@ -216,19 +216,6 @@ const MenuManagement = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {deleteModal.show && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 max-w-md">
-            <h3 className="text-lg font-semibold mb-2">Delete Menu</h3>
-            <p className="text-gray-600 mb-4">Are you sure you want to delete "{deleteModal.name}"?</p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteModal({ show: false, id: null, name: '' })} className="px-4 py-2 border rounded">Cancel</button>
-              <button onClick={confirmDelete} className="px-4 py-2 bg-red-500 text-white rounded">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
