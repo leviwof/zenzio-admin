@@ -159,11 +159,14 @@ const MenuManagement = () => {
   };
 
   const handleSelectOne = (menuUid) => {
-    setSelectedIds(prev =>
-      prev.includes(menuUid)
+    console.log('Select One clicked:', menuUid);
+    setSelectedIds(prev => {
+      const newIds = prev.includes(menuUid)
         ? prev.filter(id => id !== menuUid)
-        : [...prev, menuUid]
-    );
+        : [...prev, menuUid];
+      console.log('Selected IDs after select one:', newIds);
+      return newIds;
+    });
   };
 
   const handleBulkActivate = async () => {
@@ -367,20 +370,20 @@ const MenuManagement = () => {
         {selectedIds.length > 0 && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-center justify-between">
             <span className="text-blue-700">{selectedIds.length} item(s) selected</span>
-            <div className="flex gap-2">
-              <button onClick={handleBulkActivate} disabled={bulkLoading} className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50 flex items-center gap-1">
-                {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
-                Activate
-              </button>
-              <button onClick={handleBulkDeactivate} disabled={bulkLoading} className="px-3 py-1 bg-orange-500 text-white rounded text-sm hover:bg-orange-600 disabled:opacity-50 flex items-center gap-1">
-                {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
-                Deactivate
-              </button>
-              <button onClick={handleBulkDelete} disabled={bulkLoading} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50 flex items-center gap-1">
-                {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
-                Delete
-              </button>
-            </div>
+             <div className="flex gap-2">
+               <button onClick={handleBulkActivate} disabled={bulkLoading} className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50 flex items-center gap-1">
+                 {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                 Activate
+               </button>
+               <button onClick={handleBulkDeactivate} disabled={bulkLoading} className="px-3 py-1 bg-orange-500 text-white rounded text-sm hover:bg-orange-600 disabled:opacity-50 flex items-center gap-1">
+                  {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Deactivate
+                </button>
+                <button onClick={handleBulkDelete} disabled={bulkLoading} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50 flex items-center gap-1">
+                  {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Delete
+                </button>
+              </div>
           </div>
         )}
 
@@ -412,7 +415,6 @@ const MenuManagement = () => {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Delete</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -450,17 +452,14 @@ const MenuManagement = () => {
                             <div className={`w-11 h-6 rounded-full transition-colors peer-focus:ring-2 ${menu.isActive ? 'bg-green-500 peer-focus:ring-green-300' : 'bg-gray-300 peer-focus:ring-gray-300'} after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${menu.isActive ? 'peer-checked:after:translate-x-full after:border-white' : 'after:border-gray-300'} `}></div>
                           </label>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2">
-                            <button onClick={() => navigate(`/menu/view/${menu.menu_uid}`)} className="p-2 text-green-600 hover:bg-green-50 rounded" title="View"><Eye size={16} /></button>
-                            <button onClick={() => navigate(`/menu/edit/${menu.menu_uid}`)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit"><Edit size={16} /></button>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <button onClick={() => handleDeleteClick(menu.menu_uid, menu.menu_name)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete"><Trash2 size={16} /></button>
-                        </td>
-                      </tr>
-                    ))}
+                         <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              <button onClick={() => navigate(`/menu/edit/${menu.menu_uid}`)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit"><Edit size={16} /></button>
+                              <button onClick={() => handleDeleteClick(menu.menu_uid, menu.menu_name)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete"><Trash2 size={16} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
