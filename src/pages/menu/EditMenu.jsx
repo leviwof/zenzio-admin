@@ -117,7 +117,10 @@ const EditMenu = () => {
                     setRestaurantName(selectedRestaurant.name);
                 }
 
-                if (menuData.image || menuData.imageUrl) {
+                if (menuData.images && menuData.images.length > 0) {
+                    setExistingImage(menuData.images[0]);
+                    setImagePreview(menuData.images[0]);
+                } else if (menuData.image || menuData.imageUrl) {
                     setExistingImage(menuData.image || menuData.imageUrl);
                     setImagePreview(menuData.image || menuData.imageUrl);
                 }
@@ -193,7 +196,15 @@ const EditMenu = () => {
 
             const response = await editMenuByAdminWithImage(menuUid, submitData);
             console.log('✅ Menu update response:', response);
-            
+
+            // Update image preview with the new image from response
+            if (response?.data?.restaurant_menu?.images && response.data.restaurant_menu.images.length > 0) {
+                const newImageUrl = response.data.restaurant_menu.images[0];
+                setImagePreview(newImageUrl);
+                setExistingImage(newImageUrl);
+                setImageFile(null);
+            }
+
             setSuccessMessage('Menu item updated successfully!');
             
             // Scroll to top using ref
