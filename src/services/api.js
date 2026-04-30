@@ -265,7 +265,9 @@ export const createMenuByAdminWithImage = (formData) =>
     headers: { 'Content-Type': 'multipart/form-data' },
   });
 export const editMenuByAdminWithImage = (menuUid, formData) =>
-  api.patch(`/restaurant-menu/admin-edit/${menuUid}`, formData);
+  api.patch(`/restaurant-menu/admin-edit/${menuUid}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
 
 export const bulkUploadMenu = (formData) =>
   api.post('/restaurant-menu/admin-bulk-upload', formData, {
