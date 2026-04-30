@@ -379,10 +379,10 @@ const MenuManagement = () => {
                   {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
                   Deactivate
                 </button>
-                <button onClick={handleBulkDelete} disabled={bulkLoading} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50 flex items-center gap-1">
+                {/* <button onClick={handleBulkDelete} disabled={bulkLoading} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50 flex items-center gap-1">
                   {bulkLoading ? <Loader2 size={12} className="animate-spin" /> : null}
                   Delete
-                </button>
+                </button> */}
               </div>
           </div>
         )}
