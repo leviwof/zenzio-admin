@@ -79,6 +79,29 @@ const OrderDetails = () => {
     return statusConfig?.color || 'bg-gray-100 text-gray-700';
   };
 
+  // Calculate distance between two coordinates using Haversine formula
+  const calculateDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Calculate delivery charge based on distance
+  const calculateDeliveryCharge = (distanceKm) => {
+    if (!distanceKm || distanceKm <= 0) return { base: 0, extra: 0, total: 0, extraKm: 0 };
+    if (distanceKm <= 5) {
+      return { base: 25, extra: 0, total: 25, extraKm: 0 };
+    }
+    const extraKm = Math.ceil(distanceKm - 5);
+    const extra = extraKm * 5;
+    return { base: 25, extra, total: 25 + extra, extraKm };
+  };
+
   const formatDateTime = (date) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleString('en-IN', {
@@ -88,7 +111,7 @@ const OrderDetails = () => {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-      timeZone: 'Asia/Kolkata' 
+      timeZone: 'Asia/Kolkata'
     });
   };
 
@@ -506,10 +529,59 @@ const OrderDetails = () => {
                 <span>Tax:</span>
                 <span>₹{order.priceSummary.tax}</span>
               </div>
-              <div className="flex justify-between text-gray-600">
-                <span>Delivery Fee:</span>
-                <span>₹{order.priceSummary.deliveryFee}</span>
-              </div>
+
+              {/* Restaurant to Customer Distance & Delivery Charge Breakdown */}
+              {order.restaurant_lat && order.restaurant_lng && order.customer_lat && order.customer_lng ? (
+                <>
+                  {(() => {
+                    const restaurantToCustomerKm = calculateDistance(
+                      order.restaurant_lat,
+                      order.restaurant_lng,
+                      order.customer_lat,
+                      order.customer_lng
+                    );
+                    const chargeBreakdown = calculateDeliveryCharge(restaurantToCustomerKm);
+
+                    return (
+                      <>
+                        <div className="bg-green-50 p-3 rounded-md space-y-1.5">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-semibold text-green-700 uppercase">Restaurant to Customer</span>
+                            <span className="text-sm font-bold text-green-700">{restaurantToCustomerKm.toFixed(2)} km</span>
+                          </div>
+                          <div className="text-xs text-green-600 space-y-0.5">
+                            <div className="flex justify-between">
+                              <span>Base (first 5km):</span>
+                              <span>₹{chargeBreakdown.base}</span>
+                            </div>
+                            {chargeBreakdown.extraKm > 0 && (
+                              <div className="flex justify-between">
+                                <span>Extra ({chargeBreakdown.extraKm}km × ₹5/km):</span>
+                                <span>₹{chargeBreakdown.extra}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between font-semibold text-green-700 border-t border-green-200 pt-0.5">
+                              <span>Calculated Delivery Fee:</span>
+                              <span>₹{chargeBreakdown.total}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between text-gray-600">
+                          <span>Delivery Fee:</span>
+                          <span>₹{order.priceSummary.deliveryFee}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </>
+              ) : (
+                <div className="flex justify-between text-gray-600">
+                  <span>Delivery Fee:</span>
+                  <span>₹{order.priceSummary.deliveryFee}</span>
+                </div>
+              )}
+
               <div className="flex justify-between text-gray-600">
                 <span>Packaging Charge:</span>
                 <span>₹{order.priceSummary.packingCharge || 10}</span>
@@ -597,6 +669,25 @@ const OrderDetails = () => {
                   </p>
                 </div>
               </div>
+              {/* ===== Restaurant to Customer Distance (Delivery Charge Basis) ===== */}
+              {order.restaurant_lat && order.restaurant_lng && order.customer_lat && order.customer_lng ? (
+                <div className="flex items-start space-x-2 bg-green-50 p-3 rounded-lg">
+                  <Navigation size={16} className="text-green-600 mt-1" />
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-green-600">Restaurant → Customer</p>
+                    <p className="font-bold text-lg text-green-700">
+                      {calculateDistance(
+                        order.restaurant_lat,
+                        order.restaurant_lng,
+                        order.customer_lat,
+                        order.customer_lng
+                      ).toFixed(2)} km
+                    </p>
+                    <p className="text-xs text-green-600">Delivery charge calculated on this distance</p>
+                  </div>
+                </div>
+              ) : null}
+
               {/* ===== Total Distance Display ===== */}
               {order.totalDistance !== null && order.totalDistance !== undefined ? (
                 <div className="flex items-start space-x-2">
@@ -604,7 +695,7 @@ const OrderDetails = () => {
                   <div>
                     <p className="text-sm text-gray-500">Total Distance Traveled</p>
                     <p className="font-bold text-lg text-blue-600">{Number(order.totalDistance).toFixed(2)} km</p>
-                    <p className="text-xs text-gray-400">Partner - Restaurant - Customer</p>
+                    <p className="text-xs text-gray-400">Partner → Restaurant → Customer</p>
                   </div>
                 </div>
               ) : (
