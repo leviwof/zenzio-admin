@@ -531,45 +531,41 @@ const OrderDetails = () => {
               </div>
 
               {/* Restaurant to Customer Distance & Delivery Charge Breakdown */}
-              {order.restaurant_lat && order.restaurant_lng && order.customer_lat && order.customer_lng ? (
+              {order.restaurantToCustomerDistance !== null && order.restaurantToCustomerDistance !== undefined ? (
                 <>
                   {(() => {
-                    const restaurantToCustomerKm = calculateDistance(
-                      order.restaurant_lat,
-                      order.restaurant_lng,
-                      order.customer_lat,
-                      order.customer_lng
-                    );
+                    const restaurantToCustomerKm = order.restaurantToCustomerDistance;
                     const chargeBreakdown = calculateDeliveryCharge(restaurantToCustomerKm);
 
                     return (
                       <>
                         <div className="bg-green-50 p-3 rounded-md space-y-1.5">
                           <div className="flex justify-between items-center">
-                            <span className="text-xs font-semibold text-green-700 uppercase">Restaurant to Customer</span>
+                            <span className="text-xs font-semibold text-green-700 uppercase tracking-wider">Restaurant → Customer Distance</span>
                             <span className="text-sm font-bold text-green-700">{restaurantToCustomerKm.toFixed(2)} km</span>
                           </div>
-                          <div className="text-xs text-green-600 space-y-0.5">
+                          <div className="text-xs text-green-600 space-y-0.5 mt-2">
+                            <p className="text-xs text-green-600 mb-1.5 italic">Delivery charge calculation:</p>
                             <div className="flex justify-between">
                               <span>Base (first 5km):</span>
-                              <span>₹{chargeBreakdown.base}</span>
+                              <span className="font-medium">₹{chargeBreakdown.base}</span>
                             </div>
                             {chargeBreakdown.extraKm > 0 && (
                               <div className="flex justify-between">
                                 <span>Extra ({chargeBreakdown.extraKm}km × ₹5/km):</span>
-                                <span>₹{chargeBreakdown.extra}</span>
+                                <span className="font-medium">₹{chargeBreakdown.extra}</span>
                               </div>
                             )}
-                            <div className="flex justify-between font-semibold text-green-700 border-t border-green-200 pt-0.5">
-                              <span>Calculated Delivery Fee:</span>
+                            <div className="flex justify-between font-semibold text-green-700 border-t border-green-200 pt-1 mt-1">
+                              <span>Calculated Total:</span>
                               <span>₹{chargeBreakdown.total}</span>
                             </div>
                           </div>
                         </div>
 
                         <div className="flex justify-between text-gray-600">
-                          <span>Delivery Fee:</span>
-                          <span>₹{order.priceSummary.deliveryFee}</span>
+                          <span>Delivery Fee (Charged):</span>
+                          <span className="font-medium">₹{order.priceSummary.deliveryFee}</span>
                         </div>
                       </>
                     );
@@ -599,27 +595,47 @@ const OrderDetails = () => {
             </div>
           )}
 
-          {/* ===== Total Distance Traveled ===== */}
-          {order.totalDistance !== null && order.totalDistance !== undefined ? (
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">
-                Total Distance Traveled
-              </p>
-              <p className="mt-1 text-lg font-bold text-blue-600">
-                {Number(order.totalDistance).toFixed(2)} km
-              </p>
-              <p className="mt-1 text-xs text-blue-500">
-                Partner - Restaurant - Customer
-              </p>
-            </div>
-          ) : (
-            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">
-                Total Distance
-              </p>
-              <p className="mt-1 text-lg font-bold text-gray-400">-</p>
-            </div>
-          )}
+          {/* ===== Distance Summary ===== */}
+          <div className="mt-4 space-y-2">
+            {/* Restaurant to Customer Distance (Primary - for delivery charge) */}
+            {order.restaurantToCustomerDistance !== null && order.restaurantToCustomerDistance !== undefined ? (
+              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                <p className="text-xs font-semibold uppercase tracking-wider text-green-600">
+                  🍽️ Restaurant → Customer
+                </p>
+                <p className="mt-1 text-xl font-bold text-green-700">
+                  {order.restaurantToCustomerDistance.toFixed(2)} km
+                </p>
+                <p className="mt-1 text-xs text-green-600">
+                  Delivery pricing basis
+                </p>
+              </div>
+            ) : null}
+
+            {/* Total Distance Traveled */}
+            {order.totalDistance !== null && order.totalDistance !== undefined ? (
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+                  🛵 Total Journey
+                </p>
+                <p className="mt-1 text-xl font-bold text-blue-700">
+                  {Number(order.totalDistance).toFixed(2)} km
+                </p>
+                <p className="mt-1 text-xs text-blue-600">
+                  Partner → Restaurant → Customer
+                </p>
+              </div>
+            ) : null}
+
+            {!order.restaurantToCustomerDistance && !order.totalDistance && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                  Distance Information
+                </p>
+                <p className="mt-1 text-lg font-bold text-gray-400">Not Available</p>
+              </div>
+            )}
+          </div>
         </div>
 
         {}
@@ -669,44 +685,51 @@ const OrderDetails = () => {
                   </p>
                 </div>
               </div>
-              {/* ===== Restaurant to Customer Distance (Delivery Charge Basis) ===== */}
-              {order.restaurant_lat && order.restaurant_lng && order.customer_lat && order.customer_lng ? (
-                <div className="flex items-start space-x-2 bg-green-50 p-3 rounded-lg">
-                  <Navigation size={16} className="text-green-600 mt-1" />
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-green-600">Restaurant → Customer</p>
-                    <p className="font-bold text-lg text-green-700">
-                      {calculateDistance(
-                        order.restaurant_lat,
-                        order.restaurant_lng,
-                        order.customer_lat,
-                        order.customer_lng
-                      ).toFixed(2)} km
-                    </p>
-                    <p className="text-xs text-green-600">Delivery charge calculated on this distance</p>
+              {/* ===== Distance Information ===== */}
+              <div className="space-y-3 border-t pt-3">
+                {/* Restaurant to Customer Distance (Delivery Charge Basis) */}
+                {order.restaurantToCustomerDistance !== null && order.restaurantToCustomerDistance !== undefined ? (
+                  <div className="flex items-start space-x-2 bg-green-50 p-3 rounded-lg border border-green-200">
+                    <Navigation size={18} className="text-green-600 mt-1 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-green-600">Restaurant → Customer</p>
+                      <p className="font-bold text-2xl text-green-700 my-1">
+                        {order.restaurantToCustomerDistance.toFixed(2)} km
+                      </p>
+                      <p className="text-xs text-green-600">
+                        💰 Delivery charge based on this distance
+                      </p>
+                      <div className="mt-2 pt-2 border-t border-green-200 text-xs text-green-600">
+                        <p>Calculation: ₹25 (first 5km) + ₹{Math.max(0, Math.ceil(order.restaurantToCustomerDistance - 5) * 5)} (extra) = ₹{calculateDeliveryCharge(order.restaurantToCustomerDistance).total}</p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {/* ===== Total Distance Display ===== */}
-              {order.totalDistance !== null && order.totalDistance !== undefined ? (
-                <div className="flex items-start space-x-2">
-                  <Navigation size={16} className="text-blue-500 mt-1" />
-                  <div>
-                    <p className="text-sm text-gray-500">Total Distance Traveled</p>
-                    <p className="font-bold text-lg text-blue-600">{Number(order.totalDistance).toFixed(2)} km</p>
-                    <p className="text-xs text-gray-400">Partner → Restaurant → Customer</p>
+                {/* Total Distance Display */}
+                {order.totalDistance !== null && order.totalDistance !== undefined ? (
+                  <div className="flex items-start space-x-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                    <Navigation size={18} className="text-blue-600 mt-1 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Total Journey Distance</p>
+                      <p className="font-bold text-2xl text-blue-700 my-1">
+                        {Number(order.totalDistance).toFixed(2)} km
+                      </p>
+                      <p className="text-xs text-blue-600">
+                        🛵 Partner → Restaurant → Customer (complete trip)
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="flex items-start space-x-2">
-                  <Navigation size={16} className="text-gray-400 mt-1" />
-                  <div>
-                    <p className="text-sm text-gray-400">Total Distance</p>
-                    <p className="font-bold text-lg text-gray-400">-</p>
+                ) : (
+                  <div className="flex items-start space-x-2 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                    <Navigation size={16} className="text-gray-400 mt-1" />
+                    <div>
+                      <p className="text-sm text-gray-400">Distance information not available</p>
+                      <p className="font-bold text-lg text-gray-400">-</p>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ) : (
             <p className="text-gray-500 text-sm">No delivery partner assigned yet</p>
