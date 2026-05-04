@@ -14,6 +14,9 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Check for session expired message
+  const sessionExpired = new URLSearchParams(window.location.search).get('session_expired') === 'true';
+
 const handleSubmit = async (e) => {
   e.preventDefault();
   setLoading(true);
@@ -53,6 +56,12 @@ const handleSubmit = async (e) => {
         <div className="mb-8 text-center">
           <img src={logo} alt="Admin" className="mx-auto h-24" />
         </div>
+
+        {sessionExpired && (
+          <div className="mb-4 p-3 text-yellow-600 bg-yellow-50 border border-yellow-200 rounded">
+            Your session has expired. Please log in again.
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 text-red-600 bg-red-50 border rounded">

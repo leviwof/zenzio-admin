@@ -51,6 +51,21 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       console.error('🚫 Unauthorized - Token invalid or expired');
+
+      // Clear all auth data
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('token');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('adminId');
+      localStorage.removeItem('adminEmail');
+      localStorage.removeItem('adminRole');
+
+      // Redirect to login with message
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login?session_expired=true';
+      }
     }
     return Promise.reject(error);
   }
