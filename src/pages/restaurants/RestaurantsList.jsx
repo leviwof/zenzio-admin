@@ -18,11 +18,77 @@ const RestaurantsList = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [toggleLoading, setToggleLoading] = useState({});
+  const [detailsLoading, setDetailsLoading] = useState({});
+  const [restaurantDetails, setRestaurantDetails] = useState({});
   const itemsPerPage = 10;
 
   useEffect(() => {
     fetchRestaurants();
   }, []);
+
+  // Load contact details for visible restaurants
+  useEffect(() => {
+    const loadDetailsForVisibleRestaurants = async () => {
+      const visibleRestaurants = currentRestaurants.filter(
+        r => !restaurantDetails[r.uid] && r.uid && !r.uid.startsWith('NO_UID')
+      );
+
+      if (visibleRestaurants.length === 0) return;
+
+      // Load details for visible restaurants only (max 10 per page)
+      for (const restaurant of visibleRestaurants) {
+        if (detailsLoading[restaurant.uid]) continue;
+
+        setDetailsLoading(prev => ({ ...prev, [restaurant.uid]: true }));
+
+        try {
+          const detailResponse = await getRestaurantById(restaurant.uid);
+          const restaurantDetail = detailResponse.data?.data?.restaurant ||
+            detailResponse.data?.restaurant ||
+            detailResponse.data?.data;
+
+          let email = '-';
+          let phone = '-';
+          let city = '-';
+
+          if (restaurantDetail?.profile?.contact_email) {
+            email = restaurantDetail.profile.contact_email;
+          } else if (restaurantDetail?.contact?.encryptedEmail) {
+            email = restaurantDetail.contact.encryptedEmail;
+          } else if (restaurantDetail?.contact?.email) {
+            email = restaurantDetail.contact.email;
+          }
+
+          if (restaurantDetail?.profile?.contact_number) {
+            phone = restaurantDetail.profile.contact_number;
+          } else if (restaurantDetail?.contact?.encryptedPhone) {
+            phone = restaurantDetail.contact.encryptedPhone;
+          } else if (restaurantDetail?.contact?.phone) {
+            phone = restaurantDetail.contact.phone;
+          }
+
+          if (restaurantDetail?.address?.city) {
+            city = restaurantDetail.address.city;
+          }
+
+          setRestaurantDetails(prev => ({
+            ...prev,
+            [restaurant.uid]: { email, phone, city, rating: restaurantDetail?.rating_avg || 0 }
+          }));
+        } catch (error) {
+          console.error(`Error loading details for ${restaurant.uid}:`, error);
+          setRestaurantDetails(prev => ({
+            ...prev,
+            [restaurant.uid]: { email: '-', phone: '-', city: '-', rating: 0 }
+          }));
+        } finally {
+          setDetailsLoading(prev => ({ ...prev, [restaurant.uid]: false }));
+        }
+      }
+    };
+
+    loadDetailsForVisibleRestaurants();
+  }, [currentPage, restaurants]);
 
   const fetchRestaurants = async () => {
     try {
@@ -38,97 +104,31 @@ const RestaurantsList = () => {
         basicData = response.data.data;
       }
 
-      console.log(`✅ Found ${basicData.length} restaurants`);
+      console.log(`✅ Found ${basicData.length} restaurants from basic API`);
 
-      const detailedRestaurants = await Promise.all(
-        basicData.map(async (basic) => {
-          try {
-            if (!basic.uid) {
-              console.warn('⚠️ Restaurant missing UID:', basic);
-              return {
-                id: basic.id,
-                uid: basic.uid || `NO_UID_${basic.id}`,
-                isActive: basic.isActive,
-                restaurant_name: '-',
-                city: '-',
-                email: '-',
-                phone: '-',
-              };
-            }
+      // 🚀 OPTIMIZED: Process restaurants from basic data directly
+      // The backend already includes profile relation with restaurant_name
+      const processedRestaurants = basicData.map((restaurant) => {
+        return {
+          id: restaurant.id,
+          uid: restaurant.uid || `NO_UID_${restaurant.id}`,
+          isActive: restaurant.isActive,
+          isManuallyOff: restaurant.isManuallyOff,
+          isOpen: restaurant.isOpen,
+          statusLabel: restaurant.statusLabel,
+          createdAt: restaurant.createdAt,
+          // Get restaurant name from profile if available
+          restaurant_name: restaurant.profile?.restaurant_name || restaurant.restaurant_name || '-',
+          // City is not in basic data, will show '-' (load on detail view instead)
+          city: '-',
+          email: '-',
+          phone: '-',
+          rating: 0,
+        };
+      });
 
-            const detailResponse = await getRestaurantById(basic.uid);
-            console.log('📦 Detail response for', basic.uid, ':', detailResponse);
-
-            const restaurantDetail = detailResponse.data?.data?.restaurant ||
-              detailResponse.data?.restaurant ||
-              detailResponse.data?.data;
-
-            console.log('🔍 Restaurant detail:', restaurantDetail);
-
-            // 🔥 FIXED: Multiple ways to extract contact info
-            let email = '-';
-            let phone = '-';
-
-            // Try different possible locations for email
-            if (restaurantDetail?.profile?.contact_email) {
-              email = restaurantDetail.profile.contact_email;
-            } else if (restaurantDetail?.contact?.encryptedEmail) {
-              email = restaurantDetail.contact.encryptedEmail;
-            } else if (restaurantDetail?.contact?.email) {
-              email = restaurantDetail.contact.email;
-            } else if (restaurantDetail?.profile?.email) {
-              email = restaurantDetail.profile.email;
-            } else if (basic.email) {
-              email = basic.email;
-            }
-
-            // Try different possible locations for phone
-            if (restaurantDetail?.profile?.contact_number) {
-              phone = restaurantDetail.profile.contact_number;
-            } else if (restaurantDetail?.contact?.encryptedPhone) {
-              phone = restaurantDetail.contact.encryptedPhone;
-            } else if (restaurantDetail?.contact?.phone) {
-              phone = restaurantDetail.contact.phone;
-            } else if (basic.phoneNumber) {
-              phone = basic.phoneNumber;
-            }
-
-            console.log('📧 Extracted - Email:', email, 'Phone:', phone);
-
-            return {
-              id: basic.id,
-              uid: basic.uid,
-              isActive: basic.isActive,
-              isManuallyOff: basic.isManuallyOff,
-              isOpen: basic.isOpen,
-              statusLabel: basic.statusLabel,
-              createdAt: basic.createdAt,
-              restaurant_name: restaurantDetail?.profile?.restaurant_name || '-',
-              city: restaurantDetail?.address?.city || '-',
-              email: email,
-              phone: phone,
-              rating: restaurantDetail?.rating_avg || 0,
-            };
-          } catch (error) {
-            console.error(`❌ Error fetching details for ${basic.uid}:`, error);
-            return {
-              id: basic.id,
-              uid: basic.uid,
-              isActive: basic.isActive,
-              isManuallyOff: basic.isManuallyOff,
-              isOpen: basic.isOpen,
-              statusLabel: basic.statusLabel,
-              restaurant_name: '-',
-              city: '-',
-              email: '-',
-              phone: '-',
-            };
-          }
-        })
-      );
-
-      console.log('✅ All restaurants loaded:', detailedRestaurants);
-      setRestaurants(detailedRestaurants);
+      console.log('✅ All restaurants processed:', processedRestaurants.length);
+      setRestaurants(processedRestaurants);
 
     } catch (error) {
       console.error("❌ Error:", error);
@@ -210,9 +210,9 @@ const RestaurantsList = () => {
       ["Restaurant Name", "Email", "Phone", "City", "Registration Date", "Status"],
       ...filteredRestaurants.map((r) => [
         r.restaurant_name || '-',
-        r.email || '-',
-        r.phone || '-',
-        r.city || '-',
+        restaurantDetails[r.uid]?.email || '-',
+        restaurantDetails[r.uid]?.phone || '-',
+        restaurantDetails[r.uid]?.city || '-',
         r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-',
         r.isActive ? 'Active' : 'Inactive',
       ]),
@@ -387,19 +387,24 @@ const RestaurantsList = () => {
 
                         {/* Contact Information */}
                         <td className="px-4 py-4">
-                          {/* 🔥 FIXED: Show email and phone properly */}
-                          <div className="text-sm text-gray-600">
-                            {restaurant.email && restaurant.email !== '-' ? restaurant.email : 'No email'}
-                          </div>
-                          <div className="text-sm text-gray-500 mt-0.5">
-                            {restaurant.phone && restaurant.phone !== '-' ? restaurant.phone : 'No phone'}
-                          </div>
+                          {detailsLoading[restaurant.uid] ? (
+                            <div className="text-sm text-gray-400">Loading...</div>
+                          ) : (
+                            <>
+                              <div className="text-sm text-gray-600">
+                                {restaurantDetails[restaurant.uid]?.email || 'No email'}
+                              </div>
+                              <div className="text-sm text-gray-500 mt-0.5">
+                                {restaurantDetails[restaurant.uid]?.phone || 'No phone'}
+                              </div>
+                            </>
+                          )}
                         </td>
 
                         {/* City */}
                         <td className="px-4 py-4">
                           <div className="text-sm text-gray-600">
-                            {restaurant.city}
+                            {detailsLoading[restaurant.uid] ? 'Loading...' : (restaurantDetails[restaurant.uid]?.city || '-')}
                           </div>
                         </td>
 
@@ -418,10 +423,10 @@ const RestaurantsList = () => {
 
                         {/* Rating */}
                         <td className="px-4 py-4">
-                          {restaurant.rating > 0 ? (
+                          {detailsLoading[restaurant.uid] ? (
+                            <span className="text-sm text-gray-400">Loading...</span>
+                          ) : restaurantDetails[restaurant.uid]?.rating > 0 ? (
                             <div className="flex items-center text-yellow-500">
-                              {/* Using a simple unicode star or import Star from lucide-react if available. 
-                                   Start icon is imported at top line 7. */}
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
                                 width="16"
@@ -435,7 +440,7 @@ const RestaurantsList = () => {
                               >
                                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                               </svg>
-                              <span className="ml-1 text-sm font-medium">{Number(restaurant.rating).toFixed(1)}</span>
+                              <span className="ml-1 text-sm font-medium">{Number(restaurantDetails[restaurant.uid]?.rating).toFixed(1)}</span>
                             </div>
                           ) : (
                             <span className="text-sm text-gray-400">No Rating</span>
