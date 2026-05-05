@@ -4,10 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "dev": "vite --mode development",
+    "dev:uat": "vite --mode uat",
+    "build": "vite build --mode production",
+    "build:dev": "vite build --mode development",
+    "build:uat": "vite build --mode uat",
+    "build:prod": "vite build --mode production",
+    "preview": "vite preview",
+    "preview:uat": "vite preview --mode uat",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.16",
