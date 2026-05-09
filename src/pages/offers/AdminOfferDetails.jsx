@@ -9,7 +9,7 @@ const AdminOfferDetails = () => {
   const [offer, setOffer] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '') || 'http://localhost:5000';
+  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '') || 'https://zenziobackenduat.azurewebsites.net';
 
   useEffect(() => {
     fetchOfferDetails();
@@ -96,7 +96,7 @@ const AdminOfferDetails = () => {
                   className="w-full h-full object-cover"
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = 'https://zenzio-s3-bucket.s3.ap-south-1.amazonaws.com/images/Screenshot+From+2026-01-03+21-10-52.png';
+                    e.target.src = '/logo.png';
                   }}
                 />
               </div>

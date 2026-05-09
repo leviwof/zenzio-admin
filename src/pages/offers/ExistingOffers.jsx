@@ -25,7 +25,7 @@ const Toast = ({ message, type, onClose }) => {
 };
 
 const PAGE_SIZE = 10;
-const IMAGE_PLACEHOLDER = 'https://zenzio-s3-bucket.s3.ap-south-1.amazonaws.com/images/Screenshot+From+2026-01-03+21-10-52.png';
+const IMAGE_PLACEHOLDER = null;
 
 const ExistingOffers = () => {
   const navigate = useNavigate();
@@ -37,7 +37,7 @@ const ExistingOffers = () => {
   const [activeTab, setActiveTab] = useState('admin'); // 'admin' or 'all'
   const [toast, setToast] = useState(null);
 
-  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '') || 'http://localhost:5000';
+  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '') || 'https://zenziobackenduat.azurewebsites.net';
 
   const showToast = (message, type = 'success') => setToast({ message, type });
 

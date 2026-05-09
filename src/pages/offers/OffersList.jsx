@@ -4,7 +4,7 @@ import { Search, Filter } from 'lucide-react';
 import { getAllOffers, approveOffer, rejectOffer } from '../../services/api';
 
 const PAGE_SIZE = 6;
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://zenziobackenduat.azurewebsites.net';
 
 const OffersList = () => {
   const navigate = useNavigate();
@@ -41,7 +41,7 @@ const OffersList = () => {
           discountType: offer.discountType,
           image: normalizedImagePath
             ? `${BACKEND_URL}/${normalizedImagePath}`
-            : 'https://zenzio-s3-bucket.s3.ap-south-1.amazonaws.com/images/Screenshot+From+2026-01-03+21-10-52.png',
+            : null,
           restaurantName: offer.restaurant?.profile?.restaurant_name || offer.restaurant?.rest_name || 'All Restaurants',
           categoryName: offer.categoryId || 'All Categories',
           validFrom: offer.startDate?.split('T')[0],
