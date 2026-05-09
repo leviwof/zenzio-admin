@@ -37,7 +37,7 @@ const ExistingOffers = () => {
   const [activeTab, setActiveTab] = useState('admin'); // 'admin' or 'all'
   const [toast, setToast] = useState(null);
 
-  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '') || 'https://zenziobackenduat.azurewebsites.net';
+  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '');
 
   const showToast = (message, type = 'success') => setToast({ message, type });
 

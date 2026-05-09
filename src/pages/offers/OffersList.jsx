@@ -4,7 +4,7 @@ import { Search, Filter } from 'lucide-react';
 import { getAllOffers, approveOffer, rejectOffer } from '../../services/api';
 
 const PAGE_SIZE = 6;
-const BACKEND_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || 'https://zenziobackenduat.azurewebsites.net';
+const BACKEND_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '');
 
 const OffersList = () => {
   const navigate = useNavigate();

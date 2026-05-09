@@ -11,8 +11,8 @@ Both PRs have been reviewed and sanitized. **No credentials will be exposed.**
 ### Frontend PR (`fix/restaurant-list-only`)
 
 **Issue**: Documentation contained real credentials:
-- ❌ `CLIENT_ID`: b2d91fa1-a01a-4cad-ad32-c818b5b5c0a0
-- ❌ `CLIENT_SECRET`: 40073b11481b87eaa6ba4fb4b15a34c6784e1fec1079bb74b9a154b200c047f7
+- ❌ `CLIENT_ID`: your-client-id-here
+- ❌ `CLIENT_SECRET`: your-client-secret-here
 
 **Fixed**: Replaced with placeholders
 - ✅ `CLIENT_ID`: your-client-id-here
@@ -30,8 +30,8 @@ Both PRs have been reviewed and sanitized. **No credentials will be exposed.**
 - ❌ Database password: ZenzoiRes12
 - ❌ JWT Access Secret: e7a4797c20a527db...
 - ❌ JWT Refresh Secret: 94e0a05940d63fee...
-- ❌ CLIENT_ID: b2d91fa1-a01a-4cad-ad32-c818b5b5c0a0
-- ❌ CLIENT_SECRET: 40073b11481b87eaa6ba4fb4b15a34c6784e1fec1079bb74b9a154b200c047f7
+- ❌ CLIENT_ID: your-client-id-here
+- ❌ CLIENT_SECRET: your-client-secret-here
 
 **Fixed**: Replaced with placeholders
 - ✅ Database password: YOUR_DB_PASSWORD

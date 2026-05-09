@@ -29,7 +29,7 @@ const EventApprovalDetails = () => {
       if (eventData.diningArea?.photos) {
         console.log('Photos:', eventData.diningArea.photos);
         eventData.diningArea.photos.forEach((photo, idx) => {
-          console.log(`Photo ${idx}: ${import.meta.env.VITE_API_BASE_URL || 'https://zenziobackenduat.azurewebsites.net'}${photo}`);
+          console.log(`Photo ${idx}: ${import.meta.env.VITE_API_BASE_URL}${photo}`);
         });
       }
 
@@ -222,7 +222,7 @@ const EventApprovalDetails = () => {
                   <div className="flex space-x-2 overflow-x-auto pb-2">
                     {event.diningArea.photos && Array.isArray(event.diningArea.photos) && event.diningArea.photos.length > 0 ? (
                       event.diningArea.photos.map((photo, idx) => {
-                        const imageUrl = `${import.meta.env.VITE_API_BASE_URL || 'https://zenziobackenduat.azurewebsites.net'}${photo}`;
+                        const imageUrl = `${import.meta.env.VITE_API_BASE_URL}${photo}`;
                         const hasError = imageErrors[idx];
                         
                         return (
