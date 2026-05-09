@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import { getOfferDetails, approveOffer, rejectOffer, requestChanges } from '../../services/api';
 
-const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '').replace('/api', '') || 'http://localhost:4000';
+const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '').replace('/api', '') || 'https://zenziobackenduat.azurewebsites.net';
 
 const OfferDetails = () => {
   const { id } = useParams();
@@ -32,7 +32,7 @@ const OfferDetails = () => {
           ? `${IMAGE_BASE_URL}/uploads/${normalizedPath}`
           : `${IMAGE_BASE_URL}/${normalizedPath}`;
       } else {
-        imageUrl = 'https://zenzio-s3-bucket.s3.ap-south-1.amazonaws.com/images/Screenshot+From+2026-01-03+21-10-52.png';
+        imageUrl = null;
       }
 
       setOffer({
@@ -131,7 +131,7 @@ const OfferDetails = () => {
               ) : (
                 <div className="w-full h-64 bg-gray-100">
                   <img
-                    src="https://zenzio-s3-bucket.s3.ap-south-1.amazonaws.com/images/Screenshot+From+2026-01-03+21-10-52.png"
+                    src="/logo.png"
                     alt="Default Offer"
                     className="w-full h-full object-cover"
                   />

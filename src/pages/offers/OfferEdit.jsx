@@ -38,7 +38,7 @@ const OfferEdit = () => {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
-  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '') || 'http://localhost:5000';
+  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '') || 'https://zenziobackenduat.azurewebsites.net';
 
   useEffect(() => {
     fetchInitialData();

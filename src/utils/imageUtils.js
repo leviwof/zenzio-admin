@@ -4,10 +4,13 @@
 // ✅ ADDED: Restaurant Logo URL support
 // ==============================================
 
-// 🚀 S3 BASE URLS
-const MENU_S3_URL = 'https://zenzio-s3-bucket.s3.ap-south-1.amazonaws.com/images/menu/';
-const RESTAURANT_S3_URL = 'https://zenzio-s3-bucket.s3.ap-south-1.amazonaws.com/documents/restaurant/';
-const RESTAURANT_LOGO_S3_URL = 'https://zenzio-s3-bucket.s3.ap-south-1.amazonaws.com/images/restaurant/'; // ✅ NEW
+// 🚀 AZURE BLOB STORAGE BASE URLS (with SAS token)
+const BLOB_BASE_URL = 'https://zenziostorage.blob.core.windows.net/zenzio-s3-bucket';
+const BLOB_SAS_TOKEN = import.meta.env.VITE_BLOB_SAS_TOKEN || '';
+
+const MENU_BLOB_URL = `${BLOB_BASE_URL}/images/menu/`;
+const RESTAURANT_BLOB_URL = `${BLOB_BASE_URL}/documents/restaurant/`;
+const RESTAURANT_LOGO_BLOB_URL = `${BLOB_BASE_URL}/images/restaurant/`;
 
 // ==============================================
 // 🌐 URL GENERATORS
@@ -31,19 +34,19 @@ export const getImageUrl = (image, type = null) => {
 
   // Explicit type passed
   if (type === 'restaurant') {
-    console.log('🏪 Restaurant image:', RESTAURANT_S3_URL + image);
-    return `${RESTAURANT_S3_URL}${image}`;
+    console.log('🏪 Restaurant image:', RESTAURANT_BLOB_URL + image + BLOB_SAS_TOKEN);
+    return `${RESTAURANT_BLOB_URL}${image}${BLOB_SAS_TOKEN}`;
   }
 
   if (type === 'menu') {
-    console.log('🍔 Menu image:', MENU_S3_URL + image);
-    return `${MENU_S3_URL}${image}`;
+    console.log('🍔 Menu image:', MENU_BLOB_URL + image + BLOB_SAS_TOKEN);
+    return `${MENU_BLOB_URL}${image}${BLOB_SAS_TOKEN}`;
   }
 
   // Auto detect based on name/path
   const finalUrl = image.includes('restaurant')
-    ? `${RESTAURANT_S3_URL}${image}`
-    : `${MENU_S3_URL}${image}`;
+    ? `${RESTAURANT_BLOB_URL}${image}${BLOB_SAS_TOKEN}`
+    : `${MENU_BLOB_URL}${image}${BLOB_SAS_TOKEN}`;
 
   console.log('🔍 Auto-detected:', finalUrl);
   return finalUrl;
@@ -61,9 +64,9 @@ export const getRestaurantImageUrl = (image) => {
     return image;
   }
 
-  // Otherwise prepend S3 URL
-  const url = `${RESTAURANT_S3_URL}${image}`;
-  console.log('✅ Restaurant S3 URL:', url);
+  // Otherwise prepend Blob URL
+  const url = `${RESTAURANT_BLOB_URL}${image}${BLOB_SAS_TOKEN}`;
+  console.log('✅ Restaurant Blob URL:', url);
   return url;
 };
 
@@ -79,9 +82,9 @@ export const getRestaurantLogoUrl = (image) => {
     return image;
   }
 
-  // Otherwise prepend S3 URL
-  const url = `${RESTAURANT_LOGO_S3_URL}${image}`;
-  console.log('✅ Restaurant Logo S3 URL:', url);
+  // Otherwise prepend Blob URL
+  const url = `${RESTAURANT_LOGO_BLOB_URL}${image}${BLOB_SAS_TOKEN}`;
+  console.log('✅ Restaurant Logo Blob URL:', url);
   return url;
 };
 
@@ -97,9 +100,9 @@ export const getMenuImageUrl = (image) => {
     return image;
   }
 
-  // Otherwise prepend S3 URL
-  const url = `${MENU_S3_URL}${image}`;
-  console.log('✅ Menu S3 URL:', url);
+  // Otherwise prepend Blob URL
+  const url = `${MENU_BLOB_URL}${image}${BLOB_SAS_TOKEN}`;
+  console.log('✅ Menu Blob URL:', url);
   return url;
 };
 
