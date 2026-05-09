@@ -9,7 +9,7 @@ const AdminOfferDetails = () => {
   const [offer, setOffer] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '') || 'https://zenziobackenduat.azurewebsites.net';
+  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '');
 
   useEffect(() => {
     fetchOfferDetails();

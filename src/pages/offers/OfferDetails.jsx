@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import { getOfferDetails, approveOffer, rejectOffer, requestChanges } from '../../services/api';
 
-const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '').replace('/api', '') || 'https://zenziobackenduat.azurewebsites.net';
+const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '').replace('/api', '');
 
 const OfferDetails = () => {
   const { id } = useParams();
