@@ -76,7 +76,7 @@ const OrdersList = () => {
   }, []);
 
   const playNotificationSound = () => {
-    if (audioRef.current && audioUnlocked.current) {
+    if (audioRef.current) {
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
     }
