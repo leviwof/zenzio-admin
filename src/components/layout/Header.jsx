@@ -1,24 +1,45 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Menu, Bell, LogOut, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getNotifications, markNotificationAsRead } from '../../services/api';
+import notificationSound from '../../assets/notification.mp3';
 
 const Header = ({ onToggleSidebar, onLogout }) => {
   const navigate = useNavigate();
   const [notifications, setNotifications] = React.useState([]);
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [unreadCount, setUnreadCount] = React.useState(0);
+  const prevUnreadCount = useRef(0);
+  const isInitialLoad = useRef(true);
+  const audioRef = useRef(null);
+
+  React.useEffect(() => {
+    audioRef.current = new Audio(notificationSound);
+  }, []);
+
+  const playNotificationSound = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {});
+    }
+  };
 
   const fetchNotifications = async () => {
     try {
-      // Fetch enough to filter locally, though ideally API should support filtering
       const response = await getNotifications(1, 20);
       const docs = response.data?.data || [];
 
       const unread = docs.filter(n => !n.isRead);
-      setUnreadCount(unread.length);
+      const newCount = unread.length;
 
-      // Show only unread in dropdown, max 5
+      if (!isInitialLoad.current && newCount > prevUnreadCount.current) {
+        playNotificationSound();
+      }
+      isInitialLoad.current = false;
+      prevUnreadCount.current = newCount;
+
+      setUnreadCount(newCount);
+
       setNotifications(unread.slice(0, 5));
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
@@ -27,7 +48,7 @@ const Header = ({ onToggleSidebar, onLogout }) => {
 
   React.useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 15000); // Poll faster
+    const interval = setInterval(fetchNotifications, 15000);
     return () => clearInterval(interval);
   }, []);
 
