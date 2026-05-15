@@ -13,12 +13,31 @@ const Header = ({ onToggleSidebar, onLogout }) => {
   const isInitialLoad = useRef(true);
   const audioRef = useRef(null);
 
+  const audioUnlocked = useRef(false);
+
   React.useEffect(() => {
     audioRef.current = new Audio(notificationSound);
+    const unlock = () => {
+      if (!audioUnlocked.current) {
+        audioUnlocked.current = true;
+        audioRef.current.play().then(() => {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }).catch(() => {});
+        document.removeEventListener('click', unlock);
+        document.removeEventListener('touchstart', unlock);
+      }
+    };
+    document.addEventListener('click', unlock);
+    document.addEventListener('touchstart', unlock);
+    return () => {
+      document.removeEventListener('click', unlock);
+      document.removeEventListener('touchstart', unlock);
+    };
   }, []);
 
   const playNotificationSound = () => {
-    if (audioRef.current) {
+    if (audioRef.current && audioUnlocked.current) {
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
     }
