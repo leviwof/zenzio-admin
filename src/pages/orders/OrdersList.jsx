@@ -4,11 +4,18 @@
 // =============================================
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Download, RefreshCw, Calendar, X, AlertTriangle } from "lucide-react";
+import { Search, Download, RefreshCw, Calendar, X, AlertTriangle, Bell } from "lucide-react";
 import { getAllOrders, getOrderStats, getOrderMonitoringStats, updateDeliveryStatusByAdmin } from "../../services/api";
 import { saveAs } from "file-saver";
 
 const notificationSound = '/notification.mp3';
+const ORDER_POLL_INTERVAL = 5000;
+
+const debug = (msg, ...args) => {
+  if (import.meta.env.DEV) {
+    console.log(`[OrdersPoll] ${msg}`, ...args);
+  }
+};
 
 const OrdersList = () => {
   const navigate = useNavigate();
@@ -43,6 +50,9 @@ const OrdersList = () => {
   const audioRef = useRef(null);
   const audioUnlocked = useRef(false);
   const pollOrdersRef = useRef(null);
+  const isPollingRef = useRef(false);
+  const [showNewOrderHint, setShowNewOrderHint] = useState(false);
+  const newOrderHintTimeout = useRef(null);
 
   useEffect(() => {
     audioRef.current = new Audio(notificationSound);
@@ -72,7 +82,20 @@ const OrdersList = () => {
     }
   };
 
+  useEffect(() => {
+    return () => {
+      if (newOrderHintTimeout.current) {
+        clearTimeout(newOrderHintTimeout.current);
+      }
+    };
+  }, []);
+
   const pollOrders = async () => {
+    if (isPollingRef.current) {
+      debug('skip — previous poll still in flight');
+      return;
+    }
+    isPollingRef.current = true;
     try {
       const params = {
         status: activeTab,
@@ -91,7 +114,11 @@ const OrdersList = () => {
       knownOrderIds.current = newIds;
 
       if (hasNewOrder) {
+        debug('new order detected — playing sound');
         playNotificationSound();
+        setShowNewOrderHint(true);
+        if (newOrderHintTimeout.current) clearTimeout(newOrderHintTimeout.current);
+        newOrderHintTimeout.current = setTimeout(() => setShowNewOrderHint(false), 4000);
       }
 
       setAllOrders(newOrders);
@@ -106,6 +133,8 @@ const OrdersList = () => {
       setStats(statsRes.data);
     } catch (err) {
       console.error("Error polling orders:", err);
+    } finally {
+      isPollingRef.current = false;
     }
   };
 
@@ -179,9 +208,28 @@ const OrdersList = () => {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      pollOrdersRef.current?.();
-    }, 5000);
-    return () => clearInterval(interval);
+      if (document.visibilityState === 'visible') {
+        pollOrdersRef.current?.();
+      } else {
+        debug('tab hidden — poll skipped');
+      }
+    }, ORDER_POLL_INTERVAL);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        debug('tab became visible — immediate refresh');
+        pollOrdersRef.current?.();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    debug(`polling started (interval=${ORDER_POLL_INTERVAL}ms)`);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      debug('polling stopped');
+    };
   }, []);
 
   const handleSearch = (e) => {
@@ -411,6 +459,13 @@ const OrdersList = () => {
             </button>
           </div>
         </div>
+
+        {showNewOrderHint && (
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-2 mx-6 mb-2 rounded-lg text-sm font-medium animate-pulse">
+            <Bell size={16} />
+            New order received
+          </div>
+        )}
 
         {/* Orders Table */}
         {loading ? (
