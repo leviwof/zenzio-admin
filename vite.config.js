@@ -118,6 +118,16 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/shift': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/categories': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
   };
