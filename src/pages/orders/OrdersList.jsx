@@ -2,16 +2,18 @@
 // FILE: src/pages/orders/OrdersList.jsx
 // COMPLETE REWRITE - EXACT UI MATCH
 // =============================================
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Download, RefreshCw, Calendar, X, AlertTriangle } from "lucide-react";
 import { getAllOrders, getOrderStats, getOrderMonitoringStats, updateDeliveryStatusByAdmin } from "../../services/api";
 import { saveAs } from "file-saver";
 
+const notificationSound = '/notification.mp3';
+
 const OrdersList = () => {
   const navigate = useNavigate();
-  const [allOrders, setAllOrders] = useState([]); // Store all fetched orders
-  const [orders, setOrders] = useState([]); // Displayed orders
+  const [allOrders, setAllOrders] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
@@ -36,6 +38,78 @@ const OrdersList = () => {
   const [cancelReason, setCancelReason] = useState("");
   const [otherReason, setOtherReason] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
+
+  const knownOrderIds = useRef(new Set());
+  const audioRef = useRef(null);
+  const audioUnlocked = useRef(false);
+  const pollOrdersRef = useRef(null);
+
+  useEffect(() => {
+    audioRef.current = new Audio(notificationSound);
+    const unlock = () => {
+      if (!audioUnlocked.current) {
+        audioUnlocked.current = true;
+        audioRef.current.play().then(() => {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }).catch(() => {});
+        document.removeEventListener('click', unlock);
+        document.removeEventListener('touchstart', unlock);
+      }
+    };
+    document.addEventListener('click', unlock);
+    document.addEventListener('touchstart', unlock);
+    return () => {
+      document.removeEventListener('click', unlock);
+      document.removeEventListener('touchstart', unlock);
+    };
+  }, []);
+
+  const playNotificationSound = () => {
+    if (audioRef.current && audioUnlocked.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {});
+    }
+  };
+
+  const pollOrders = async () => {
+    try {
+      const params = {
+        status: activeTab,
+        search: searchTerm,
+        startDate: startDate,
+        endDate: endDate
+      };
+      const res = await getAllOrders(params);
+      const newOrders = res.data || [];
+
+      const newIds = new Set(newOrders.map(o => o.orderId || o.id));
+
+      const hasNewOrder = knownOrderIds.current.size > 0 &&
+        [...newIds].some(id => !knownOrderIds.current.has(id));
+
+      knownOrderIds.current = newIds;
+
+      if (hasNewOrder) {
+        playNotificationSound();
+      }
+
+      setAllOrders(newOrders);
+      setOrders(newOrders);
+      setPagination((prev) => ({
+        ...prev,
+        totalOrders: newOrders.length,
+        totalPages: Math.ceil(newOrders.length / PAGE_SIZE),
+      }));
+
+      const statsRes = await getOrderMonitoringStats();
+      setStats(statsRes.data);
+    } catch (err) {
+      console.error("Error polling orders:", err);
+    }
+  };
+
+  pollOrdersRef.current = pollOrders;
 
   const CANCEL_REASONS = [
     "Customer requested cancellation",
@@ -82,13 +156,16 @@ const OrdersList = () => {
       };
 
       const res = await getAllOrders(params);
-      setAllOrders(res.data);
-      setOrders(res.data); // Directly set orders from API response
+      const fetched = res.data || [];
+      setAllOrders(fetched);
+      setOrders(fetched);
+
+      knownOrderIds.current = new Set(fetched.map(o => o.orderId || o.id));
 
       setPagination((prev) => ({
         ...prev,
-        totalOrders: res.data.length,
-        totalPages: Math.ceil(res.data.length / PAGE_SIZE),
+        totalOrders: fetched.length,
+        totalPages: Math.ceil(fetched.length / PAGE_SIZE),
         currentPage: 1
       }));
     } catch (err) {
@@ -99,6 +176,13 @@ const OrdersList = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      pollOrdersRef.current?.();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSearch = (e) => {
     if (e.key === "Enter") {
