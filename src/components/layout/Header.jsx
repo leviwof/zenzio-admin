@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { Menu, Bell, LogOut, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getNotifications, markNotificationAsRead } from '../../services/api';
-import notificationSound from '../../assets/notification.mp3';
+const notificationSound = '/notification.mp3';
 
 const Header = ({ onToggleSidebar, onLogout }) => {
   const navigate = useNavigate();
