@@ -8,7 +8,7 @@ import { Search, Download, RefreshCw, Calendar, X, AlertTriangle, Bell } from "l
 import { getAllOrders, getOrderStats, getOrderMonitoringStats, updateDeliveryStatusByAdmin } from "../../services/api";
 import { saveAs } from "file-saver";
 
-const notificationSound = '/notification.mp3';
+const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 const ORDER_POLL_INTERVAL = 5000;
 
 const debug = (msg, ...args) => {
@@ -56,15 +56,16 @@ const OrdersList = () => {
 
   useEffect(() => {
     audioRef.current = new Audio(notificationSound);
+    audioRef.current.preload = 'auto';
     const unlock = () => {
       if (!audioUnlocked.current) {
-        audioUnlocked.current = true;
         audioRef.current.play().then(() => {
           audioRef.current.pause();
           audioRef.current.currentTime = 0;
+          audioUnlocked.current = true;
+          document.removeEventListener('click', unlock);
+          document.removeEventListener('touchstart', unlock);
         }).catch(() => {});
-        document.removeEventListener('click', unlock);
-        document.removeEventListener('touchstart', unlock);
       }
     };
     document.addEventListener('click', unlock);
@@ -76,7 +77,7 @@ const OrdersList = () => {
   }, []);
 
   const playNotificationSound = () => {
-    if (audioRef.current) {
+    if (audioRef.current && audioUnlocked.current) {
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
     }

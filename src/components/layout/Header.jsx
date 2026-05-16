@@ -2,14 +2,14 @@ import React, { useRef } from 'react';
 import { Menu, Bell, LogOut, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getNotifications, markNotificationAsRead } from '../../services/api';
-const notificationSound = '/notification.mp3';
+const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 
 const Header = ({ onToggleSidebar, onLogout }) => {
   const navigate = useNavigate();
   const [notifications, setNotifications] = React.useState([]);
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [unreadCount, setUnreadCount] = React.useState(0);
-  const prevUnreadCount = useRef(0);
+  const knownUnreadIds = useRef(new Set());
   const isInitialLoad = useRef(true);
   const audioRef = useRef(null);
 
@@ -17,15 +17,16 @@ const Header = ({ onToggleSidebar, onLogout }) => {
 
   React.useEffect(() => {
     audioRef.current = new Audio(notificationSound);
+    audioRef.current.preload = 'auto';
     const unlock = () => {
       if (!audioUnlocked.current) {
-        audioUnlocked.current = true;
         audioRef.current.play().then(() => {
           audioRef.current.pause();
           audioRef.current.currentTime = 0;
+          audioUnlocked.current = true;
+          document.removeEventListener('click', unlock);
+          document.removeEventListener('touchstart', unlock);
         }).catch(() => {});
-        document.removeEventListener('click', unlock);
-        document.removeEventListener('touchstart', unlock);
       }
     };
     document.addEventListener('click', unlock);
@@ -50,12 +51,15 @@ const Header = ({ onToggleSidebar, onLogout }) => {
 
       const unread = docs.filter(n => !n.isRead);
       const newCount = unread.length;
+      const unreadIds = new Set(unread.map(n => n.id));
 
-      if (!isInitialLoad.current && newCount > prevUnreadCount.current) {
+      const hasNewUnread = [...unreadIds].some(id => !knownUnreadIds.current.has(id));
+
+      if (!isInitialLoad.current && hasNewUnread) {
         playNotificationSound();
       }
       isInitialLoad.current = false;
-      prevUnreadCount.current = newCount;
+      knownUnreadIds.current = unreadIds;
 
       setUnreadCount(newCount);
 
@@ -77,6 +81,7 @@ const Header = ({ onToggleSidebar, onLogout }) => {
       // Remove from local list immediately to "disappear" it
       setNotifications(prev => prev.filter(n => n.id !== id));
       setUnreadCount(prev => Math.max(0, prev - 1));
+      knownUnreadIds.current.delete(id);
 
       // Optionally refetch to fill the gap
       fetchNotifications();
