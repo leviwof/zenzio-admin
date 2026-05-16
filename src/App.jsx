@@ -6,6 +6,7 @@ import {
 } from "react-router-dom";
 import Layout from "./components/layout/Layout";
 import { Toaster } from "react-hot-toast";
+import { OrderNotificationProvider } from "./context/OrderNotificationContext";
 
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
@@ -68,7 +69,7 @@ function App() {
 
         {}
         <Route element={<ProtectedRoute />}>
-          <Route element={<Layout onLogout={handleLogout} />}>
+          <Route element={<OrderNotificationProvider><Layout onLogout={handleLogout} /></OrderNotificationProvider>}>
             <Route path="/dashboard" element={<Dashboard />} />
 
             <Route path="/activity-log" element={<ActivityLog />} />
