@@ -5,17 +5,25 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, AlertCircle, Building2, FileText, Image as ImageIcon, Download, ShoppingBag, IndianRupee, Calendar, Tag, X, CheckCircle, Edit } from 'lucide-react';
-import { getRestaurantById, toggleRestaurantActive, toggleRestaurantOff, getRestaurantAdminStats, updateRestaurantProfileAdmin, updateRestaurantAddressAdmin, uploadRestaurantLogoAdmin, updateRestaurantDocumentsAdmin, uploadRestaurantDocumentFileAdmin, deleteRestaurantDocumentAdmin, deleteRestaurantDocumentFileAdmin } from '../../services/api';
-import { getRestaurantImageUrl, getRestaurantLogoUrl } from '../../utils/imageUtils'; 
+import {
+  ArrowLeft, Loader2, AlertCircle, Building2, FileText, Image as ImageIcon,
+  Download, ShoppingBag, IndianRupee, Calendar, Tag, X, CheckCircle, Edit,
+  MapPin, Phone, Mail, User, Upload, Trash2
+} from 'lucide-react';
+import {
+  getRestaurantById, toggleRestaurantActive, toggleRestaurantOff,
+  getRestaurantAdminStats, updateRestaurantProfileAdmin, updateRestaurantAddressAdmin,
+  uploadRestaurantLogoAdmin, updateRestaurantDocumentsAdmin,
+  uploadRestaurantDocumentFileAdmin, deleteRestaurantDocumentAdmin,
+  deleteRestaurantDocumentFileAdmin
+} from '../../services/api';
+import { getRestaurantImageUrl, getRestaurantLogoUrl } from '../../utils/imageUtils';
 import { saveAs } from 'file-saver';
 import toast from 'react-hot-toast';
 
 const getStatusDisplay = (restaurant) => {
   if (!restaurant) return { label: 'Unknown', className: 'bg-gray-100 text-gray-800' };
-  
   const { isOpen } = restaurant;
-  
   if (isOpen === false) {
     return { label: 'Off', className: 'bg-gray-100 text-gray-800' };
   }
@@ -366,10 +374,10 @@ const RestaurantDetails = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-red-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading restaurant details...</p>
+          <Loader2 className="w-10 h-10 animate-spin text-red-600 mx-auto mb-4" />
+          <p className="text-gray-500 font-medium">Loading restaurant details...</p>
         </div>
       </div>
     );
@@ -377,24 +385,29 @@ const RestaurantDetails = () => {
 
   if (error || !restaurant) {
     return (
-      <div className="p-6">
-        <button
-          onClick={() => navigate('/restaurants')}
-          className="text-red-600 hover:text-red-700"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="max-w-2xl mx-auto mt-8">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-            <AlertCircle className="w-12 h-12 text-red-600 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Restaurant Details</h2>
-            <p className="text-gray-600 mb-6">{error || 'Restaurant not found'}</p>
-            <button
-              onClick={() => navigate('/restaurants')}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-            >
-              Back to List
-            </button>
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <button
+            onClick={() => navigate('/restaurants')}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-600 bg-white rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Restaurants
+          </button>
+          <div className="max-w-xl mx-auto mt-16">
+            <div className="bg-white rounded-3xl border border-red-100 p-10 text-center shadow-sm">
+              <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <AlertCircle className="w-8 h-8 text-red-500" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Restaurant Details</h2>
+              <p className="text-gray-500 mb-8">{error || 'Restaurant not found'}</p>
+              <button
+                onClick={() => navigate('/restaurants')}
+                className="px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors shadow-lg shadow-red-500/20"
+              >
+                Back to List
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -411,11 +424,11 @@ const RestaurantDetails = () => {
 
     if (isImage) {
       return (
-        <a href={url} target="_blank" rel="noopener noreferrer" key={index}>
+        <a href={url} target="_blank" rel="noopener noreferrer" key={index} className="block group">
           <img
             src={url}
             alt={`${label} ${index + 1}`}
-            className="w-full h-32 object-cover rounded-lg border border-gray-200 hover:opacity-90 transition-opacity"
+            className="w-full h-32 object-cover rounded-xl border border-gray-200 group-hover:opacity-85 transition-opacity"
             onError={(e) => {
               e.target.onerror = null;
               e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23e5e7eb" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="12"%3EError%3C/text%3E%3C/svg%3E';
@@ -431,445 +444,417 @@ const RestaurantDetails = () => {
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="w-full h-32 flex flex-col items-center justify-center bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors group"
+        className="w-full h-32 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-gray-200 hover:bg-gray-100 hover:border-gray-300 transition-all group"
       >
-        <FileText className="w-8 h-8 text-red-600 mb-2 group-hover:scale-110 transition-transform" />
-        <span className="text-xs text-gray-600 font-medium">View {ext.toUpperCase()}</span>
+        <FileText className="w-8 h-8 text-red-500 mb-2 group-hover:scale-110 transition-transform" />
+        <span className="text-xs text-gray-500 font-medium">View {ext.toUpperCase()}</span>
       </a>
     );
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {}
-      <div className="mb-6">
-        <button
-          onClick={() => navigate('/restaurants')}
-          className="text-gray-600 hover:text-gray-900 transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="text-2xl font-bold text-gray-900 mt-4">
-          Restaurant Details
-          <span className="text-gray-400 font-normal text-lg ml-2">
-            • {profile?.restaurant_name || 'Restaurant'}
-          </span>
-        </h1>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-6 py-8">
 
-      </div>
-
-      {}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-500">From:</span>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-            />
+        {/* ── Header ── */}
+        <div className="flex flex-wrap items-start justify-between gap-6 mb-10">
+          <div className="flex items-start gap-4">
+            <button
+              onClick={() => navigate('/restaurants')}
+              className="mt-1 inline-flex items-center justify-center w-10 h-10 bg-white rounded-xl border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-50 transition-all shrink-0"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-4xl font-bold tracking-tight text-gray-900">Restaurant Details</h1>
+              <p className="text-lg text-gray-500 mt-1.5">{profile?.restaurant_name || 'Restaurant'}</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-500">To:</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-            />
-          </div>
+          <button
+            onClick={handleExportStats}
+            className="inline-flex items-center gap-2.5 px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all shadow-lg shadow-red-500/25 hover:shadow-red-500/30"
+          >
+            <Download className="w-4 h-4" />
+            Export Report
+          </button>
         </div>
 
-        <button
-          onClick={handleExportStats}
-          className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
-        >
-          <Download className="w-4 h-4" />
-          Export Report
-        </button>
-      </div>
-
-      {}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center gap-6">
-          <div className="relative">
-            {profile?.photo?.length > 0 ? (
-              <img
-                src={getRestaurantLogoUrl(profile.photo[profile.photo.length -1])} 
-                alt="Restaurant Logo"
-                className="w-20 h-20 rounded-xl object-cover border-2 border-gray-200"
-                onError={(e) => {
-                  console.error('❌ Logo failed to load:', profile.photo[profile.photo.length -1]);
-                  e.target.onerror = null;
-                  e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="80"%3E%3Crect fill="%23e5e7eb" width="80" height="80"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="10"%3ENo Image%3C/text%3E%3C/svg%3E';
-                }}
-              />
-            ) : (
-              <div className="w-20 h-20 rounded-xl bg-gray-100 flex items-center justify-center border-2 border-gray-200">
-                <Building2 className="w-10 h-10 text-gray-400" />
-                <span className="text-xs text-gray-400 mt-1">No Logo</span>
-              </div>
-            )}
-            {/* Upload button overlay */}
-            <label className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-50 rounded-xl cursor-pointer transition-all opacity-0 hover:opacity-100">
-              <ImageIcon className="w-6 h-6 text-white" />
+        {/* ── Date Filter ── */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-8 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-500">From</span>
               <input
-                type="file"
-                accept="image/*"
-                onChange={handleLogoUpload}
-                disabled={isUpdatingProfile}
-                className="hidden"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-11 px-4 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500 transition-all"
               />
-            </label>
-          </div>
-
-          <div className="flex-1">
-            <h2 className="text-xl font-bold text-gray-900">{profile?.restaurant_name || 'Restaurant'}</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              ID: {restaurant.uid} • {displayEmail}
-            </p>
-            <p className="text-xs text-gray-400 mt-2">Hover over logo to upload new image</p>
-          </div>
-
-          <div>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusDisplay(restaurant).className}`}>
-              {getStatusDisplay(restaurant).label}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-green-100 text-green-600 rounded-lg">
-              <IndianRupee className="w-6 h-6" />
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Total Sales</p>
-              <h3 className="text-2xl font-bold text-gray-900">₹{stats.sales}</h3>
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-500">To</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="h-11 px-4 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500 transition-all"
+              />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
-              <ShoppingBag className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Total Orders</p>
-              <h3 className="text-2xl font-bold text-gray-900">{stats.orders}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-purple-100 text-purple-600 rounded-lg">
-              <Calendar className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Total Bookings</p>
-              <h3 className="text-2xl font-bold text-gray-900">{stats.bookings}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-orange-100 text-orange-600 rounded-lg">
-              <Tag className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Active Offers</p>
-              <h3 className="text-2xl font-bold text-gray-900">{stats.active_offers}</h3>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {}
-        <div className="lg:col-span-2 space-y-6">
-          {}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-red-600" />
-                Basic Information
-              </h3>
-              <button
-                onClick={handleOpenEditProfile}
-                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors flex items-center gap-1"
-              >
-                <Edit className="w-4 h-4" />
-                Edit
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-500">Restaurant Name</label>
-                <p className="text-gray-900 mt-1">{profile?.restaurant_name || '-'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Email</label>
-                <p className="text-gray-900 mt-1">{displayEmail}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Phone</label>
-                <p className="text-gray-900 mt-1">{displayPhone}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Contact Person</label>
-                <p className="text-gray-900 mt-1">{profile?.contact_person || '-'}</p>
-              </div>
-              <div className="md:col-span-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-gray-500">Address</label>
-                  <button
-                    onClick={handleOpenEditAddress}
-                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors flex items-center gap-1"
-                  >
-                    <Edit className="w-3 h-3" />
-                    Edit Address
-                  </button>
+        {/* ── Hero / Restaurant Overview ── */}
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8 mb-8">
+          <div className="flex flex-col sm:flex-row items-start gap-6">
+            <div className="relative group shrink-0">
+              {profile?.photo?.length > 0 ? (
+                <img
+                  src={getRestaurantLogoUrl(profile.photo[profile.photo.length - 1])}
+                  alt="Restaurant Logo"
+                  className="w-24 h-24 rounded-2xl object-cover border-2 border-gray-100"
+                  onError={(e) => {
+                    console.error('Logo failed to load:', profile.photo[profile.photo.length - 1]);
+                    e.target.onerror = null;
+                    e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="96" height="96"%3E%3Crect fill="%23e5e7eb" width="96" height="96"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="10"%3ENo Image%3C/text%3E%3C/svg%3E';
+                  }}
+                />
+              ) : (
+                <div className="w-24 h-24 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center">
+                  <Building2 className="w-10 h-10 text-gray-300" />
                 </div>
-                <p className="text-gray-900 mt-1">
-                  {address?.address || '-'}, {address?.city || '-'}, {address?.state || '-'} - {address?.pincode || '-'}
-                </p>
+              )}
+              <label className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 rounded-2xl cursor-pointer transition-all opacity-0 group-hover:opacity-100">
+                <div className="flex flex-col items-center gap-1">
+                  <ImageIcon className="w-6 h-6 text-white drop-shadow" />
+                  <span className="text-[10px] text-white font-medium drop-shadow">Change</span>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  disabled={isUpdatingProfile}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">{profile?.restaurant_name || 'Restaurant'}</h2>
+                  <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-500">
+                    <span className="font-mono text-xs text-gray-400">ID: {restaurant.uid?.slice(0, 12)}...</span>
+                    <span className="text-gray-300">|</span>
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${getStatusDisplay(restaurant).className}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${getStatusDisplay(restaurant).label === 'On' ? 'bg-green-500' : 'bg-gray-400'}`} />
+                      {getStatusDisplay(restaurant).label}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500">
+                <span className="inline-flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-gray-400" /> {displayEmail}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-gray-400" /> {displayPhone}
+                </span>
+                {profile?.contact_person && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-gray-400" /> {profile.contact_person}
+                  </span>
+                )}
               </div>
             </div>
           </div>
+        </div>
 
+        {/* ── Stats Grid ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+          {[
+            { label: 'Total Sales', value: `₹${stats.sales ?? 0}`, icon: IndianRupee, color: 'green' },
+            { label: 'Total Orders', value: stats.orders ?? 0, icon: ShoppingBag, color: 'blue' },
+            { label: 'Total Bookings', value: stats.bookings ?? 0, icon: Calendar, color: 'purple' },
+            { label: 'Active Offers', value: stats.active_offers ?? 0, icon: Tag, color: 'orange' },
+          ].map(({ label, value, icon: Icon, color }) => {
+            const colors = {
+              green: 'bg-emerald-50 text-emerald-600',
+              blue: 'bg-blue-50 text-blue-600',
+              purple: 'bg-violet-50 text-violet-600',
+              orange: 'bg-orange-50 text-orange-600',
+            };
+            return (
+              <div
+                key={label}
+                className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 hover:shadow-lg hover:-translate-y-0.5 transition-all"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-medium text-gray-500">{label}</span>
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${colors[color]}`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                </div>
+                <p className="text-3xl font-bold tracking-tight text-gray-900">{value}</p>
+              </div>
+            );
+          })}
+        </div>
 
+        {/* ── Main Content Grid ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* ── Left Column (Basic Info + Docs) ── */}
+          <div className="lg:col-span-2 space-y-8">
 
-          {}
-          {doc && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-red-600" />
-                  Documents
+            {/* Basic Information */}
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2.5">
+                  <span className="w-8 h-8 bg-red-50 rounded-xl flex items-center justify-center">
+                    <Building2 className="w-4 h-4 text-red-600" />
+                  </span>
+                  Basic Information
                 </h3>
                 <button
-                  onClick={handleOpenEditDocs}
-                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors flex items-center gap-1"
+                  onClick={handleOpenEditProfile}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors"
                 >
-                  <Edit className="w-4 h-4" /> Edit Numbers
+                  <Edit className="w-3.5 h-3.5" />
+                  Edit
                 </button>
               </div>
-
-              {/* FSSAI */}
-              {doc.fssai_number && (
-                <div className="mb-6">
-                  <div className="flex justify-between items-center mb-2">
-                    <h4 className="font-medium text-gray-900">FSSAI License - {doc.fssai_number}</h4>
-                    <div className="flex items-center gap-2">
-                      <label className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 cursor-pointer border border-blue-200 rounded">
-                        Upload New
-                        <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'fssai')} />
-                      </label>
-                      <button
-                        onClick={() => handleDeleteDocType('fssai', 'FSSAI')}
-                        className="px-2 py-1 text-xs text-red-600 hover:text-red-800 border border-red-200 rounded hover:bg-red-50 transition-colors"
-                        title="Remove FSSAI license number and all files"
-                      >
-                        Remove All
-                      </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Restaurant Name</p>
+                  <p className="text-sm font-semibold text-gray-900">{profile?.restaurant_name || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Email</p>
+                  <p className="text-sm text-gray-900">{displayEmail}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Phone</p>
+                  <p className="text-sm text-gray-900">{displayPhone}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Contact Person</p>
+                  <p className="text-sm text-gray-900">{profile?.contact_person || '-'}</p>
+                </div>
+                <div className="md:col-span-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Address</p>
+                    <button
+                      onClick={handleOpenEditAddress}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 transition-colors"
+                    >
+                      <Edit className="w-3 h-3" />
+                      Edit Address
+                    </button>
+                  </div>
+                  <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                    <div className="flex items-start gap-2.5">
+                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                      <p className="text-sm text-gray-700 leading-relaxed">
+                        {address?.address || '-'}
+                        {address?.city ? `, ${address.city}` : ''}
+                        {address?.state ? `, ${address.state}` : ''}
+                        {address?.pincode ? ` — ${address.pincode}` : ''}
+                      </p>
                     </div>
                   </div>
-                  {doc.file_fssai && doc.file_fssai.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {doc.file_fssai.map((file, index) => (
-                        <div key={index} className="relative group">
-                          {renderDocument(file, index, 'FSSAI')}
-                          <button
-                            onClick={() => handleDeleteDocFile('fssai', file)}
-                            className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Remove this file"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
-              )}
-
-              {/* GST */}
-              {doc.gst_number && (
-                <div className="mb-6">
-                  <div className="flex justify-between items-center mb-2">
-                    <h4 className="font-medium text-gray-900">GST Certificate - {doc.gst_number}</h4>
-                    <div className="flex items-center gap-2">
-                      <label className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 cursor-pointer border border-blue-200 rounded">
-                        Upload New
-                        <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'gst')} />
-                      </label>
-                      <button
-                        onClick={() => handleDeleteDocType('gst', 'GST')}
-                        className="px-2 py-1 text-xs text-red-600 hover:text-red-800 border border-red-200 rounded hover:bg-red-50 transition-colors"
-                        title="Remove GST number and all files"
-                      >
-                        Remove All
-                      </button>
-                    </div>
-                  </div>
-                  {doc.file_gst && doc.file_gst.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {doc.file_gst.map((file, index) => (
-                        <div key={index} className="relative group">
-                          {renderDocument(file, index, 'GST')}
-                          <button
-                            onClick={() => handleDeleteDocFile('gst', file)}
-                            className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Remove this file"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Trade License */}
-              {doc.trade_license_number && (
-                <div className="mb-6">
-                  <div className="flex justify-between items-center mb-2">
-                    <h4 className="font-medium text-gray-900">Trade License - {doc.trade_license_number}</h4>
-                    <div className="flex items-center gap-2">
-                      <label className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 cursor-pointer border border-blue-200 rounded">
-                        Upload New
-                        <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'trade')} />
-                      </label>
-                      <button
-                        onClick={() => handleDeleteDocType('trade', 'Trade License')}
-                        className="px-2 py-1 text-xs text-red-600 hover:text-red-800 border border-red-200 rounded hover:bg-red-50 transition-colors"
-                        title="Remove Trade License number and all files"
-                      >
-                        Remove All
-                      </button>
-                    </div>
-                  </div>
-                  {doc.file_trade_license && doc.file_trade_license.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {doc.file_trade_license.map((file, index) => (
-                        <div key={index} className="relative group">
-                          {renderDocument(file, index, 'Trade License')}
-                          <button
-                            onClick={() => handleDeleteDocFile('trade', file)}
-                            className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Remove this file"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Other Documents */}
-              {doc.otherDocumentType && (
-                <div className="mb-6">
-                  <div className="flex justify-between items-center mb-2">
-                    <h4 className="font-medium text-gray-900">Other Documents - {doc.otherDocumentType}</h4>
-                    <div className="flex items-center gap-2">
-                      <label className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 cursor-pointer border border-blue-200 rounded">
-                        Upload New
-                        <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'other')} />
-                      </label>
-                      <button
-                        onClick={() => handleDeleteDocType('other', 'Other Documents')}
-                        className="px-2 py-1 text-xs text-red-600 hover:text-red-800 border border-red-200 rounded hover:bg-red-50 transition-colors"
-                        title="Remove other documents and all files"
-                      >
-                        Remove All
-                      </button>
-                    </div>
-                  </div>
-                  {doc.file_other_doc && doc.file_other_doc.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {doc.file_other_doc.map((file, index) => (
-                        <div key={index} className="relative group">
-                          {renderDocument(file, index, 'Other Doc')}
-                          <button
-                            onClick={() => handleDeleteDocFile('other', file)}
-                            className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Remove this file"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {}
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Status</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm font-medium text-gray-500">Current Status</label>
-                <p className={`mt-1 font-semibold ${getStatusDisplay(restaurant).className.includes('green') ? 'text-green-600' : getStatusDisplay(restaurant).className.includes('red') ? 'text-red-600' : 'text-gray-600'}`}>
-                  {getStatusDisplay(restaurant).label}
-                </p>
               </div>
             </div>
+
+            {/* Documents */}
+            {doc && (
+              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2.5">
+                    <span className="w-8 h-8 bg-red-50 rounded-xl flex items-center justify-center">
+                      <FileText className="w-4 h-4 text-red-600" />
+                    </span>
+                    Documents
+                  </h3>
+                  <button
+                    onClick={handleOpenEditDocs}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors"
+                  >
+                    <Edit className="w-3.5 h-3.5" /> Edit Numbers
+                  </button>
+                </div>
+
+                <div className="space-y-5">
+                  {/* FSSAI */}
+                  {doc.fssai_number && (
+                    <div className="border border-gray-100 rounded-3xl p-5 bg-gray-50/50">
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">FSSAI License</p>
+                          <p className="text-xs text-gray-500 font-mono mt-0.5">{doc.fssai_number}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 cursor-pointer transition-colors">
+                            <Upload className="w-3.5 h-3.5" />
+                            Upload
+                            <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'fssai')} />
+                          </label>
+                          <button
+                            onClick={() => handleDeleteDocType('fssai', 'FSSAI')}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      {doc.file_fssai && doc.file_fssai.length > 0 && (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {doc.file_fssai.map((file, index) => (
+                            <div key={index} className="relative group">
+                              {renderDocument(file, index, 'FSSAI')}
+                              <button
+                                onClick={() => handleDeleteDocFile('fssai', file)}
+                                className="absolute top-1.5 right-1.5 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-700"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* GST */}
+                  {doc.gst_number && (
+                    <div className="border border-gray-100 rounded-3xl p-5 bg-gray-50/50">
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">GST Certificate</p>
+                          <p className="text-xs text-gray-500 font-mono mt-0.5">{doc.gst_number}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 cursor-pointer transition-colors">
+                            <Upload className="w-3.5 h-3.5" />
+                            Upload
+                            <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'gst')} />
+                          </label>
+                          <button
+                            onClick={() => handleDeleteDocType('gst', 'GST')}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      {doc.file_gst && doc.file_gst.length > 0 && (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {doc.file_gst.map((file, index) => (
+                            <div key={index} className="relative group">
+                              {renderDocument(file, index, 'GST')}
+                              <button
+                                onClick={() => handleDeleteDocFile('gst', file)}
+                                className="absolute top-1.5 right-1.5 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-700"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Trade License */}
+                  {doc.trade_license_number && (
+                    <div className="border border-gray-100 rounded-3xl p-5 bg-gray-50/50">
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">Trade License</p>
+                          <p className="text-xs text-gray-500 font-mono mt-0.5">{doc.trade_license_number}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 cursor-pointer transition-colors">
+                            <Upload className="w-3.5 h-3.5" />
+                            Upload
+                            <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'trade')} />
+                          </label>
+                          <button
+                            onClick={() => handleDeleteDocType('trade', 'Trade License')}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      {doc.file_trade_license && doc.file_trade_license.length > 0 && (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {doc.file_trade_license.map((file, index) => (
+                            <div key={index} className="relative group">
+                              {renderDocument(file, index, 'Trade License')}
+                              <button
+                                onClick={() => handleDeleteDocFile('trade', file)}
+                                className="absolute top-1.5 right-1.5 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-700"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Other Documents */}
+                  {doc.otherDocumentType && (
+                    <div className="border border-gray-100 rounded-3xl p-5 bg-gray-50/50">
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{doc.otherDocumentType}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">Other Document</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 cursor-pointer transition-colors">
+                            <Upload className="w-3.5 h-3.5" />
+                            Upload
+                            <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'other')} />
+                          </label>
+                          <button
+                            onClick={() => handleDeleteDocType('other', 'Other Documents')}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium hover:bg-red-100 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      {doc.file_other_doc && doc.file_other_doc.length > 0 && (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {doc.file_other_doc.map((file, index) => (
+                            <div key={index} className="relative group">
+                              {renderDocument(file, index, 'Other Doc')}
+                              <button
+                                onClick={() => handleDeleteDocFile('other', file)}
+                                className="absolute top-1.5 right-1.5 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-700"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-            <div className="space-y-3">
-              <button
-                onClick={() => navigate(`/menu/add?restaurant=${restaurant.uid}&name=${encodeURIComponent(profile?.restaurant_name || 'Restaurant')}`)}
-                className="w-full px-4 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-medium text-sm transition-colors"
-              >
-                + Add Menu Item
-              </button>
-              <button
-                onClick={() => navigate(`/dining/add?restaurant=${restaurant.uid}&name=${encodeURIComponent(profile?.restaurant_name || 'Restaurant')}`)}
-                className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-medium text-sm transition-colors"
-              >
-                + Add Dining Space
-              </button>
-              <button
-                onClick={() => navigate(`/events/add?restaurant=${restaurant.uid}&name=${encodeURIComponent(profile?.restaurant_name || 'Restaurant')}`)}
-                className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 font-medium text-sm transition-colors"
-              >
-                + Add Event
-              </button>
-              <button
-                onClick={() => navigate(`/menu`)}
-                className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm transition-colors"
-              >
-                Manage All Menus
-              </button>
-              <button
-                onClick={handleToggleActive}
-                className={`w-full px-4 py-2.5 rounded-lg font-medium text-sm transition-colors ${restaurant.isActive
-                  ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  : 'bg-green-100 text-green-700 hover:bg-green-200'
-                  }`}
-              >
-                {restaurant.isActive ? 'Block Restaurant' : 'Unblock Restaurant'}
-              </button>
-            </div>
-          </div>
+          {/* ── Right Column (empty — Status & Quick Actions removed) ── */}
+          <div className="space-y-6" />
         </div>
       </div>
 

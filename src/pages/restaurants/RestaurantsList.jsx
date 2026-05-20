@@ -8,10 +8,14 @@ import { Search, Download, AlertCircle, Eye, Loader2, Trash2, Power } from "luci
 import { getAllRestaurants, getRestaurantById, toggleRestaurantActive, toggleRestaurantOff, permanentlyDeleteRestaurant } from "../../services/api";
 import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
+import { useAuth } from "../../context/AuthContext";
+import { toRoleRoute } from "../../utils/roleRoutes";
 
 const RestaurantsList = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const isRestaurantAdmin = user?.role === 'RESTAURANT_ADMIN' || user?.role === '2';
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(location.state?.tab || "all");
@@ -24,7 +28,7 @@ const RestaurantsList = () => {
 
   useEffect(() => {
     fetchRestaurants();
-  }, []);
+  }, [isRestaurantAdmin, user?.restaurantUid]);
 
   // Load contact details for visible restaurants
   useEffect(() => {
@@ -108,7 +112,11 @@ const RestaurantsList = () => {
 
       // 🚀 OPTIMIZED: Process restaurants from basic data directly
       // The backend already includes profile relation with restaurant_name
-      const processedRestaurants = basicData.map((restaurant) => {
+      const scopedData = isRestaurantAdmin
+        ? basicData.filter((restaurant) => restaurant.uid === user?.restaurantUid)
+        : basicData;
+
+      const processedRestaurants = scopedData.map((restaurant) => {
         return {
           id: restaurant.id,
           uid: restaurant.uid || `NO_UID_${restaurant.id}`,
@@ -197,7 +205,7 @@ const RestaurantsList = () => {
       toast.error('Invalid restaurant UID');
       return;
     }
-    navigate(`/restaurants/${restaurant.uid}`);
+    navigate(toRoleRoute(`/restaurants/${restaurant.uid}`, user?.role));
   };
 
   const handleExport = () => {
@@ -364,12 +372,16 @@ const RestaurantsList = () => {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Status
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        On/Off
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        Delete
-                      </th>
+                        {!isRestaurantAdmin && (
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            On/Off
+                          </th>
+                        )}
+                        {!isRestaurantAdmin && (
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Delete
+                          </th>
+                        )}
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                         Actions
                       </th>
@@ -453,37 +465,41 @@ const RestaurantsList = () => {
                         </td>
 
                         {/* Block / Unblock */}
-                        <td className="px-4 py-4">
-                          <button
-                            onClick={() => handleToggleActive(restaurant.uid)}
-                            disabled={toggleLoading[restaurant.uid]}
-                            title={toggleLoading[restaurant.uid] ? 'Updating...' : restaurant.isActive === false ? 'Click to on restaurant' : 'Click to off restaurant'}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
-                              toggleLoading[restaurant.uid] ? 'opacity-70' : ''
-                            } ${restaurant.isActive === false ? 'bg-red-500' : 'bg-green-500'}`}
-                          >
-                            {toggleLoading[restaurant.uid] ? (
-                              <Loader2 className="mx-auto h-3 w-3 animate-spin text-white" />
-                            ) : (
-                              <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${
-                                  restaurant.isActive === false ? 'translate-x-0.5' : 'translate-x-5'
-                                }`}
-                              />
-                            )}
-                          </button>
-                        </td>
+                        {!isRestaurantAdmin && (
+                          <td className="px-4 py-4">
+                            <button
+                              onClick={() => handleToggleActive(restaurant.uid)}
+                              disabled={toggleLoading[restaurant.uid]}
+                              title={toggleLoading[restaurant.uid] ? 'Updating...' : restaurant.isActive === false ? 'Click to on restaurant' : 'Click to off restaurant'}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                                toggleLoading[restaurant.uid] ? 'opacity-70' : ''
+                              } ${restaurant.isActive === false ? 'bg-red-500' : 'bg-green-500'}`}
+                            >
+                              {toggleLoading[restaurant.uid] ? (
+                                <Loader2 className="mx-auto h-3 w-3 animate-spin text-white" />
+                              ) : (
+                                <span
+                                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-300 ${
+                                    restaurant.isActive === false ? 'translate-x-0.5' : 'translate-x-5'
+                                  }`}
+                                />
+                              )}
+                            </button>
+                          </td>
+                        )}
 
                         {/* Delete */}
-                        <td className="px-4 py-4">
-                          <button
-                            onClick={() => handleDeleteRestaurant(restaurant.uid, restaurant.restaurant_name)}
-                            className="text-red-500 hover:text-red-700 transition p-1"
-                            title="Permanently Delete"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </td>
+                        {!isRestaurantAdmin && (
+                          <td className="px-4 py-4">
+                            <button
+                              onClick={() => handleDeleteRestaurant(restaurant.uid, restaurant.restaurant_name)}
+                              className="text-red-500 hover:text-red-700 transition p-1"
+                              title="Permanently Delete"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </td>
+                        )}
 
                         {/* Actions */}
                         <td className="px-4 py-4">

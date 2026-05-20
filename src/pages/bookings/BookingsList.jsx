@@ -6,9 +6,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, Calendar } from 'lucide-react';
 import { getAllBookings } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { toRoleRoute } from '../../utils/roleRoutes';
 
 const BookingsList = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('All');
@@ -236,7 +239,7 @@ const BookingsList = () => {
                         <td className="px-4 py-4">{getStatusBadge(b.status)}</td>
                         <td className="px-4 py-4">
                           <button
-                            onClick={() => navigate(`/bookings/${b.id}`)}
+                            onClick={() => navigate(toRoleRoute(`/bookings/${b.id}`, user?.role))}
                             className="text-red-500 hover:text-red-700 text-sm font-medium"
                           >
                             View Details

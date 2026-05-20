@@ -1,8 +1,8 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
-const ProtectedRoute = () => {
-  const { isAuthenticated, loading } = useAuth();
+const RestaurantGuard = () => {
+  const { user, loading, isAuthenticated } = useAuth();
 
   if (loading) {
     return (
@@ -13,10 +13,14 @@ const ProtectedRoute = () => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/admin/login" replace />;
+    return <Navigate to="/restaurant/login" replace />;
+  }
+
+  if (user.role !== 'RESTAURANT_ADMIN' && user.role !== '2') {
+    return <Navigate to="/restaurant/login" replace />;
   }
 
   return <Outlet />;
 };
 
-export default ProtectedRoute;
+export default RestaurantGuard;

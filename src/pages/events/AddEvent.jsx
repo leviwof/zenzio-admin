@@ -10,9 +10,12 @@ import {
     Calendar, Clock, Users, IndianRupee, FileText, ImageIcon, CheckCircle, PartyPopper
 } from 'lucide-react';
 import { getAllRestaurants, createEventByAdmin } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { toRoleRoute } from '../../utils/roleRoutes';
 
 const AddEvent = () => {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [searchParams] = useSearchParams();
 
     
@@ -134,9 +137,9 @@ const AddEvent = () => {
 
             setTimeout(() => {
                 if (preSelectedRestaurant) {
-                    navigate(`/restaurants/${preSelectedRestaurant}`);
+                    navigate(toRoleRoute(`/restaurants/${preSelectedRestaurant}`, user?.role));
                 } else {
-                    navigate('/bookings/approval');
+                    navigate(toRoleRoute('/bookings/approval', user?.role));
                 }
             }, 1500);
 
@@ -150,9 +153,9 @@ const AddEvent = () => {
 
     const getBackPath = () => {
         if (preSelectedRestaurant) {
-            return `/restaurants/${preSelectedRestaurant}`;
+            return toRoleRoute(`/restaurants/${preSelectedRestaurant}`, user?.role);
         }
-        return '/bookings/approval';
+        return toRoleRoute('/bookings/approval', user?.role);
     };
 
     
