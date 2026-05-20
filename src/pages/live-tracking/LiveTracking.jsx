@@ -17,6 +17,8 @@ import {
     X,
 } from 'lucide-react';
 import { getLivePartnerLocations } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { toRoleRoute } from '../../utils/roleRoutes';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -250,6 +252,7 @@ const SummaryCard = ({ icon, label, value, hint, tone }) => {
 
 const LiveTracking = () => {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [partners, setPartners] = useState([]);
     const [loading, setLoading] = useState(true);
     const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
@@ -636,7 +639,7 @@ const LiveTracking = () => {
                                                                     <button
                                                                         onClick={(event) => {
                                                                             event.stopPropagation();
-                                                                            navigate(`/orders/${order.orderId}`);
+                                                                            navigate(toRoleRoute(`/orders/${order.orderId}`, user?.role));
                                                                         }}
                                                                         className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
                                                                     >

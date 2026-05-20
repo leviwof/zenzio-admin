@@ -5,12 +5,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Mail, Phone, MapPin, CheckCircle, Circle, Printer, AlertTriangle, X, Navigation } from 'lucide-react';
-import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder } from '../../services/api';
+import { getOrderDetailsForRole, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder } from '../../services/api';
 import DeliveryMap from '../../components/DeliveryMap';
+import { useAuth } from '../../context/AuthContext';
+import { toRoleRoute } from '../../utils/roleRoutes';
 
 const OrderDetails = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isRestaurantAdmin = user?.role === 'RESTAURANT_ADMIN' || user?.role === '2';
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -47,10 +51,99 @@ const OrderDetails = () => {
       setLoading(true);
       setError(null);
 
-      const response = await getOrderDetails(orderId);
+      const response = await getOrderDetailsForRole(orderId, isRestaurantAdmin);
 
       if (response?.data) {
-        setOrder(response.data);
+        const d = response.data;
+
+        const restLat = parseFloat(d.order?.restaurant_lat);
+        const restLng = parseFloat(d.order?.restaurant_lng);
+        const custLat = parseFloat(d.order?.customer_lat);
+        const custLng = parseFloat(d.order?.customer_lng);
+
+        let restaurantToCustomerDistance = null;
+        if (!isNaN(restLat) && !isNaN(restLng) && !isNaN(custLat) && !isNaN(custLng)) {
+          const R = 6371;
+          const dLat = (custLat - restLat) * Math.PI / 180;
+          const dLng = (custLng - restLng) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(restLat * Math.PI / 180) * Math.cos(custLat * Math.PI / 180) *
+                    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          restaurantToCustomerDistance = R * c;
+        }
+
+        setOrder({
+          ...d.order,
+          id: d.order?.id,
+          orderId: d.order?.orderId,
+          items: d.order?.items || [],
+          restaurant_name: d.order?.restaurant_name,
+          restaurantStatus: d.order?.restaurantStatus,
+          deliveryPartnerStatus: d.order?.deliveryPartnerStatus,
+          status: d.order?.restaurantStatus,
+          lastUpdated: d.order?.time || d.order?.createdAt,
+          deliveryTime: d.order?.estimated_time,
+          paymentMethod: d.order?.payment_mode,
+          deliveryProof: d.order?.deliveryProof,
+          restaurantToCustomerDistance,
+          orderSummary: {
+            orderPlacement: d.order?.time || d.order?.createdAt,
+            totalAmount: d.order?.price,
+            paymentMethod: d.order?.payment_mode,
+            discountApplied: null,
+          },
+          restaurantInformation: {
+            email: d.order?.restaurant_email || 'N/A',
+            mobile: d.order?.restaurant_mobile || 'N/A',
+            address: d.order?.restaurant_address || (isNaN(restLat) ? 'N/A' : `${restLat}, ${restLng}`),
+          },
+          customerInformation: {
+            name: d.customer?.name || 'N/A',
+            customerId: d.customer?.uid || 'N/A',
+            email: d.customer?.email || 'N/A',
+            mobile: d.customer?.phone || 'N/A',
+            deliveryAddress: d.customer?.deliveryAddress || (isNaN(custLat) ? 'N/A' : `${custLat}, ${custLng}`),
+          },
+          deliveryPartnerInformation: d.deliveryPartner ? {
+            ...d.deliveryPartner,
+            partnerId: d.deliveryPartner.uid || d.deliveryPartner.id,
+            mobile: d.deliveryPartner.phone || d.deliveryPartner.mobile,
+            vehicleType: d.deliveryPartner.vehicleType || d.deliveryPartner.vehicle_type,
+            vehicleNumber: d.deliveryPartner.vehicleNumber || d.deliveryPartner.vehicle_number,
+          } : null,
+          priceSummary: d.billSummary ? {
+            subtotal: d.billSummary.itemTotal,
+            tax: d.billSummary.gst,
+            deliveryFee: d.billSummary.deliveryCharge,
+            packingCharge: 0,
+            discount: 0,
+            total: d.billSummary.grandTotal,
+          } : {
+            subtotal: d.order?.price || 0,
+            tax: 0,
+            deliveryFee: 0,
+            packingCharge: 0,
+            discount: 0,
+            total: d.order?.price || 0,
+          },
+          totalDistance: d.totalDistance != null && typeof d.totalDistance === 'number' ? d.totalDistance : null,
+          partner: d.deliveryPartner,
+          restaurant: {
+            label: d.order?.restaurant_name,
+            lat: restLat,
+            lng: restLng,
+          },
+          customer: {
+            label: d.customer?.name,
+            lat: custLat,
+            lng: custLng,
+          },
+          orderTimeline: [
+            { status: 'Order Placed', timestamp: d.order?.time || d.order?.createdAt, message: 'Order has been placed by the customer' },
+            { status: 'Restaurant Status', timestamp: d.order?.restaurantStatus ? (d.order?.time || d.order?.createdAt) : null, message: d.order?.restaurantStatus || 'Pending' },
+          ],
+        });
       } else {
         console.error('❌ No data in response:', response);
         setError('Order data not found in response');
@@ -63,7 +156,7 @@ const OrderDetails = () => {
     } finally {
       setLoading(false);
     }
-  }, [orderId]);
+  }, [orderId, isRestaurantAdmin]);
 
   useEffect(() => {
     if (orderId) {
@@ -293,7 +386,7 @@ const OrderDetails = () => {
     return (
       <div className="p-6 bg-gray-50 min-h-screen">
         <button
-          onClick={() => navigate('/orders')}
+          onClick={() => navigate(toRoleRoute('/orders', user?.role))}
           className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
         >
           <ChevronLeft size={20} />
@@ -310,7 +403,7 @@ const OrderDetails = () => {
             <p className="text-sm text-gray-500 mb-6">Order ID: {orderId}</p>
             <div className="flex gap-3 justify-center">
               <button
-                onClick={() => navigate('/orders')}
+                onClick={() => navigate(toRoleRoute('/orders', user?.role))}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
               >
                 Back to Orders List
@@ -335,7 +428,7 @@ const OrderDetails = () => {
     <div className="p-6 bg-gray-50 min-h-screen">
       {}
       <button
-        onClick={() => navigate('/orders')}
+        onClick={() => navigate(toRoleRoute('/orders', user?.role))}
         className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
       >
         <ChevronLeft size={20} />
@@ -373,7 +466,7 @@ const OrderDetails = () => {
       </div>
 
       {}
-      {hasDeliveryPartner && (
+      {!isRestaurantAdmin && hasDeliveryPartner && (
         <div className="bg-white rounded-lg shadow mb-6 p-6 border-l-4 border-red-500">
           <div className="flex items-center justify-between mb-4">
             <div>

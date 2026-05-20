@@ -5,7 +5,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
     ArrowLeft, Save, Loader2, Upload, X, Plus,
     UtensilsCrossed, IndianRupee, Percent, Tag,
@@ -15,8 +15,10 @@ import { getAllRestaurants, createMenuByAdminWithImage, getMenuCategories, getAl
 
 const AddMenu = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [searchParams] = useSearchParams();
     const topRef = useRef(null);
+    const isRestaurantAdminPath = location.pathname.startsWith('/restaurant/');
 
 
     const preSelectedRestaurant = searchParams.get('restaurant');
@@ -177,7 +179,7 @@ const AddMenu = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        if (!formData.restaurant_uid) {
+        if (!isRestaurantAdminPath && !formData.restaurant_uid) {
             alert('Please select a restaurant');
             return;
         }
@@ -192,7 +194,9 @@ const AddMenu = () => {
 
 
             const submitData = new FormData();
-            submitData.append('restaurant_uid', formData.restaurant_uid);
+            if (!isRestaurantAdminPath) {
+                submitData.append('restaurant_uid', formData.restaurant_uid);
+            }
             submitData.append('menu_name', formData.menu_name);
             submitData.append('price', parseFloat(formData.price));
             submitData.append('discount', formData.discount ? parseInt(formData.discount) : 0);
@@ -246,6 +250,9 @@ const AddMenu = () => {
     };
 
     const getBackPath = () => {
+        if (isRestaurantAdminPath) {
+            return '/restaurant/menu';
+        }
         if (preSelectedRestaurant) {
             return `/restaurants/${preSelectedRestaurant}`;
         }
@@ -293,7 +300,7 @@ const AddMenu = () => {
                 <form onSubmit={handleSubmit} className="space-y-6">
 
                     { }
-                    {!isRestaurantLocked ? (
+                    {!isRestaurantAdminPath && !isRestaurantLocked ? (
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
@@ -364,7 +371,7 @@ const AddMenu = () => {
                                 )}
                             </div>
                         </div>
-                    ) : (
+                    ) : !isRestaurantAdminPath && isRestaurantLocked ? (
                         <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl shadow-sm border border-green-200 p-6">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
@@ -376,7 +383,7 @@ const AddMenu = () => {
                                 </div>
                             </div>
                         </div>
-                    )}
+                    ) : null}
 
                     { }
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">

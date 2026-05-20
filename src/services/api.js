@@ -1,14 +1,11 @@
 import axios from 'axios';
 
-
 const CLIENT_ID = import.meta.env.VITE_CLIENT_ID;
-const CLIENT_SECRET = import.meta.env.VITE_CLIENT_SECRET;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim();
 
 const normalizedApiBaseUrl = API_BASE_URL
   ? API_BASE_URL.replace(/\/+$/, '')
   : '/';
-
 
 const api = axios.create({
   baseURL: normalizedApiBaseUrl,
@@ -19,22 +16,12 @@ const api = axios.create({
   },
 });
 
-
-
-
 api.interceptors.request.use(
   (config) => {
-    const token =
-      localStorage.getItem('access_token') || 
-      localStorage.getItem('authToken') ||
-      localStorage.getItem('token') ||
-      localStorage.getItem('accessToken');
+    const token = localStorage.getItem('access_token');
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('🔐 Token attached to request');
-    } else {
-      console.warn('⚠️ No auth token found!');
     }
 
     return config;
@@ -42,40 +29,31 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-
-
-
-
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      console.error('🚫 Unauthorized - Token invalid or expired');
-
-      // Clear all auth data
       localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('token');
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('adminId');
-      localStorage.removeItem('adminEmail');
-      localStorage.removeItem('adminRole');
 
-      // Redirect to login with message
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login?session_expired=true';
+      const path = window.location.pathname;
+      if (path !== '/admin/login' && path !== '/restaurant/login') {
+        const isRestaurantApp = path.startsWith('/restaurant');
+        window.location.href = isRestaurantApp
+          ? '/restaurant/login?session_expired=true'
+          : '/admin/login?session_expired=true';
       }
     }
     return Promise.reject(error);
   }
 );
 
+export const adminLogin = (email, password) =>
+  api.post('/super-admin/login', { email, password, role: '1' });
 
+export const restaurantAdminLogin = (email, password) =>
+  api.post('/restaurant-admin/login', { email, password, role: '2' });
 
-
-export const adminLogin = (email, password, role) =>
-  api.post('/super-admin/login', { email, password, role });
+export const getMe = () => api.get('/auth/me');
 
 export const adminRegister = (formData) =>
   api.post('/super-admin/create', formData);
@@ -91,18 +69,12 @@ export const confirmChangePasswordOtp = (otp, newPassword) => api.patch('/super-
 export const requestPasswordReset = (email) => api.post('/user/auth/request-reset-password', { email });
 export const confirmPasswordReset = (data) => api.post('/user/auth/confirm-reset-password', data);
 
-
-
-
 export const getAllCustomers = (params) => api.get('/users', { params });
 export const getCustomerStats = () => api.get('/users/stats');
 export const getCustomerById = (id) => api.get(`/users/${id}`);
 export const updateCustomerStatus = (uid, payload) =>
   api.patch(`/users/${uid}/status/admin`, payload);
 export const deleteCustomer = (uid) => api.delete(`/users/${uid}`);
-
-
-
 
 export const getAllRestaurants = (params) => api.get('/restaurants', { params });
 export const getRestaurantById = (uid) => api.get(`/restaurants/${uid}/admin`);
@@ -111,7 +83,6 @@ export const toggleRestaurantOff = (id) => api.patch(`/restaurants/${id}/toggle-
 export const getRestaurantStats = () => api.get('/restaurants/stats');
 export const getRestaurantAdminStats = (uid, params) => api.get(`/restaurants/${uid}/admin-stats`, { params });
 export const getCuisineTypes = () => api.get('/restaurants/cuisines');
-
 
 export const updateRestaurantStatus = (uid, status) =>
   api.patch(`/restaurants/${uid}/status/admin`, {
@@ -122,17 +93,11 @@ export const updateRestaurantStatus = (uid, status) =>
 export const permanentlyDeleteRestaurant = (uid) =>
   api.delete(`/restaurants/${uid}/admin/permanent`);
 
-
-
-
 export const getAllCategories = (params) => api.get('/enum', { params });
 export const getCategoryById = (id) => api.get(`/categories/${id}`);
 export const createCategory = (data) => api.post('/categories', data);
 export const updateCategory = (id, data) => api.put(`/categories/${id}`, data);
 export const deleteCategory = (id) => api.delete(`/categories/${id}`);
-
-
-
 
 export const getMenuCategories = () => api.get('/restaurant-menu/categories');
 
@@ -156,7 +121,6 @@ export const getWorkTypes = () => api.get('/work-types');
 export const updatePartnerProfile = (uid, data) =>
   api.patch(`/fleets/${uid}/profile`, data);
 
-// Shift Management
 export const getShiftConfig = () => api.get('/shift/config');
 export const getMyShift = () => api.get('/shift/my');
 export const assignShift = (shiftId) => api.post('/shift/assign', { shiftId });
@@ -170,24 +134,22 @@ export const downloadAttendanceReport = (partnerId, params) =>
 
 export const getLivePartnerLocations = () => api.get('/fleets/live-tracking/all');
 
-
-
-
 export const getAllOrders = (params) => api.get('/orders/admin/all', { params });
 export const getOrderStats = () => api.get('/orders/stats');
 export const getOrderMonitoringStats = () => api.get('/orders/monitoring-stats');
 export const getOrderDetails = (orderId) => api.get(`/orders/${orderId}/admin-details`);
+export const getOrdersForRole = (params = {}, isRestaurantAdmin = false) =>
+  isRestaurantAdmin ? api.get('/orders', { params }) : api.get('/orders/admin/all', { params });
+export const getOrderDetailsForRole = (orderId, isRestaurantAdmin = false) =>
+  isRestaurantAdmin ? api.get(`/orders/${orderId}/details`) : api.get(`/orders/${orderId}/admin-details`);
 export const updateOrderStatus = (orderId, status) => api.put(`/orders/${orderId}/status`, { status });
 export const getAdminAnalytics = (period) => api.get('/orders/admin/analytics', { params: { period } });
-
 
 export const updateDeliveryStatusByAdmin = (orderId, status, reason = '') =>
   api.put(`/orders/${orderId}/admin/delivery-status`, { status, reason });
 
 export const reassignOrder = (orderId, newPartnerUid, reason = '') =>
   api.put(`/orders/${orderId}/admin/reassign`, { newPartnerUid, reason });
-
-
 
 export const getPendingEvents = (params = {}) => api.get('/events/pending', { params });
 export const getEventForApproval = (id) => api.get(`/events/approval/${id}`);
@@ -196,18 +158,13 @@ export const rejectEvent = (id, data) => api.put(`/events/reject/${id}`, data);
 export const getAllEvents = (params = {}) => api.get('/events', { params });
 export const getEventStats = (params = {}) => api.get('/events/stats', { params });
 
-
-
-
 export const getAllBookings = (params = {}) => api.get('/bookings', { params });
 export const getBookingById = (id) => api.get(`/bookings/${id}`);
 export const getBookingStats = (params = {}) => api.get('/bookings/stats', { params });
 
-
-
-
 export const getPendingOffers = () => api.get('/offers/pending');
 export const getAllOffers = (params = {}) => api.get('/offers', { params });
+export const getMyOffers = (params = {}) => api.get('/offers/me', { params });
 export const getOfferDetails = (offerId) => api.get(`/offers/details/${offerId}`);
 export const approveOffer = (offerId, comments = '') =>
   api.put(`/offers/${offerId}/approve`, { comments });
@@ -230,9 +187,6 @@ export const updateAdminOffer = (id, formData) =>
   });
 export const deleteAdminOffer = (id) => api.delete(`/offers/admin-created/${id}`);
 
-
-
-
 export const getAllCuisineCategories = (params) => api.get('/restaurant_enum', { params });
 export const getCuisineGroups = () => api.get('/restaurant_enum/groups');
 export const getCuisineChildrenByParent = (parentId) => api.get(`/restaurant_enum/children/${parentId}`);
@@ -242,16 +196,15 @@ export const createCuisineCategory = (data) => api.post('/restaurant_enum', data
 export const updateCuisineCategory = (id, data) => api.put(`/restaurant_enum/${id}`, data);
 export const deleteCuisineCategory = (id) => api.delete(`/restaurant_enum/${id}`);
 
-
-
-
 export const getAllMenus = (params) => api.get('/restaurant-menu', { params });
 
 export const getMenusByRestaurant = (restaurantUid, params) =>
   api.get(`/restaurant-menu/by-restaurant`, { params: { restaurant_uid: restaurantUid, includeInactive: 'true', ...params } });
 
-export const getMenuByUid = (menuUid) => api.get(`/restaurant-menu/${menuUid}`);
+export const getMyMenus = (params) =>
+  api.get('/restaurant-menu/me', { params: { includeInactive: 'true', ...params } });
 
+export const getMenuByUid = (menuUid) => api.get(`/restaurant-menu/${menuUid}`);
 
 export const toggleMenuStatus = (menuUid, newStatus) =>
   api.patch(`/restaurant-menu/${menuUid}/status/admin`, {
@@ -270,9 +223,6 @@ export const bulkUpdateMenuStatus = (menuUids, newStatus) =>
 
 export const bulkDeleteMenu = (menuUids) =>
   api.delete('/restaurant-menu/bulk-soft', { data: { ids: menuUids } });
-
-
-
 
 export const createMenuByAdmin = (data) => api.post('/restaurant-menu/admin-create', data);
 export const createMenuByAdminWithImage = (formData) =>
@@ -304,18 +254,12 @@ export const createEventByAdminWithImage = (formData) =>
 export const getAllDiningSpaces = (params) => api.get('/dining-spaces', { params });
 export const getDiningSpacesByRestaurant = (restaurantId) => api.get(`/dining-spaces/restaurant/${restaurantId}`);
 
-
-
-
 export const getAllCoupons = (params) => api.get('/coupons', { params });
 export const getCouponById = (id) => api.get(`/coupons/${id}`);
 export const createCoupon = (data) => api.post('/coupons', data);
 export const updateCoupon = (id, data) => api.patch(`/coupons/${id}`, data);
 export const deleteCoupon = (id) => api.delete(`/coupons/${id}`);
 export const downloadCouponReport = () => api.get('/coupons/report', { responseType: 'blob' });
-
-
-
 
 export const getAllPlans = () => api.get('/subscriptions/plans');
 export const createPlan = (data) => api.post('/subscriptions/plans', data);
@@ -324,14 +268,8 @@ export const getSubscriptionStats = () => api.get('/subscriptions/stats');
 export const getSubscriptionHistory = (restaurantId) =>
   api.get(`/subscriptions/restaurant/${restaurantId}/history`);
 
-
-
-
 export const getNotifications = () => api.get('/notifications');
 export const markNotificationAsRead = (id) => api.patch(`/notifications/${id}/read`);
-
-
-
 
 export const getBanners = () => api.get('/banners');
 export const uploadBanner = (formData) =>
@@ -340,7 +278,6 @@ export const uploadBanner = (formData) =>
   });
 export const deleteBanner = (id) => api.delete(`/banners/${id}`);
 
-// Restaurant Edit APIs
 export const updateRestaurantProfileAdmin = (uid, profileData) =>
   api.put(`/restaurants/${uid}/admin/profile`, profileData);
 
@@ -355,10 +292,6 @@ export const uploadRestaurantLogoAdmin = (uid, file) => {
   });
 };
 
-
-
-
-// Restaurant Documents APIs
 export const deleteRestaurantDocumentAdmin = (uid, docType) =>
   api.delete(`/restaurants/${uid}/admin/documents/${docType}`);
 
@@ -371,7 +304,7 @@ export const updateRestaurantDocumentsAdmin = (uid, documentData) =>
 export const uploadRestaurantDocumentFileAdmin = (uid, docType, files) => {
   const formData = new FormData();
   formData.append('restaurantUid', uid);
-  formData.append('docType', docType); // 'fssai' | 'gst' | 'trade' | 'other'
+  formData.append('docType', docType);
   Array.from(files).forEach((file) => formData.append('files', file));
   return api.post(`/restaurants/upload-documents`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -380,8 +313,5 @@ export const uploadRestaurantDocumentFileAdmin = (uid, docType, files) => {
 
 export const getGlobalSettings = () => api.get('/global-settings');
 export const updateGlobalSettings = (data) => api.patch('/global-settings', data);
-
-
-
 
 export default api;

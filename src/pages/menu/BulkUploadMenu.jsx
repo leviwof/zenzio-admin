@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
     ArrowLeft, Upload, Download, Loader2, CheckCircle,
     AlertCircle, Search, ChevronDown, UtensilsCrossed, FileSpreadsheet
@@ -8,7 +8,9 @@ import { getAllRestaurants, bulkUploadMenu, downloadMenuTemplate } from '../../s
 
 const BulkUploadMenu = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const topRef = useRef(null);
+    const isRestaurantAdminPath = location.pathname.startsWith('/restaurant/');
 
     const [loading, setLoading] = useState(false);
     const [downloading, setDownloading] = useState(false);
@@ -104,7 +106,7 @@ const BulkUploadMenu = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        if (!formData.restaurant_uid) {
+        if (!isRestaurantAdminPath && !formData.restaurant_uid) {
             alert('Please select a restaurant first.');
             return;
         }
@@ -119,7 +121,9 @@ const BulkUploadMenu = () => {
             setUploadResult(null);
 
             const submitData = new FormData();
-            submitData.append('restaurant_uid', formData.restaurant_uid);
+            if (!isRestaurantAdminPath) {
+                submitData.append('restaurant_uid', formData.restaurant_uid);
+            }
             submitData.append('file', formData.file);
 
             const response = await bulkUploadMenu(submitData);
@@ -164,7 +168,7 @@ const BulkUploadMenu = () => {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <button
-                                onClick={() => navigate('/menu')}
+                                onClick={() => navigate(isRestaurantAdminPath ? '/restaurant/menu' : '/menu')}
                                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                                 <ArrowLeft size={20} />
@@ -217,73 +221,74 @@ const BulkUploadMenu = () => {
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    {/* Restaurant Selector */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
-                                <UtensilsCrossed className="w-5 h-5 text-red-600" />
-                            </div>
-                            <div>
-                                <h2 className="text-lg font-semibold text-gray-900">Select Restaurant</h2>
-                                <p className="text-sm text-gray-500">Menu items will be added to this restaurant</p>
-                            </div>
-                        </div>
+                    {!isRestaurantAdminPath && (
+                      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                          <div className="flex items-center gap-3 mb-4">
+                              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                                  <UtensilsCrossed className="w-5 h-5 text-red-600" />
+                              </div>
+                              <div>
+                                  <h2 className="text-lg font-semibold text-gray-900">Select Restaurant</h2>
+                                  <p className="text-sm text-gray-500">Menu items will be added to this restaurant</p>
+                              </div>
+                          </div>
 
-                        <div className="relative z-50">
-                            <button
-                                type="button"
-                                onClick={() => setDropdownOpen(!dropdownOpen)}
-                                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 transition-all font-medium"
-                            >
-                                <span className={`${formData.restaurant_uid ? 'text-gray-900' : 'text-gray-500'}`}>
-                                    {formData.restaurant_uid
-                                        ? (restaurants.find(r => r.uid === formData.restaurant_uid)?.name || 'Selected Restaurant')
-                                        : '-- Select Target Restaurant --'}
-                                </span>
-                                <ChevronDown size={20} className={`text-gray-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
-                            </button>
+                          <div className="relative z-50">
+                              <button
+                                  type="button"
+                                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 transition-all font-medium"
+                              >
+                                  <span className={`${formData.restaurant_uid ? 'text-gray-900' : 'text-gray-500'}`}>
+                                      {formData.restaurant_uid
+                                          ? (restaurants.find(r => r.uid === formData.restaurant_uid)?.name || 'Selected Restaurant')
+                                          : '-- Select Target Restaurant --'}
+                                  </span>
+                                  <ChevronDown size={20} className={`text-gray-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+                              </button>
 
-                            {dropdownOpen && (
-                                <>
-                                    <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)}></div>
-                                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl z-50">
-                                        <div className="p-3 border-b border-gray-200 sticky top-0 bg-white rounded-t-xl">
-                                            <div className="relative">
-                                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-                                                <input
-                                                    type="text"
-                                                    placeholder="Search restaurants..."
-                                                    value={restaurantSearch}
-                                                    onChange={(e) => setRestaurantSearch(e.target.value)}
-                                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
-                                                    autoFocus
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="max-h-[300px] overflow-y-auto">
-                                            {filteredRestaurants.length === 0 ? (
-                                                <div className="px-4 py-3 text-gray-500 text-sm text-center">No restaurants found</div>
-                                            ) : (
-                                                filteredRestaurants.map(restaurant => (
-                                                    <div
-                                                        key={restaurant.uid}
-                                                        className={`px-4 py-3 hover:bg-red-50 cursor-pointer text-base border-b border-gray-50 last:border-0 ${formData.restaurant_uid === restaurant.uid ? 'bg-red-50 text-red-600 font-medium' : 'text-gray-700'}`}
-                                                        onClick={() => {
-                                                            setFormData(prev => ({ ...prev, restaurant_uid: restaurant.uid }));
-                                                            setDropdownOpen(false);
-                                                            setRestaurantSearch('');
-                                                        }}
-                                                    >
-                                                        {restaurant.name}
-                                                    </div>
-                                                ))
-                                            )}
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
+                              {dropdownOpen && (
+                                  <>
+                                      <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)}></div>
+                                      <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl z-50">
+                                          <div className="p-3 border-b border-gray-200 sticky top-0 bg-white rounded-t-xl">
+                                              <div className="relative">
+                                                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                                                  <input
+                                                      type="text"
+                                                      placeholder="Search restaurants..."
+                                                      value={restaurantSearch}
+                                                      onChange={(e) => setRestaurantSearch(e.target.value)}
+                                                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                                                      autoFocus
+                                                  />
+                                              </div>
+                                          </div>
+                                          <div className="max-h-[300px] overflow-y-auto">
+                                              {filteredRestaurants.length === 0 ? (
+                                                  <div className="px-4 py-3 text-gray-500 text-sm text-center">No restaurants found</div>
+                                              ) : (
+                                                  filteredRestaurants.map(restaurant => (
+                                                      <div
+                                                          key={restaurant.uid}
+                                                          className={`px-4 py-3 hover:bg-red-50 cursor-pointer text-base border-b border-gray-50 last:border-0 ${formData.restaurant_uid === restaurant.uid ? 'bg-red-50 text-red-600 font-medium' : 'text-gray-700'}`}
+                                                          onClick={() => {
+                                                              setFormData(prev => ({ ...prev, restaurant_uid: restaurant.uid }));
+                                                              setDropdownOpen(false);
+                                                              setRestaurantSearch('');
+                                                          }}
+                                                      >
+                                                          {restaurant.name}
+                                                      </div>
+                                                  ))
+                                              )}
+                                          </div>
+                                      </div>
+                                  </>
+                              )}
+                          </div>
+                      </div>
+                    )}
 
                     {/* File Upload Area */}
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
@@ -345,16 +350,16 @@ const BulkUploadMenu = () => {
                     <div className="flex justify-end pt-2">
                         <button
                             type="button"
-                            onClick={() => navigate('/menu')}
+                            onClick={() => navigate(isRestaurantAdminPath ? '/restaurant/menu' : '/menu')}
                             className="px-6 py-3 text-gray-600 hover:bg-gray-100 rounded-xl font-medium transition-colors mr-3"
                         >
                             Cancel
                         </button>
                         <button
                             type="submit"
-                            disabled={loading || !formData.file || !formData.restaurant_uid}
+                            disabled={loading || !formData.file || (!isRestaurantAdminPath && !formData.restaurant_uid)}
                             className={`px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-medium shadow-lg flex items-center gap-2 transition-all
-                                ${(loading || !formData.file || !formData.restaurant_uid)
+                                ${(loading || !formData.file || (!isRestaurantAdminPath && !formData.restaurant_uid))
                                     ? 'opacity-50 cursor-not-allowed border-red-300' 
                                     : 'hover:from-red-600 hover:to-red-700 hover:shadow-red-500/30 border border-transparent'}
                             `}

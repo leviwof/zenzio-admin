@@ -1,8 +1,3 @@
-// =============================================
-// FILE: src/pages/auth/Register.jsx
-// Fields: name, email, password, confirmPassword, role
-// Removed: phoneNumber
-// =============================================
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
@@ -16,7 +11,6 @@ const Register = () => {
     email: "",
     password: "",
     confirmPassword: "",
-    role: "",
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -34,27 +28,24 @@ const Register = () => {
   };
 
   const validateForm = () => {
-    const { name, email, password, confirmPassword, role } = formData;
+    const { name, email, password, confirmPassword } = formData;
 
-    if (!name || !email || !password || !confirmPassword || !role) {
+    if (!name || !email || !password || !confirmPassword) {
       setError("All fields are required");
       return false;
     }
 
-    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setError("Please enter a valid email address");
       return false;
     }
 
-    // Password validation
     if (password.length < 6) {
       setError("Password must be at least 6 characters long");
       return false;
     }
 
-    // Confirm password validation
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return false;
@@ -73,20 +64,15 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // Backend payload - 5 fields only
       const payload = {
         name: formData.name,
-        role: formData.role === 'superadmin' ? 1 : 2,
+        role: 1,
         email: formData.email,
         password: formData.password,
         photo: "https://example.com/photo.jpg"
       };
 
-      console.log('📤 Sending payload:', payload);
-
-      const response = await adminRegister(payload);
-      console.log('✅ Registration successful:', response.data);
-
+      await adminRegister(payload);
       setSuccess("Registration successful! Redirecting to login...");
 
       setTimeout(() => {
@@ -95,12 +81,10 @@ const Register = () => {
           email: "",
           password: "",
           confirmPassword: "",
-          role: "",
         });
-        navigate("/login");
+        navigate("/admin/login");
       }, 2000);
     } catch (err) {
-      console.error('❌ Registration error:', err);
       setError(
         err.response?.data?.message ||
         err.response?.data?.error ||
@@ -115,7 +99,6 @@ const Register = () => {
   return (
     <div className="flex min-h-screen p-4 bg-gray-100 items-center justify-center">
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-lg">
-        {/* Logo */}
         <div className="mb-8 text-center">
           <img
             src={logo}
@@ -124,14 +107,12 @@ const Register = () => {
           />
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="mb-4 p-3 text-red-600 text-sm bg-red-50 border border-red-200 rounded-md">
             {error}
           </div>
         )}
 
-        {/* Success Message */}
         {success && (
           <div className="mb-4 p-3 text-green-600 text-sm bg-green-50 border border-green-200 rounded-md">
             {success}
@@ -139,7 +120,6 @@ const Register = () => {
         )}
 
         <form onSubmit={handleSubmit}>
-          {/* Name Input */}
           <div className="mb-4">
             <input
               type="text"
@@ -152,7 +132,6 @@ const Register = () => {
             />
           </div>
 
-          {/* Email Input */}
           <div className="mb-4">
             <input
               type="email"
@@ -165,7 +144,6 @@ const Register = () => {
             />
           </div>
 
-          {/* Password Input */}
           <div className="mb-4 relative">
             <input
               type={showPassword ? "text" : "password"}
@@ -185,8 +163,7 @@ const Register = () => {
             </button>
           </div>
 
-          {/* Confirm Password Input */}
-          <div className="mb-4 relative">
+          <div className="mb-6 relative">
             <input
               type={showConfirmPassword ? "text" : "password"}
               name="confirmPassword"
@@ -205,22 +182,6 @@ const Register = () => {
             </button>
           </div>
 
-          {/* Role Dropdown */}
-          <div className="mb-6">
-            <select
-              name="role"
-              value={formData.role}
-              onChange={handleChange}
-              required
-              className="w-full px-4 py-3 bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
-            >
-              <option value="">Select Role</option>
-              <option value="superadmin">Super Admin</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
@@ -230,12 +191,11 @@ const Register = () => {
           </button>
         </form>
 
-        {/* Login Link */}
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-600">
             Already have an account?{" "}
             <Link
-              to="/login"
+              to="/admin/login"
               className="text-red-500 font-medium hover:text-red-600"
             >
               Login here

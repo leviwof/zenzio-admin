@@ -7,8 +7,10 @@ import {
 import Layout from "./components/layout/Layout";
 import { Toaster } from "react-hot-toast";
 import { OrderNotificationProvider } from "./context/OrderNotificationContext";
+import { useAuth } from "./context/AuthContext";
 
-import Login from "./pages/auth/Login";
+import AdminLogin from "./pages/auth/AdminLogin";
+import RestaurantLogin from "./pages/auth/RestaurantLogin";
 import Register from "./pages/auth/Register";
 
 import Dashboard from "./pages/dashboard/Dashboard";
@@ -47,31 +49,39 @@ import BulkUploadMenu from "./pages/menu/BulkUploadMenu";
 import AddDining from "./pages/dining/AddDining";
 import AddEvent from "./pages/events/AddEvent";
 import BannerManagement from "./pages/banners/BannerManagement";
-import ProtectedRoute from "./components/layout/ProtectedRoute";
-
+import AdminGuard from "./components/layout/AdminGuard";
+import RestaurantGuard from "./components/layout/RestaurantGuard";
 import ActivityLog from "./pages/activity/ActivityLog";
+import RestaurantDashboard from "./pages/restaurant-dashboard/RestaurantDashboard";
+import RestaurantMenu from "./pages/restaurant-dashboard/RestaurantMenu";
 
 function App() {
-  const handleLogout = async () => {
-    await fetch("/auth/logout", { credentials: "include" });
-    localStorage.clear();
-    window.location.href = "/login";
-  };
+  const { logout, user } = useAuth();
 
+  const handleLogout = async () => {
+    await logout();
+    const role = user?.role;
+    if (role === 'RESTAURANT_ADMIN' || role === '2') {
+      window.location.href = "/restaurant/login";
+    } else {
+      window.location.href = "/admin/login";
+    }
+  };
 
   return (
     <Router>
       <Toaster position="top-right" />
       <Routes>
-        {}
-        <Route path="/login" element={<Login />} />
+        {/* Public login pages */}
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/restaurant/login" element={<RestaurantLogin />} />
+        <Route path="/login" element={<Navigate to="/admin/login" replace />} />
         <Route path="/register" element={<Register />} />
 
-        {}
-        <Route element={<ProtectedRoute />}>
+        {/* Super Admin routes */}
+        <Route element={<AdminGuard />}>
           <Route element={<OrderNotificationProvider><Layout onLogout={handleLogout} /></OrderNotificationProvider>}>
             <Route path="/dashboard" element={<Dashboard />} />
-
             <Route path="/activity-log" element={<ActivityLog />} />
 
             <Route path="/customers" element={<CustomersList />} />
@@ -80,30 +90,15 @@ function App() {
             <Route path="/restaurants" element={<RestaurantsList />} />
             <Route path="/restaurants/:uid" element={<RestaurantDetails />} />
 
-            <Route
-              path="/delivery-partners"
-              element={<DeliveryPartnersList />}
-            />
-            <Route
-              path="/delivery-partners/:id"
-              element={<DeliveryPartnerDetails />}
-            />
-            <Route
-              path="/delivery-partners/:partnerId/attendance"
-              element={<AttendanceLog />}
-            />
+            <Route path="/delivery-partners" element={<DeliveryPartnersList />} />
+            <Route path="/delivery-partners/:id" element={<DeliveryPartnerDetails />} />
+            <Route path="/delivery-partners/:partnerId/attendance" element={<AttendanceLog />} />
 
             <Route path="/orders" element={<OrdersList />} />
             <Route path="/orders/:orderId" element={<OrderDetails />} />
 
-            {}
-
             <Route path="/bookings/approval" element={<EventApprovalList />} />
-            <Route
-              path="/events/approval/:id"
-              element={<EventApprovalDetails />}
-            />
-
+            <Route path="/events/approval/:id" element={<EventApprovalDetails />} />
             <Route path="/bookings" element={<BookingsList />} />
             <Route path="/bookings/:id" element={<BookingDetails />} />
 
@@ -115,41 +110,55 @@ function App() {
             <Route path="/offers/admin/:id" element={<AdminOfferDetails />} />
 
             <Route path="/coupon" element={<CouponManagement />} />
-
             <Route path="/menu" element={<MenuManagement />} />
             <Route path="/menu/view/:menuUid" element={<MenuDetails />} />
-            <Route
-              path="/menu/categories/:restaurantId/items/:categoryId"
-              element={<CategoryItems />}
-            />
-            <Route
-              path="/menu/categories/:restaurantId/items/:categoryId/add"
-              element={<AddEditDish />}
-            />
-            <Route
-              path="/menu/categories/:restaurantId/items/:categoryId/edit/:dishId"
-              element={<AddEditDish />}
-            />
-
+            <Route path="/menu/categories/:restaurantId/items/:categoryId" element={<CategoryItems />} />
+            <Route path="/menu/categories/:restaurantId/items/:categoryId/add" element={<AddEditDish />} />
+            <Route path="/menu/categories/:restaurantId/items/:categoryId/edit/:dishId" element={<AddEditDish />} />
             <Route path="/live-tracking" element={<LiveTracking />} />
-
             <Route path="/analytics" element={<AnalyticsDashboard />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/cuisine" element={<CuisineList />} />
             <Route path="/banners" element={<BannerManagement />} />
-
-            {/* Menu & Others */}
             <Route path="/menu/add" element={<AddMenu />} />
             <Route path="/menu/bulk-upload" element={<BulkUploadMenu />} />
             <Route path="/menu/edit/:menuUid" element={<EditMenu />} />
             <Route path="/dining/add" element={<AddDining />} />
             <Route path="/events/add" element={<AddEvent />} />
+            <Route path="/subscription" element={<SubscriptionManagement />} />
 
             <Route path="/" element={<Navigate to="/dashboard" />} />
           </Route>
         </Route>
 
-        <Route path="*" element={<Navigate to="/login" />} />
+        {/* Restaurant Admin routes */}
+        <Route element={<RestaurantGuard />}>
+          <Route element={<Layout onLogout={handleLogout} />}>
+            <Route path="/restaurant/dashboard" element={<RestaurantDashboard />} />
+            <Route path="/restaurant/restaurants" element={<RestaurantsList />} />
+            <Route path="/restaurant/restaurants/:uid" element={<RestaurantDetails />} />
+            <Route path="/restaurant/delivery-partners" element={<DeliveryPartnersList />} />
+            <Route path="/restaurant/delivery-partners/:id" element={<DeliveryPartnerDetails />} />
+            <Route path="/restaurant/delivery-partners/:partnerId/attendance" element={<AttendanceLog />} />
+            <Route path="/restaurant/live-tracking" element={<LiveTracking />} />
+            <Route path="/restaurant/orders" element={<OrdersList />} />
+            <Route path="/restaurant/orders/:orderId" element={<OrderDetails />} />
+            <Route path="/restaurant/menu" element={<RestaurantMenu />} />
+            <Route path="/restaurant/menu/add" element={<AddMenu />} />
+            <Route path="/restaurant/menu/edit/:menuUid" element={<EditMenu />} />
+            <Route path="/restaurant/offers" element={<OffersList />} />
+            <Route path="/restaurant/offers/:id" element={<OfferDetails />} />
+            <Route path="/restaurant/bookings/approval" element={<EventApprovalList />} />
+            <Route path="/restaurant/events/approval/:id" element={<EventApprovalDetails />} />
+            <Route path="/restaurant/bookings" element={<BookingsList />} />
+            <Route path="/restaurant/bookings/:id" element={<BookingDetails />} />
+            <Route path="/restaurant/dining/add" element={<AddDining />} />
+            <Route path="/restaurant/events/add" element={<AddEvent />} />
+            <Route path="/restaurant" element={<Navigate to="/restaurant/dashboard" />} />
+          </Route>
+        </Route>
+
+        <Route path="*" element={<Navigate to="/admin/login" />} />
       </Routes>
     </Router>
   );
