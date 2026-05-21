@@ -4,6 +4,7 @@ import { Search, Download, RefreshCw, Calendar, X, AlertTriangle, Bell, Clock, R
 import { getAllOrders, getOrderStats, getOrderMonitoringStats, updateDeliveryStatusByAdmin } from "../../services/api";
 import { saveAs } from "file-saver";
 import { useOrderNotifications } from "../../context/OrderNotificationContext";
+import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
 
 const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 const loudNotificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
@@ -21,6 +22,8 @@ const debug = (msg, ...args) => {
 
 const OrdersList = () => {
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
   const [allOrders, setAllOrders] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +76,18 @@ const OrdersList = () => {
   const hasInteracted = useRef(false);
 
   const { resetUnreadOrders, addNewOrders, addNewOrderNotification } = useOrderNotifications();
+
+  const orderBelongsToOwnRestaurant = useCallback((order) => {
+    if (!restaurantAdmin || !ownRestaurantUid) return true;
+    return (
+      order.restaurant_uid === ownRestaurantUid ||
+      order.restaurantUid === ownRestaurantUid ||
+      order.restaurant_id === ownRestaurantUid ||
+      order.restaurantId === ownRestaurantUid ||
+      order.restaurant?.uid === ownRestaurantUid ||
+      order.restaurant?.id === ownRestaurantUid
+    );
+  }, [restaurantAdmin, ownRestaurantUid]);
 
   useEffect(() => {
     hasInteracted.current = false;
@@ -293,10 +308,11 @@ const OrdersList = () => {
         status: activeTab,
         search: searchTerm,
         startDate: startDate,
-        endDate: endDate
+        endDate: endDate,
+        ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
       };
       const res = await getAllOrders(params);
-      const newOrders = res.data || [];
+      const newOrders = (res.data || []).filter(orderBelongsToOwnRestaurant);
 
       const newIds = new Set(newOrders.map(o => o.orderId || o.id));
       const hasNewOrder = knownOrderIds.current.size > 0 &&
@@ -352,8 +368,18 @@ const OrdersList = () => {
       setLiveConnected(true);
       pollStartTime.current = Date.now();
 
-      const statsRes = await getOrderMonitoringStats();
-      setStats(statsRes.data);
+      if (restaurantAdmin) {
+        setStats({
+          all: newOrders.length,
+          active: newOrders.filter(o => !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
+          pending: newOrders.filter(o => ['NEW', 'PENDING', 'PENDING_PAYMENT'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
+          delivered: newOrders.filter(o => ['DELIVERED', 'COMPLETED'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
+          cancelled: newOrders.filter(o => (o.restaurantStatus || o.status || '').toUpperCase() === 'CANCELLED').length,
+        });
+      } else {
+        const statsRes = await getOrderMonitoringStats();
+        setStats(statsRes.data);
+      }
     } catch (err) {
       console.error("Error polling orders:", err);
       setLiveConnected(false);
@@ -389,6 +415,11 @@ const OrdersList = () => {
   }, [startDate, endDate]);
 
   const fetchStats = async () => {
+    if (restaurantAdmin) {
+      setLoadingStats(false);
+      return;
+    }
+
     try {
       const res = await getOrderMonitoringStats();
       setStats(res.data);
@@ -406,11 +437,12 @@ const OrdersList = () => {
         status: activeTab,
         search: searchTerm,
         startDate: startDate,
-        endDate: endDate
+        endDate: endDate,
+        ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
       };
 
       const res = await getAllOrders(params);
-      const fetched = res.data || [];
+      const fetched = (res.data || []).filter(orderBelongsToOwnRestaurant);
       setAllOrders(fetched);
       setOrders(fetched);
 
@@ -843,7 +875,7 @@ const OrdersList = () => {
                             >
                               View
                             </button>
-                            {order.restaurantStatus?.toUpperCase() !== 'CANCELLED' && order.restaurantStatus?.toUpperCase() !== 'DELIVERED' && order.restaurantStatus?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'COMPLETED' && (
+                            {!restaurantAdmin && order.restaurantStatus?.toUpperCase() !== 'CANCELLED' && order.restaurantStatus?.toUpperCase() !== 'DELIVERED' && order.restaurantStatus?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'COMPLETED' && (
                               <button
                                 onClick={() => handleOpenCancelModal(order)}
                                 className="px-2 py-1 text-xs font-medium text-gray-400 hover:text-red-600 hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-md transition-all duration-150"

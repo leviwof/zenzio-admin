@@ -7,9 +7,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { getPendingEvents, getAllEvents } from '../../services/api';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const EventApprovalList = () => {
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
@@ -26,6 +29,7 @@ const EventApprovalList = () => {
         search: searchText || undefined,
         page,
         pageSize: 10,
+        ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
       };
 
       let response;
@@ -43,7 +47,18 @@ const EventApprovalList = () => {
       }
 
       const data = response.data.data;
-      setEvents(data.events || []);
+      const scopedEvents = (data.events || []).filter((event) => {
+        if (!restaurantAdmin || !ownRestaurantUid) return true;
+        return (
+          event.restaurant_uid === ownRestaurantUid ||
+          event.restaurantUid === ownRestaurantUid ||
+          event.restaurantId === ownRestaurantUid ||
+          event.restaurant_id === ownRestaurantUid ||
+          event.restaurant?.uid === ownRestaurantUid ||
+          event.restaurant?.id === ownRestaurantUid
+        );
+      });
+      setEvents(scopedEvents);
       setTotalPages(data.pages || 1);
       setTotalCount(data.total || 0);
     } catch (error) {
@@ -120,6 +135,7 @@ const EventApprovalList = () => {
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Dining Approval</h1>
+        {!restaurantAdmin && (
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/dining/add')}
@@ -136,6 +152,7 @@ const EventApprovalList = () => {
             Add Event
           </button>
         </div>
+        )}
       </div>
 
       <div className="bg-white rounded-lg shadow">
@@ -234,7 +251,7 @@ const EventApprovalList = () => {
                           </td>
                           <td className="px-4 py-4">
                             <div className="flex items-center space-x-2">
-                              {activeTab === 'Pending Review' ? (
+                              {activeTab === 'Pending Review' && !restaurantAdmin ? (
                                 <>
                                   <button
                                     onClick={() => handleViewDetails(formattedEvent.id)}

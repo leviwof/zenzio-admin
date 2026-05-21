@@ -48,6 +48,7 @@ import AddDining from "./pages/dining/AddDining";
 import AddEvent from "./pages/events/AddEvent";
 import BannerManagement from "./pages/banners/BannerManagement";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
+import { ROLES } from "./utils/auth";
 
 import ActivityLog from "./pages/activity/ActivityLog";
 
@@ -72,26 +73,8 @@ function App() {
           <Route element={<OrderNotificationProvider><Layout onLogout={handleLogout} /></OrderNotificationProvider>}>
             <Route path="/dashboard" element={<Dashboard />} />
 
-            <Route path="/activity-log" element={<ActivityLog />} />
-
-            <Route path="/customers" element={<CustomersList />} />
-            <Route path="/customers/:id" element={<CustomerDetails />} />
-
             <Route path="/restaurants" element={<RestaurantsList />} />
             <Route path="/restaurants/:uid" element={<RestaurantDetails />} />
-
-            <Route
-              path="/delivery-partners"
-              element={<DeliveryPartnersList />}
-            />
-            <Route
-              path="/delivery-partners/:id"
-              element={<DeliveryPartnerDetails />}
-            />
-            <Route
-              path="/delivery-partners/:partnerId/attendance"
-              element={<AttendanceLog />}
-            />
 
             <Route path="/orders" element={<OrdersList />} />
             <Route path="/orders/:orderId" element={<OrderDetails />} />
@@ -104,17 +87,8 @@ function App() {
               element={<EventApprovalDetails />}
             />
 
-            <Route path="/bookings" element={<BookingsList />} />
-            <Route path="/bookings/:id" element={<BookingDetails />} />
-
             <Route path="/offers" element={<OffersList />} />
-            <Route path="/offers/create" element={<OfferConfiguration />} />
-            <Route path="/offers/existing" element={<ExistingOffers />} />
             <Route path="/offers/:id" element={<OfferDetails />} />
-            <Route path="/offers/edit/:id" element={<OfferEdit />} />
-            <Route path="/offers/admin/:id" element={<AdminOfferDetails />} />
-
-            <Route path="/coupon" element={<CouponManagement />} />
 
             <Route path="/menu" element={<MenuManagement />} />
             <Route path="/menu/view/:menuUid" element={<MenuDetails />} />
@@ -133,17 +107,48 @@ function App() {
 
             <Route path="/live-tracking" element={<LiveTracking />} />
 
-            <Route path="/analytics" element={<AnalyticsDashboard />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/cuisine" element={<CuisineList />} />
-            <Route path="/banners" element={<BannerManagement />} />
-
             {/* Menu & Others */}
             <Route path="/menu/add" element={<AddMenu />} />
-            <Route path="/menu/bulk-upload" element={<BulkUploadMenu />} />
             <Route path="/menu/edit/:menuUid" element={<EditMenu />} />
-            <Route path="/dining/add" element={<AddDining />} />
-            <Route path="/events/add" element={<AddEvent />} />
+
+            <Route element={<ProtectedRoute allowedRoles={[ROLES.ZENZIO_ADMIN]} />}>
+              <Route path="/activity-log" element={<ActivityLog />} />
+
+              <Route path="/customers" element={<CustomersList />} />
+              <Route path="/customers/:id" element={<CustomerDetails />} />
+
+              <Route
+                path="/delivery-partners"
+                element={<DeliveryPartnersList />}
+              />
+              <Route
+                path="/delivery-partners/:id"
+                element={<DeliveryPartnerDetails />}
+              />
+              <Route
+                path="/delivery-partners/:partnerId/attendance"
+                element={<AttendanceLog />}
+              />
+
+              <Route path="/bookings" element={<BookingsList />} />
+              <Route path="/bookings/:id" element={<BookingDetails />} />
+
+              <Route path="/offers/create" element={<OfferConfiguration />} />
+              <Route path="/offers/existing" element={<ExistingOffers />} />
+              <Route path="/offers/edit/:id" element={<OfferEdit />} />
+              <Route path="/offers/admin/:id" element={<AdminOfferDetails />} />
+
+              <Route path="/coupon" element={<CouponManagement />} />
+
+              <Route path="/analytics" element={<AnalyticsDashboard />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/cuisine" element={<CuisineList />} />
+              <Route path="/banners" element={<BannerManagement />} />
+
+              <Route path="/menu/bulk-upload" element={<BulkUploadMenu />} />
+              <Route path="/dining/add" element={<AddDining />} />
+              <Route path="/events/add" element={<AddEvent />} />
+            </Route>
 
             <Route path="/" element={<Navigate to="/dashboard" />} />
           </Route>

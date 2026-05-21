@@ -6,11 +6,14 @@ import {
     FileText, ImageIcon, CheckCircle, ChevronDown
 } from 'lucide-react';
 import { getAllRestaurants, editMenuByAdminWithImage, getMenuByUid, getMenuCategories, getAllCuisineCategories } from '../../services/api';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const EditMenu = () => {
     const navigate = useNavigate();
     const { menuUid } = useParams();
     const topRef = useRef(null);
+    const restaurantAdmin = isRestaurantAdmin();
+    const ownRestaurantUid = getCurrentRestaurantUid();
 
     const [loading, setLoading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +56,7 @@ const EditMenu = () => {
             // Fetch menu details, restaurants, and categories/cuisines in parallel
             const [menuResponse, restaurantsResponse, categoriesResponse] = await Promise.all([
                 getMenuByUid(menuUid),
-                getAllRestaurants({ limit: 500 }),
+                restaurantAdmin ? Promise.resolve({ data: [] }) : getAllRestaurants({ limit: 500 }),
                 getAllCuisineCategories()
             ]);
 
@@ -99,6 +102,12 @@ const EditMenu = () => {
             // Set form data
             if (menuData) {
                 const restaurantUid = menuData.restaurant_uid || menuData.restaurantUid;
+                if (restaurantAdmin && ownRestaurantUid && restaurantUid && restaurantUid !== ownRestaurantUid) {
+                    alert('You can only edit menus for your own restaurant.');
+                    navigate('/menu');
+                    return;
+                }
+
                 const selectedRestaurant = formattedRestaurants.find(r => r.uid === restaurantUid);
                 
                 setFormData({
@@ -113,7 +122,10 @@ const EditMenu = () => {
                     isActive: menuData.isActive !== undefined ? menuData.isActive : menuData.is_active !== undefined ? menuData.is_active : true,
                 });
 
-                if (selectedRestaurant) {
+                if (restaurantAdmin) {
+                    setRestaurants(ownRestaurantUid ? [{ uid: ownRestaurantUid, name: 'Your Restaurant' }] : []);
+                    setRestaurantName('Your Restaurant');
+                } else if (selectedRestaurant) {
                     setRestaurantName(selectedRestaurant.name);
                 }
 

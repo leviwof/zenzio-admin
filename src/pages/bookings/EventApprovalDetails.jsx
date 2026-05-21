@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import { getEventForApproval, approveEvent, rejectEvent } from '../../services/api';
+import { isRestaurantAdmin } from '../../utils/auth';
 
 const EventApprovalDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -92,7 +94,7 @@ const EventApprovalDetails = () => {
     }
   };
 
-  const canModify = () => !event || !event.isAdminVerified;
+  const canModify = () => !restaurantAdmin && (!event || !event.isAdminVerified);
 
   const handleImageError = (idx, photoPath) => {
     console.error(`Failed to load image ${idx}:`, photoPath);

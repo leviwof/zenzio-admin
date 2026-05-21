@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { adminLogin } from "../../services/api";
 import logo from "../../assets/logoadmin.png";
+import { extractRestaurantUid, persistRestaurantUid } from "../../utils/auth";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -38,6 +39,10 @@ const handleSubmit = async (e) => {
     localStorage.setItem("adminId", data.user.id);
     localStorage.setItem("adminEmail", data.user.email);
     localStorage.setItem("adminRole", data.user.role);
+    localStorage.setItem("loginRole", role);
+
+    const restaurantUid = extractRestaurantUid(data.user);
+    persistRestaurantUid(restaurantUid);
 
     window.location.href = "/dashboard";
   } catch (err) {

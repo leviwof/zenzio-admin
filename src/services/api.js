@@ -61,6 +61,11 @@ api.interceptors.response.use(
       localStorage.removeItem('adminId');
       localStorage.removeItem('adminEmail');
       localStorage.removeItem('adminRole');
+      localStorage.removeItem('loginRole');
+      localStorage.removeItem('restaurantUid');
+      localStorage.removeItem('restaurant_uid');
+      localStorage.removeItem('restaurantId');
+      localStorage.removeItem('restaurant_id');
 
       // Redirect to login with message
       if (window.location.pathname !== '/login') {

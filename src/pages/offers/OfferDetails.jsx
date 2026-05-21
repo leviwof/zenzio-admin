@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import { getOfferDetails, approveOffer, rejectOffer, requestChanges } from '../../services/api';
+import { isRestaurantAdmin } from '../../utils/auth';
 
 const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '').replace('/api', '');
 
 const OfferDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
   const [offer, setOffer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [adminNotes, setAdminNotes] = useState('');
@@ -198,16 +200,17 @@ const OfferDetails = () => {
           </div>
         )}
 
-        {/* Admin Notes */}
-        <div>
-          <h3 className="font-bold text-lg mb-2">Admin Notes</h3>
-          <textarea
-            value={adminNotes}
-            onChange={(e) => setAdminNotes(e.target.value)}
-            placeholder="Add notes or feedback for the restaurant..."
-            className="w-full p-3 border border-gray-300 rounded-md h-32 resize-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-          />
-        </div>
+        {!restaurantAdmin && (
+          <div>
+            <h3 className="font-bold text-lg mb-2">Admin Notes</h3>
+            <textarea
+              value={adminNotes}
+              onChange={(e) => setAdminNotes(e.target.value)}
+              placeholder="Add notes or feedback for the restaurant..."
+              className="w-full p-3 border border-gray-300 rounded-md h-32 resize-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            />
+          </div>
+        )}
 
         {/* Previous Feedback */}
         {(offer.rejectionReason || offer.adminComments) && (
@@ -230,7 +233,7 @@ const OfferDetails = () => {
         {/* Actions */}
         <div className="flex flex-wrap justify-center gap-4 mt-6">
           <button onClick={() => navigate('/offers')} className="px-6 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Back</button>
-          {(offer.approvalStatus === 'PENDING' || offer.approvalStatus === 'CHANGES_REQUESTED') && (
+          {!restaurantAdmin && (offer.approvalStatus === 'PENDING' || offer.approvalStatus === 'CHANGES_REQUESTED') && (
             <>
               <button onClick={handleRequestChanges} className="px-6 py-2 border border-blue-500 text-blue-500 rounded-md hover:bg-blue-50">Request Changes</button>
               <button onClick={handleReject} className="px-6 py-2 border border-red-500 text-red-500 rounded-md hover:bg-red-50">Reject Offer</button>

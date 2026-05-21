@@ -4,14 +4,17 @@ import { Search, Eye, Edit, Trash2, Loader2, AlertCircle, ChevronDown } from 'lu
 import { toast } from 'react-hot-toast';
 import { getAllMenus, getMenusByRestaurant, toggleMenuStatus, bulkUpdateMenuStatus, deleteMenu, bulkDeleteMenu, getAllRestaurants } from '../../services/api';
 import { getImageUrl } from '../../utils/imageUtils';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const MenuManagement = () => {
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
   const [menus, setMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRestaurant, setSelectedRestaurant] = useState('all');
+  const [selectedRestaurant, setSelectedRestaurant] = useState(restaurantAdmin ? ownRestaurantUid : 'all');
   const [restaurants, setRestaurants] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [restaurantSearch, setRestaurantSearch] = useState('');
@@ -46,6 +49,11 @@ const MenuManagement = () => {
   }, [searchQuery]);
 
   const fetchRestaurantsList = async () => {
+    if (restaurantAdmin) {
+      setRestaurants(ownRestaurantUid ? [{ uid: ownRestaurantUid, name: 'Your Restaurant' }] : []);
+      return;
+    }
+
     try {
       const response = await getAllRestaurants({ limit: 500 });
       let restaurantData = [];
@@ -129,6 +137,7 @@ const MenuManagement = () => {
   };
 
   const handleRestaurantFilter = (restaurantUid) => {
+    if (restaurantAdmin) return;
     setSelectedRestaurant(restaurantUid);
     setCurrentPage(1);
     setPagination({ total: 0, page: 1, limit: 10, totalPages: 1 });
@@ -248,6 +257,16 @@ const MenuManagement = () => {
     setSearchQuery('');
   };
 
+  if (restaurantAdmin && !ownRestaurantUid) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="bg-white border border-amber-200 rounded-xl p-6 text-amber-800">
+          Restaurant access is not linked to your account yet. Please contact Zenzio support.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {deleteModal.show && (
@@ -267,8 +286,15 @@ const MenuManagement = () => {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/menu/bulk-upload')} className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Bulk Upload</button>
-            <button onClick={() => navigate('/menu/add')} className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg font-medium">+ Add Menu</button>
+            {!restaurantAdmin && (
+              <button onClick={() => navigate('/menu/bulk-upload')} className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Bulk Upload</button>
+            )}
+            <button
+              onClick={() => navigate(restaurantAdmin && ownRestaurantUid ? `/menu/add?restaurant=${ownRestaurantUid}` : '/menu/add')}
+              className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg font-medium"
+            >
+              + Add Menu
+            </button>
           </div>
         </div>
       </div>
@@ -288,6 +314,7 @@ const MenuManagement = () => {
               />
             </div>
 
+            {!restaurantAdmin && (
             <div className="relative min-w-[250px] z-50">
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -351,6 +378,7 @@ const MenuManagement = () => {
                 </>
               )}
             </div>
+            )}
 
             {searchTerm && (
               <button onClick={handleClearSearch} className="px-4 py-2 text-red-500 border border-red-500 rounded-md hover:bg-red-50">Clear</button>

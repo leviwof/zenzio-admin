@@ -22,11 +22,15 @@ import {
   getPendingOffers,
   getAdminAnalytics,
   getAllOrders,
-  getCustomerStats
+  getCustomerStats,
+  getRestaurantAdminStats
 } from "../../services/api";
+import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [totalRestaurants, setTotalRestaurants] = useState(0);
   const [totalDeliveryPartners, setTotalDeliveryPartners] = useState(0);
@@ -42,6 +46,14 @@ const Dashboard = () => {
   }, []);
 
   const fetchCounts = async () => {
+    if (restaurantAdmin) {
+      await Promise.all([
+        fetchRestaurantDashboard(),
+        fetchRecentActivities(),
+      ]);
+      return;
+    }
+
     await Promise.all([
       fetchCustomers(),
       fetchRestaurants(),
@@ -54,11 +66,42 @@ const Dashboard = () => {
     ]);
   };
 
+  const orderBelongsToOwnRestaurant = (order) => {
+    if (!restaurantAdmin || !ownRestaurantUid) return true;
+    return (
+      order.restaurant_uid === ownRestaurantUid ||
+      order.restaurantUid === ownRestaurantUid ||
+      order.restaurant_id === ownRestaurantUid ||
+      order.restaurantId === ownRestaurantUid ||
+      order.restaurant?.uid === ownRestaurantUid ||
+      order.restaurant?.id === ownRestaurantUid
+    );
+  };
+
+  const fetchRestaurantDashboard = async () => {
+    if (!ownRestaurantUid) return;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const res = await getRestaurantAdminStats(ownRestaurantUid, { startDate: today, endDate: today });
+      const data = res.data?.data || {};
+      setTotalRestaurants(1);
+      setActiveOrders(data.orders || 0);
+      setPendingBookings(data.bookings || 0);
+      setOffersPending(data.active_offers || 0);
+      setTotalRevenue(data.sales || 0);
+    } catch (error) {
+      console.error("Error fetching restaurant dashboard:", error);
+    }
+  };
+
   const fetchRecentActivities = async () => {
     try {
       setLoadingActivities(true);
-      const res = await getAllOrders({ limit: 10 });
-      const rawOrders = res.data || [];
+      const res = await getAllOrders({
+        limit: 10,
+        ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
+      });
+      const rawOrders = (res.data || []).filter(orderBelongsToOwnRestaurant);
 
       // Transform real orders into activity objects
       const formattedActivities = rawOrders.slice(0, 10).map((order) => {
@@ -207,7 +250,7 @@ const Dashboard = () => {
       change: "-",
       icon: Calendar,
       color: "text-red-500",
-      link: "/bookings",
+      link: restaurantAdmin ? "/bookings/approval" : "/bookings",
     },
     {
       label: "Offers Pending Approval",
@@ -226,6 +269,10 @@ const Dashboard = () => {
       link: "/analytics",
     },
   ];
+
+  const visibleStats = restaurantAdmin
+    ? stats.filter((stat) => ["/restaurants", "/orders", "/bookings/approval", "/offers"].includes(stat.link))
+    : stats;
 
 
 
@@ -256,7 +303,7 @@ const Dashboard = () => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        {stats.map((stat, idx) => (
+        {visibleStats.map((stat, idx) => (
           <div
             key={idx}
             onClick={() => navigate(stat.link)}
@@ -371,6 +418,7 @@ const Dashboard = () => {
 
             <h2 className="text-xl font-bold mb-6 relative z-10 text-slate-800">Quick Actions</h2>
             <div className="flex flex-col gap-4 relative z-10">
+              {!restaurantAdmin && (
               <button
                 onClick={() => navigate("/restaurants", { state: { tab: "inactive" } })}
                 className="group w-full p-4 bg-slate-50 rounded-2xl flex items-center gap-4 border border-slate-100 hover:bg-red-50 hover:border-red-200 transition-all duration-300"
@@ -383,6 +431,7 @@ const Dashboard = () => {
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Pending Review</p>
                 </div>
               </button>
+              )}
 
               <button
                 onClick={() => navigate("/offers")}
@@ -397,19 +446,21 @@ const Dashboard = () => {
                 </div>
               </button>
 
-              <button
-                disabled
-                className="group w-full p-4 bg-slate-50/50 rounded-2xl flex items-center gap-4 border border-slate-100 opacity-50 cursor-not-allowed"
-              >
-                <div className="bg-slate-400 p-2 rounded-xl">
-                  <AlertCircle size={18} className="text-white" />
-                </div>
-                <div className="text-left flex-1">
-                  <p className="text-sm font-black tracking-tight text-slate-700">Process Refunds</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Coming Soon</p>
-                </div>
-                <span className="text-[9px] bg-red-500 text-white px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">Soon</span>
-              </button>
+              {!restaurantAdmin && (
+                <button
+                  disabled
+                  className="group w-full p-4 bg-slate-50/50 rounded-2xl flex items-center gap-4 border border-slate-100 opacity-50 cursor-not-allowed"
+                >
+                  <div className="bg-slate-400 p-2 rounded-xl">
+                    <AlertCircle size={18} className="text-white" />
+                  </div>
+                  <div className="text-left flex-1">
+                    <p className="text-sm font-black tracking-tight text-slate-700">Process Refunds</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Coming Soon</p>
+                  </div>
+                  <span className="text-[9px] bg-red-500 text-white px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">Soon</span>
+                </button>
+              )}
             </div>
 
             <div className="mt-8 pt-8 border-t border-slate-100">
