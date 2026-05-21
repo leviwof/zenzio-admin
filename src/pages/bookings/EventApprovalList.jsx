@@ -7,12 +7,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { getPendingEvents, getAllEvents } from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
-import { toRoleRoute } from '../../utils/roleRoutes';
 
 const EventApprovalList = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
@@ -70,11 +67,11 @@ const EventApprovalList = () => {
   };
 
   const handleViewDetails = (id) => {
-    navigate(toRoleRoute(`/events/approval/${id}`, user?.role));
+    navigate(`/events/approval/${id}`);
   };
 
   const handleReject = (id) => {
-    navigate(toRoleRoute(`/events/approval/${id}`, user?.role));
+    navigate(`/events/approval/${id}`);
   };
 
   const getEventStatus = (event) => {
@@ -125,14 +122,14 @@ const EventApprovalList = () => {
         <h1 className="text-2xl font-bold text-gray-800">Dining Approval</h1>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate(toRoleRoute('/dining/add', user?.role))}
+            onClick={() => navigate('/dining/add')}
             className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 transition-all shadow-md flex items-center gap-2 text-sm"
           >
             <span className="text-lg">+</span>
             Add Dining Space
           </button>
           <button
-            onClick={() => navigate(toRoleRoute('/events/add', user?.role))}
+            onClick={() => navigate('/events/add')}
             className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg font-medium hover:from-red-600 hover:to-red-700 transition-all shadow-md flex items-center gap-2 text-sm"
           >
             <span className="text-lg">+</span>

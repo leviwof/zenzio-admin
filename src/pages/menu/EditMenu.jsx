@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
     ArrowLeft, Save, Loader2, Upload, X,
     IndianRupee, Percent, Tag,
@@ -10,9 +10,7 @@ import { getAllRestaurants, editMenuByAdminWithImage, getMenuByUid, getMenuCateg
 const EditMenu = () => {
     const navigate = useNavigate();
     const { menuUid } = useParams();
-    const location = useLocation();
     const topRef = useRef(null);
-    const isRestaurantAdminPath = location.pathname.startsWith('/restaurant/');
 
     const [loading, setLoading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -164,6 +162,11 @@ const EditMenu = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
 
+        if (!formData.restaurant_uid) {
+            alert('Please select a restaurant');
+            return;
+        }
+
         if (!formData.menu_name || !formData.price) {
             alert('Please fill in required fields');
             return;
@@ -173,9 +176,7 @@ const EditMenu = () => {
             setLoading(true);
 
             const submitData = new FormData();
-            if (!isRestaurantAdminPath) {
-                submitData.append('restaurant_uid', formData.restaurant_uid);
-            }
+            submitData.append('restaurant_uid', formData.restaurant_uid);
             submitData.append('menu_name', formData.menu_name);
             submitData.append('price', parseFloat(formData.price));
             submitData.append('discount', formData.discount ? parseInt(formData.discount) : 0);
@@ -211,8 +212,9 @@ const EditMenu = () => {
                 topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
 
+            // Show success message for 1 seconds, then go back
             setTimeout(() => {
-                navigate(isRestaurantAdminPath ? '/restaurant/menu' : '/menu');
+                navigate('/menu');
             }, 1000);
 
         } catch (error) {
@@ -242,7 +244,7 @@ const EditMenu = () => {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <button
-                                onClick={() => navigate(isRestaurantAdminPath ? '/restaurant/menu' : '/menu')}
+                                onClick={() => navigate('/menu')}
                                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                                 <ArrowLeft size={20} />
@@ -563,7 +565,7 @@ const EditMenu = () => {
                     <div className="flex justify-end gap-4">
                         <button
                             type="button"
-                            onClick={() => navigate(isRestaurantAdminPath ? '/restaurant/menu' : '/menu')}
+                            onClick={() => navigate('/menu')}
                             className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
                         >
                             Cancel

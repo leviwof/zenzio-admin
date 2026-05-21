@@ -4,12 +4,9 @@ import { Search, Download, Star, Edit, AlertCircle, Trash2, Clock } from 'lucide
 import { getAllDeliveryPartners, updatePartnerStatus, permanentlyDeletePartner } from '../../services/api';
 import { saveAs } from 'file-saver';
 import ReferralManagement from './ReferralManagement';
-import { useAuth } from '../../context/AuthContext';
-import { toRoleRoute } from '../../utils/roleRoutes';
 
 const DeliveryPartnersList = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [partners, setPartners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('info'); // Main tab
@@ -411,7 +408,7 @@ const DeliveryPartnersList = () => {
                           <td className="px-4 py-4">
                             <div className="flex items-center space-x-2">
                               <button
-                                onClick={() => navigate(toRoleRoute(`/delivery-partners/${p.fleetUid}`, user?.role))}
+                                onClick={() => navigate(`/delivery-partners/${p.fleetUid}`)}
                                 className="text-red-500 hover:text-red-700 text-sm font-medium transition"
                               >
                                 View Details
@@ -419,7 +416,7 @@ const DeliveryPartnersList = () => {
 
                               {getActionButton(p)}
                               <button
-                                onClick={() => navigate(toRoleRoute(`/delivery-partners/${p.fleetUid}/attendance`, user?.role))}
+                                onClick={() => navigate(`/delivery-partners/${p.fleetUid}/attendance`)}
                                 className="text-blue-500 hover:text-blue-700 transition p-1"
                                 title="View Attendance Log"
                               >

@@ -13,11 +13,6 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       host: true,
       proxy: {
-        '/restaurant-admin': {
-          target: backendUrl,
-          changeOrigin: true,
-          secure: false,
-        },
         '/super-admin': {
           target: backendUrl,
           changeOrigin: true,

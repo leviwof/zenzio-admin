@@ -3,8 +3,6 @@ import { Menu, Bell, LogOut, Check, ShoppingBag, XCircle, Truck, AlertTriangle, 
 import { useNavigate } from 'react-router-dom';
 import { getNotifications, markNotificationAsRead } from '../../services/api';
 import { useOrderNotifications } from '../../context/OrderNotificationContext';
-import { useAuth } from '../../context/AuthContext';
-import { toRoleRoute } from '../../utils/roleRoutes';
 const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 
 const isToday = (dateStr) => {
@@ -97,7 +95,6 @@ const extractOrderId = (notif) => {
 
 const Header = ({ onToggleSidebar, onLogout }) => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [allNotifications, setAllNotifications] = React.useState([]);
   const [showDropdown, setShowDropdown] = React.useState(false);
   const knownUnreadIds = useRef(new Set());
@@ -233,8 +230,8 @@ const Header = ({ onToggleSidebar, onLogout }) => {
   }, [unreadOrderCount]);
 
   const handleOrderBadgeClick = useCallback(() => {
-    navigate(toRoleRoute('/orders', user?.role));
-  }, [navigate, user?.role]);
+    navigate('/orders');
+  }, [navigate]);
 
   const handleMarkAsRead = useCallback(async (e, id) => {
     e.stopPropagation();
@@ -271,12 +268,12 @@ const Header = ({ onToggleSidebar, onLogout }) => {
     const orderId = extractOrderId(notif);
 
     if (orderId) {
-      navigate(toRoleRoute(`/orders/${orderId}`, user?.role));
+      navigate(`/orders/${orderId}`);
     } else {
-      navigate(toRoleRoute('/orders', user?.role));
+      navigate('/orders');
     }
     setShowDropdown(false);
-  }, [navigate, markSyntheticNotifRead, user?.role]);
+  }, [navigate, markSyntheticNotifRead]);
 
   const listenForEsc = useCallback((e) => {
     if (e.key === 'Escape') setShowDropdown(false);
@@ -412,28 +409,26 @@ const Header = ({ onToggleSidebar, onLogout }) => {
                 )}
               </div>
 
-              {!toRoleRoute('/activity-log', user?.role).startsWith('/restaurant/') && (
-                <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50 text-center">
-                  <button
-                    onClick={() => {
-                      setShowDropdown(false);
-                      navigate('/activity-log');
-                    }}
-                    className="text-[11px] font-bold text-red-500 hover:text-red-600 uppercase tracking-widest"
-                  >
-                    View All Activity
-                  </button>
-                </div>
-              )}
+              <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50 text-center">
+                <button
+                  onClick={() => {
+                    setShowDropdown(false);
+                    navigate('/activity-log');
+                  }}
+                  className="text-[11px] font-bold text-red-500 hover:text-red-600 uppercase tracking-widest"
+                >
+                  View All Activity
+                </button>
+              </div>
             </div>
           )}
         </div>
 
         <div className="flex items-center space-x-2">
           <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white font-bold">
-            {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+            A
           </div>
-          <span className="font-medium">{user?.name || user?.email || 'User'}</span>
+          <span className="font-medium">Admin</span>
         </div>
 
         <button

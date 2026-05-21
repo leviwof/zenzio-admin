@@ -7,13 +7,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import { ChevronLeft, Calendar, Users, Mail, Phone, MapPin, Clock, CheckCircle, Circle, Printer } from 'lucide-react';
 import { getBookingById } from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
-import { toRoleRoute } from '../../utils/roleRoutes';
 
 const BookingDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const printRef = useRef();
@@ -88,7 +85,7 @@ const BookingDetails = () => {
     <div className="p-6 bg-gray-50 min-h-screen">
       {/* Header */}
       <button
-        onClick={() => navigate(toRoleRoute('/bookings', user?.role))}
+        onClick={() => navigate('/bookings')}
         className="flex items-center text-gray-600 hover:text-gray-900 mb-4 no-print"
       >
         <ChevronLeft size={20} />

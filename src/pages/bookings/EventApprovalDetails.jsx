@@ -2,13 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import { getEventForApproval, approveEvent, rejectEvent } from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
-import { toRoleRoute } from '../../utils/roleRoutes';
 
 const EventApprovalDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -57,7 +54,7 @@ const EventApprovalDetails = () => {
     try {
       await approveEvent(id);
       alert('Event approved!');
-      navigate(toRoleRoute('/bookings/approval', user?.role));
+      navigate('/bookings/approval');
     } catch (error) {
       console.error('Error:', error);
       alert('Failed to approve');
@@ -77,7 +74,7 @@ const EventApprovalDetails = () => {
     try {
       await rejectEvent(id, { reason: rejectionReason });
       alert('Event rejected');
-      navigate(toRoleRoute('/bookings/approval', user?.role));
+      navigate('/bookings/approval');
     } catch (error) {
       console.error('Error:', error);
       alert('Failed to reject');
@@ -132,7 +129,7 @@ const EventApprovalDetails = () => {
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <button
-        onClick={() => navigate(toRoleRoute('/bookings/approval', user?.role))}
+        onClick={() => navigate('/bookings/approval')}
         className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
       >
         <ChevronLeft size={20} />
@@ -336,7 +333,7 @@ const EventApprovalDetails = () => {
                   Event {event.isAdminVerified ? 'approved' : 'rejected'}
                 </p>
                 <button
-                  onClick={() => navigate(toRoleRoute('/bookings/approval', user?.role))}
+                  onClick={() => navigate('/bookings/approval')}
                   className="mt-4 px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 text-sm font-medium"
                 >
                   Back to List

@@ -10,12 +10,9 @@ import {
     Armchair, Users, Clock, FileText, ImageIcon, CheckCircle
 } from 'lucide-react';
 import { getAllRestaurants, createDiningByAdmin } from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
-import { toRoleRoute } from '../../utils/roleRoutes';
 
 const AddDining = () => {
     const navigate = useNavigate();
-    const { user } = useAuth();
     const [searchParams] = useSearchParams();
 
     
@@ -175,9 +172,9 @@ const AddDining = () => {
 
             setTimeout(() => {
                 if (preSelectedRestaurant) {
-                    navigate(toRoleRoute(`/restaurants/${preSelectedRestaurant}`, user?.role));
+                    navigate(`/restaurants/${preSelectedRestaurant}`);
                 } else {
-                    navigate(toRoleRoute('/bookings/approval', user?.role));
+                    navigate('/bookings/approval');
                 }
             }, 1500);
 
@@ -191,9 +188,9 @@ const AddDining = () => {
 
     const getBackPath = () => {
         if (preSelectedRestaurant) {
-            return toRoleRoute(`/restaurants/${preSelectedRestaurant}`, user?.role);
+            return `/restaurants/${preSelectedRestaurant}`;
         }
-        return toRoleRoute('/bookings/approval', user?.role);
+        return '/bookings/approval';
     };
 
     if (success) {

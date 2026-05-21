@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Download, RefreshCw, Calendar, X, AlertTriangle, Bell, Clock, Radio } from "lucide-react";
-import { getOrdersForRole, updateDeliveryStatusByAdmin } from "../../services/api";
+import { getAllOrders, getOrderStats, getOrderMonitoringStats, updateDeliveryStatusByAdmin } from "../../services/api";
 import { saveAs } from "file-saver";
 import { useOrderNotifications } from "../../context/OrderNotificationContext";
-import { useAuth } from "../../context/AuthContext";
-import { toRoleRoute } from "../../utils/roleRoutes";
 
 const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 const loudNotificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
@@ -23,8 +21,6 @@ const debug = (msg, ...args) => {
 
 const OrdersList = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isRestaurantAdmin = user?.role === 'RESTAURANT_ADMIN' || user?.role === '2';
   const [allOrders, setAllOrders] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -198,13 +194,13 @@ const OrdersList = () => {
       });
       notif.onclick = () => {
         window.focus();
-        navigate(toRoleRoute("/orders", user?.role));
+        navigate("/orders");
         notif.close();
       };
     } catch (e) {
       console.warn("[DesktopNotif] error:", e);
     }
-  }, [navigate, user?.role]);
+  }, [navigate]);
 
   const addToast = useCallback((order) => {
     const id = ++toastIdCounter.current;
@@ -299,7 +295,7 @@ const OrdersList = () => {
         startDate: startDate,
         endDate: endDate
       };
-      const res = await getOrdersForRole(params, isRestaurantAdmin);
+      const res = await getAllOrders(params);
       const newOrders = res.data || [];
 
       const newIds = new Set(newOrders.map(o => o.orderId || o.id));
@@ -356,16 +352,8 @@ const OrdersList = () => {
       setLiveConnected(true);
       pollStartTime.current = Date.now();
 
-      if (isRestaurantAdmin) {
-        const computedStats = {
-          all: newOrders.length,
-          active: newOrders.filter(o => ['NEW', 'PENDING', 'ACCEPTED', 'IN_PROGRESS', 'PENDING_PAYMENT'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
-          pending: newOrders.filter(o => ['NEW', 'PENDING', 'PENDING_PAYMENT'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
-          delivered: newOrders.filter(o => ['DELIVERED', 'COMPLETED'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
-          cancelled: newOrders.filter(o => ['CANCELLED', 'ADMIN_CANCELLED'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
-        };
-        setStats(computedStats);
-      }
+      const statsRes = await getOrderMonitoringStats();
+      setStats(statsRes.data);
     } catch (err) {
       console.error("Error polling orders:", err);
       setLiveConnected(false);
@@ -402,15 +390,8 @@ const OrdersList = () => {
 
   const fetchStats = async () => {
     try {
-      const res = await getOrdersForRole({}, isRestaurantAdmin);
-      const orderList = Array.isArray(res.data) ? res.data : [];
-      setStats({
-        all: orderList.length,
-        active: orderList.filter(o => ['NEW', 'PENDING', 'ACCEPTED', 'IN_PROGRESS', 'PENDING_PAYMENT'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
-        pending: orderList.filter(o => ['NEW', 'PENDING', 'PENDING_PAYMENT'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
-        delivered: orderList.filter(o => ['DELIVERED', 'COMPLETED'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
-        cancelled: orderList.filter(o => ['CANCELLED', 'ADMIN_CANCELLED'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
-      });
+      const res = await getOrderMonitoringStats();
+      setStats(res.data);
     } catch (err) {
       console.error("Error fetching stats:", err);
     } finally {
@@ -428,7 +409,7 @@ const OrdersList = () => {
         endDate: endDate
       };
 
-      const res = await getOrdersForRole(params, isRestaurantAdmin);
+      const res = await getAllOrders(params);
       const fetched = res.data || [];
       setAllOrders(fetched);
       setOrders(fetched);
@@ -857,12 +838,12 @@ const OrdersList = () => {
                         <td className="px-5 py-3.5 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
-                              onClick={() => navigate(toRoleRoute(`/orders/${order.orderId || order.id}`, user?.role))}
+                              onClick={() => navigate(`/orders/${order.orderId}`)}
                               className="px-3 py-1.5 text-xs font-semibold text-red-500 hover:text-white hover:bg-red-500 border border-red-200 hover:border-red-500 rounded-md transition-all duration-150"
                             >
                               View
                             </button>
-                            {!isRestaurantAdmin && order.restaurantStatus?.toUpperCase() !== 'CANCELLED' && order.restaurantStatus?.toUpperCase() !== 'DELIVERED' && order.restaurantStatus?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'COMPLETED' && (
+                            {order.restaurantStatus?.toUpperCase() !== 'CANCELLED' && order.restaurantStatus?.toUpperCase() !== 'DELIVERED' && order.restaurantStatus?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'COMPLETED' && (
                               <button
                                 onClick={() => handleOpenCancelModal(order)}
                                 className="px-2 py-1 text-xs font-medium text-gray-400 hover:text-red-600 hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-md transition-all duration-150"
@@ -925,7 +906,7 @@ const OrdersList = () => {
           {toasts.map((toast) => (
             <div
               key={toast.id}
-              onClick={() => { cancelLoudSoundTimer(); navigate(toRoleRoute(`/orders/${toast.orderId || toast.id}`, user?.role)); }}
+              onClick={() => { cancelLoudSoundTimer(); navigate(`/orders/${toast.orderId}`); }}
               className={`
                 pointer-events-auto w-80 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden cursor-pointer
                 ${toast.exiting ? 'animate-toast-exit' : 'animate-toast-enter'}

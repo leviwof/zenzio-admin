@@ -1,20 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter } from 'lucide-react';
-import { getAllOffers, getMyOffers, approveOffer, rejectOffer } from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
-import { toRoleRoute } from '../../utils/roleRoutes';
+import { getAllOffers, approveOffer, rejectOffer } from '../../services/api';
 
 const PAGE_SIZE = 6;
 const BACKEND_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '');
 
 const OffersList = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isRestaurantAdmin = user?.role === 'RESTAURANT_ADMIN' || user?.role === '2';
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState(isRestaurantAdmin ? 'APPROVED' : 'PENDING');
+  const [activeTab, setActiveTab] = useState('PENDING');
   const [searchText, setSearchText] = useState('');
   const [offerType, setOfferType] = useState('');
   const [page, setPage] = useState(1);
@@ -29,9 +25,7 @@ const OffersList = () => {
     try {
       setLoading(true);
       const params = { approvalStatus: activeTab, search: searchText, offerType, page, pageSize: PAGE_SIZE };
-      const response = isRestaurantAdmin
-        ? await getMyOffers({ page, limit: PAGE_SIZE })
-        : await getAllOffers(params);
+      const response = await getAllOffers(params);
       const backendOffers = response.data?.data || [];
       const totalCount = response.data?.count || 0;
       setTotalPages(Math.ceil(totalCount / PAGE_SIZE));
@@ -87,16 +81,11 @@ const OffersList = () => {
     }
   };
 
-  const tabs = isRestaurantAdmin
-    ? [
-      { label: 'Approved Offers', value: 'APPROVED' },
-      { label: 'Rejected Offers', value: 'REJECTED' },
-    ]
-    : [
-      { label: 'Pending Review', value: 'PENDING' },
-      { label: 'Approved Offers', value: 'APPROVED' },
-      { label: 'Rejected Offers', value: 'REJECTED' },
-    ];
+  const tabs = [
+    { label: 'Pending Review', value: 'PENDING' },
+    { label: 'Approved Offers', value: 'APPROVED' },
+    { label: 'Rejected Offers', value: 'REJECTED' },
+  ];
 
   const handlePageChange = (newPage) => {
     if (newPage < 1 || newPage > totalPages) return;
@@ -105,7 +94,7 @@ const OffersList = () => {
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-3xl font-bold mb-6">{isRestaurantAdmin ? 'Restaurant Offers' : 'Offer Approval'}</h1>
+      <h1 className="text-3xl font-bold mb-6">Offer Approval</h1>
 
       <div className="bg-white rounded-lg shadow">
         {/* Tabs */}
@@ -194,7 +183,7 @@ const OffersList = () => {
 
                     <p className="text-xs text-gray-500 mb-3">{offer.termsCount} terms & conditions apply</p>
 
-                    {!isRestaurantAdmin && activeTab === 'PENDING' && (
+                    {activeTab === 'PENDING' && (
                       <div className="space-y-2">
                         <div className="flex space-x-2">
                           <button
@@ -211,7 +200,7 @@ const OffersList = () => {
                           </button>
                         </div>
                         <button
-                          onClick={() => navigate(toRoleRoute(`/offers/${offer.id}`, user?.role))}
+                          onClick={() => navigate(`/offers/${offer.id}`)}
                           className="w-full text-red-500 text-sm hover:underline font-medium"
                         >
                           Request Changes
@@ -220,7 +209,7 @@ const OffersList = () => {
                     )}
 
                     <button
-                      onClick={() => navigate(toRoleRoute(`/offers/${offer.id}`, user?.role))}
+                      onClick={() => navigate(`/offers/${offer.id}`)}
                       className="w-full mt-2 text-red-500 text-sm hover:underline font-medium"
                     >
                       View Details

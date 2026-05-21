@@ -1,19 +1,10 @@
-import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { Navigate, Outlet } from "react-router-dom";
 
 const ProtectedRoute = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const adminId = localStorage.getItem("adminId");
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-500" />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/admin/login" replace />;
+  if (!adminId) {
+    return <Navigate to="/login" replace />;
   }
 
   return <Outlet />;
