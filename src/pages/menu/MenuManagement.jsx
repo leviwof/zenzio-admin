@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, Eye, Edit, Trash2, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { getAllMenus, getMenusByRestaurant, toggleMenuStatus, toggleMenuAvailability, bulkUpdateMenuStatus, deleteMenu, bulkDeleteMenu, getAllRestaurants } from '../../services/api';
+import { getAllMenus, getMenusByRestaurant, getMenuByUid, toggleMenuStatus, toggleMenuAvailability, bulkUpdateMenuStatus, deleteMenu, bulkDeleteMenu, getAllRestaurants } from '../../services/api';
 import { getImageUrl } from '../../utils/imageUtils';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
@@ -12,12 +12,13 @@ const MenuManagement = () => {
   const restaurantAdmin = isRestaurantAdmin();
   const ownRestaurantUid = getCurrentRestaurantUid();
   const restaurantFromQuery = new URLSearchParams(location.search).get('restaurant');
+  const restaurantFromState = location.state?.selectedRestaurant;
   const [menus, setMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRestaurant, setSelectedRestaurant] = useState(
-    restaurantAdmin ? ownRestaurantUid : restaurantFromQuery || 'all',
+    restaurantAdmin ? ownRestaurantUid : restaurantFromState || restaurantFromQuery || 'all',
   );
   const [restaurants, setRestaurants] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -46,10 +47,10 @@ const MenuManagement = () => {
     }
 
     const selectedFromUrl = new URLSearchParams(location.search).get('restaurant');
-    setSelectedRestaurant(selectedFromUrl || 'all');
+    setSelectedRestaurant(location.state?.selectedRestaurant || selectedFromUrl || 'all');
     setCurrentPage(1);
     setSelectedIds([]);
-  }, [location.search, restaurantAdmin, ownRestaurantUid]);
+  }, [location.search, location.state?.selectedRestaurant, restaurantAdmin, ownRestaurantUid]);
 
   useEffect(() => {
     if (selectedRestaurant === 'all') {
@@ -94,12 +95,62 @@ const MenuManagement = () => {
     }
   };
 
+  const sortMenusByLatestUpdate = (menuData) => {
+    return [...menuData].sort((a, b) => {
+      const aTime = new Date(a.updatedAt || a.updated_at || a.createdAt || a.created_at || 0).getTime();
+      const bTime = new Date(b.updatedAt || b.updated_at || b.createdAt || b.created_at || 0).getTime();
+      return bTime - aTime;
+    });
+  };
+
+  const getMenuRestaurantUid = (menu) => menu.restaurant_uid || menu.restaurantUid || menu.restaurant?.uid;
+
+  const moveUpdatedMenuToTop = async (menuData) => {
+    const sortedMenus = sortMenusByLatestUpdate(menuData);
+    const updatedMenuUid = location.state?.updatedMenuUid;
+
+    if (!updatedMenuUid) {
+      return sortedMenus;
+    }
+
+    try {
+      const response = await getMenuByUid(updatedMenuUid);
+      const updatedMenu =
+        response.data?.data?.restaurant_menu ||
+        response.data?.restaurant_menu ||
+        response.data?.data ||
+        response.data;
+
+      if (!updatedMenu?.menu_uid) {
+        return sortedMenus;
+      }
+
+      const belongsToSelectedRestaurant =
+        selectedRestaurant === 'all' ||
+        getMenuRestaurantUid(updatedMenu) === selectedRestaurant;
+
+      if (!belongsToSelectedRestaurant) {
+        return sortedMenus;
+      }
+
+      return [
+        updatedMenu,
+        ...sortedMenus.filter((menu) => menu.menu_uid !== updatedMenu.menu_uid),
+      ].slice(0, itemsPerPage);
+    } catch (error) {
+      console.error('Error loading updated menu item:', error);
+      return sortedMenus;
+    }
+  };
+
   const fetchMenus = async () => {
     try {
       setLoading(true);
       const params = {
         page: currentPage,
         limit: itemsPerPage,
+        sortBy: 'updatedAt',
+        sortOrder: 'desc',
         ...(searchQuery && { search: searchQuery }),
       };
 
@@ -114,7 +165,7 @@ const MenuManagement = () => {
       const meta = response.data?.meta || response.data?.data?.meta;
       if (meta) setPagination(meta);
 
-      setMenus(menuData);
+      setMenus(await moveUpdatedMenuToTop(menuData));
     } catch (error) {
       console.error('Error fetching menus:', error);
       toast.error('Failed to load menus');
@@ -129,6 +180,8 @@ const MenuManagement = () => {
       const params = {
         page: currentPage,
         limit: itemsPerPage,
+        sortBy: 'updatedAt',
+        sortOrder: 'desc',
         ...(searchQuery && { search: searchQuery }),
       };
 
@@ -143,7 +196,7 @@ const MenuManagement = () => {
       const meta = response.data?.meta || response.data?.data?.meta;
       if (meta) setPagination(meta);
 
-      setMenus(menuData);
+      setMenus(await moveUpdatedMenuToTop(menuData));
     } catch (error) {
       console.error('Error fetching menus:', error);
       toast.error('Failed to load menus');
@@ -512,7 +565,15 @@ const MenuManagement = () => {
                         </td>
                          <td className="px-4 py-3">
                             <div className="flex gap-2">
-                              <button onClick={() => navigate(`/menu/edit/${menu.menu_uid}`)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit"><Edit size={16} /></button>
+                              <button
+                                onClick={() => navigate(`/menu/edit/${menu.menu_uid}`, {
+                                  state: { selectedRestaurant: selectedRestaurant === 'all' ? menu.restaurant_uid : selectedRestaurant }
+                                })}
+                                className="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                                title="Edit"
+                              >
+                                <Edit size={16} />
+                              </button>
                               <button onClick={() => handleDeleteClick(menu.menu_uid, menu.menu_name)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete"><Trash2 size={16} /></button>
                             </div>
                           </td>

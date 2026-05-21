@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
     ArrowLeft, Save, Loader2, Upload, X,
     IndianRupee, Percent, Tag,
@@ -10,6 +10,7 @@ import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const EditMenu = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { menuUid } = useParams();
     const topRef = useRef(null);
     const restaurantAdmin = isRestaurantAdmin();
@@ -238,6 +239,16 @@ const EditMenu = () => {
             if (topRef.current) {
                 topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
+
+            // Show success message for 1 seconds, then go back
+            setTimeout(() => {
+                navigate('/menu', {
+                    state: {
+                        selectedRestaurant: location.state?.selectedRestaurant || formData.restaurant_uid,
+                        updatedMenuUid: menuUid,
+                    }
+                });
+            }, 1000);
 
         } catch (error) {
             console.error('Failed to update menu:', error);
@@ -587,7 +598,11 @@ const EditMenu = () => {
                     <div className="flex justify-end gap-4">
                         <button
                             type="button"
-                            onClick={() => navigate(formData.restaurant_uid ? `/menu?restaurant=${formData.restaurant_uid}` : '/menu')}
+                            onClick={() => navigate('/menu', {
+                                state: {
+                                    selectedRestaurant: location.state?.selectedRestaurant || formData.restaurant_uid,
+                                }
+                            })}
                             className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
                         >
                             Cancel

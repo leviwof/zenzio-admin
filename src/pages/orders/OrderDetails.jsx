@@ -9,6 +9,47 @@ import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, r
 import DeliveryMap from '../../components/DeliveryMap';
 import { isRestaurantAdmin } from '../../utils/auth';
 
+const ORDER_REFRESH_INTERVAL = 5000;
+
+const ORDER_TIMELINE_STEPS = [
+  { status: 'PLACED', message: 'Order placed successfully' },
+  { status: 'ACCEPTED', message: 'Order accepted by restaurant' },
+  { status: 'PREPARING', message: 'Restaurant is preparing your order' },
+  { status: 'READY', message: 'Order is ready for pickup' },
+  { status: 'ASSIGNED', message: 'Delivery partner assigned' },
+  { status: 'ON_THE_WAY_TO_RESTAURANT', message: 'Delivery partner is on the way to restaurant' },
+  { status: 'REACHED_RESTAURANT', message: 'Delivery partner has reached the restaurant' },
+  { status: 'PICKED_UP', message: 'Order picked up by delivery partner' },
+  { status: 'OUT_FOR_DELIVERY', message: 'Order is out for delivery' },
+  { status: 'ON_THE_WAY_TO_CUSTOMER', message: 'Delivery partner is on the way to customer' },
+  { status: 'DELIVERED', message: 'Order delivered successfully' },
+];
+
+const STATUS_ALIASES = {
+  NEW: 'PLACED',
+  PENDING: 'PLACED',
+  PENDING_PAYMENT: 'PLACED',
+  CONFIRMED: 'PLACED',
+  RESTAURANT_ACCEPTED: 'ACCEPTED',
+  ACCEPTED_BY_RESTAURANT: 'ACCEPTED',
+  FOOD_PREPARING: 'PREPARING',
+  BEING_PREPARED: 'PREPARING',
+  READY_FOR_PICKUP: 'READY',
+  READY_TO_PICKUP: 'READY',
+  PARTNER_ASSIGNED: 'ASSIGNED',
+  DELIVERY_ASSIGNED: 'ASSIGNED',
+  ON_WAY_TO_RESTAURANT: 'ON_THE_WAY_TO_RESTAURANT',
+  ARRIVED_AT_RESTAURANT: 'REACHED_RESTAURANT',
+  REACHED_PICKUP: 'REACHED_RESTAURANT',
+  PICKED: 'PICKED_UP',
+  ORDER_PICKED_UP: 'PICKED_UP',
+  ON_THE_WAY: 'ON_THE_WAY_TO_CUSTOMER',
+  ON_THE_WAY_TO_DELIVERY: 'ON_THE_WAY_TO_CUSTOMER',
+  COMPLETED: 'DELIVERED',
+};
+
+const TERMINAL_STATUSES = new Set(['DELIVERED', 'COMPLETED', 'CANCELLED', 'ADMIN_CANCELLED', 'REJECTED', 'FAILED']);
+
 const OrderDetails = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
@@ -37,16 +78,73 @@ const OrderDetails = () => {
   const DELIVERY_STATUSES = [
     { value: 'assigned', label: 'Assigned', color: 'bg-blue-100 text-blue-700' },
     { value: 'on_the_way_to_restaurant', label: 'On Way to Restaurant', color: 'bg-yellow-100 text-yellow-700' },
+    { value: 'reached_restaurant', label: 'Reached Restaurant', color: 'bg-yellow-100 text-yellow-700' },
     { value: 'picked_up', label: 'Picked Up', color: 'bg-orange-100 text-orange-700' },
     { value: 'out_for_delivery', label: 'Out for Delivery', color: 'bg-purple-100 text-purple-700' },
+    { value: 'on_the_way_to_customer', label: 'On Way to Customer', color: 'bg-purple-100 text-purple-700' },
     { value: 'delivered', label: 'Delivered', color: 'bg-green-100 text-green-700' },
     { value: 'cancelled', label: 'Cancel Delivery', color: 'bg-red-100 text-red-700' },
     { value: 'admin_cancelled', label: 'Admin Cancelled', color: 'bg-red-100 text-red-700' },
   ];
 
-  const fetchOrderDetails = useCallback(async () => {
+  const normalizeStatus = (status) => {
+    const normalized = String(status || '').trim().replace(/[\s-]+/g, '_').toUpperCase();
+    return STATUS_ALIASES[normalized] || normalized;
+  };
+
+  const getCurrentOrderStatus = (orderData) => {
+    const candidates = [
+      orderData?.deliveryStatus,
+      orderData?.deliveryPartnerStatus,
+      orderData?.restaurantStatus,
+      orderData?.orderStatus,
+      orderData?.status,
+    ];
+
+    const matchedStatus = candidates
+      .map(normalizeStatus)
+      .find((status) => ORDER_TIMELINE_STEPS.some((step) => step.status === status) || TERMINAL_STATUSES.has(status));
+
+    return matchedStatus || 'PLACED';
+  };
+
+  const isActiveOrder = (orderData) => {
+    const status = getCurrentOrderStatus(orderData);
+    return !TERMINAL_STATUSES.has(status);
+  };
+
+  const buildOrderTimeline = (orderData) => {
+    const backendTimeline = Array.isArray(orderData?.orderTimeline) ? orderData.orderTimeline : [];
+    const timelineByStatus = backendTimeline.reduce((acc, item) => {
+      const status = normalizeStatus(item.status);
+      acc[status] = item;
+      return acc;
+    }, {});
+
+    const currentStatus = getCurrentOrderStatus(orderData);
+    const currentIndex = ORDER_TIMELINE_STEPS.findIndex((step) => step.status === currentStatus);
+    const completedUntil = currentIndex >= 0 ? currentIndex : -1;
+    const fallbackTimestamp =
+      orderData?.lastUpdated ||
+      orderData?.updatedAt ||
+      orderData?.orderSummary?.orderPlacement ||
+      orderData?.createdAt;
+
+    return ORDER_TIMELINE_STEPS.map((step, index) => {
+      const backendItem = timelineByStatus[step.status];
+      const isCompleted = Boolean(backendItem?.timestamp) || (completedUntil >= 0 && index <= completedUntil);
+
+      return {
+        status: step.status,
+        message: backendItem?.message || step.message,
+        timestamp: backendItem?.timestamp || (isCompleted ? fallbackTimestamp : null),
+      };
+    });
+  };
+
+  const fetchOrderDetails = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
 
       const response = await getOrderDetails(orderId);
@@ -63,7 +161,7 @@ const OrderDetails = () => {
       console.error('❌ Error message:', error.message);
       setError(error.response?.data?.message || error.message || 'Failed to load order details');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [orderId]);
 
@@ -75,6 +173,16 @@ const OrderDetails = () => {
       setLoading(false);
     }
   }, [orderId, fetchOrderDetails]);
+
+  useEffect(() => {
+    if (!orderId || !order || !isActiveOrder(order)) return undefined;
+
+    const intervalId = setInterval(() => {
+      fetchOrderDetails({ silent: true });
+    }, ORDER_REFRESH_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [orderId, order, fetchOrderDetails]);
 
   const getDeliveryStatusBadge = (status) => {
     const statusConfig = DELIVERY_STATUSES.find(s => s.value === status);
@@ -331,7 +439,8 @@ const OrderDetails = () => {
   }
 
   const hasDeliveryPartner = order.deliveryPartnerInformation !== null;
-  const currentDeliveryStatus = order.deliveryPartnerInformation ? 'assigned' : 'pending';
+  const currentDeliveryStatus = getCurrentOrderStatus(order).toLowerCase();
+  const orderTimeline = buildOrderTimeline(order);
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
@@ -759,7 +868,7 @@ const OrderDetails = () => {
       <div className="bg-white rounded-lg shadow p-6 mt-6">
         <h3 className="font-bold text-lg mb-4 text-gray-800">Order Timeline</h3>
         <div className="space-y-4">
-          {order.orderTimeline.map((item, idx) => (
+          {orderTimeline.map((item, idx) => (
             <div key={idx} className="flex items-start space-x-4">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.timestamp ? 'bg-green-100' : 'bg-gray-100'
                 }`}>
