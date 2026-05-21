@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   Users,
-  Utensils,
   Truck,
   ShoppingCart,
   Calendar,
@@ -16,7 +15,6 @@ import { useNavigate } from "react-router-dom";
 import {
   getAllCustomers,
   getAllDeliveryPartners,
-  getAllRestaurants,
   getOrderMonitoringStats,
   getBookingStats,
   getPendingOffers,
@@ -32,7 +30,6 @@ const Dashboard = () => {
   const restaurantAdmin = isRestaurantAdmin();
   const ownRestaurantUid = getCurrentRestaurantUid();
   const [totalCustomers, setTotalCustomers] = useState(0);
-  const [totalRestaurants, setTotalRestaurants] = useState(0);
   const [totalDeliveryPartners, setTotalDeliveryPartners] = useState(0);
   const [activeOrders, setActiveOrders] = useState(0);
   const [pendingBookings, setPendingBookings] = useState(0);
@@ -56,7 +53,6 @@ const Dashboard = () => {
 
     await Promise.all([
       fetchCustomers(),
-      fetchRestaurants(),
       fetchPartners(),
       fetchActiveOrders(),
       fetchPendingBookings(),
@@ -84,7 +80,6 @@ const Dashboard = () => {
       const today = new Date().toISOString().split('T')[0];
       const res = await getRestaurantAdminStats(ownRestaurantUid, { startDate: today, endDate: today });
       const data = res.data?.data || {};
-      setTotalRestaurants(1);
       setActiveOrders(data.orders || 0);
       setPendingBookings(data.bookings || 0);
       setOffersPending(data.active_offers || 0);
@@ -188,18 +183,6 @@ const Dashboard = () => {
     }
   };
 
-  const fetchRestaurants = async () => {
-    try {
-      const response = await getAllRestaurants({});
-      const restaurants = response?.data ?? [];
-      setTotalRestaurants(Array.isArray(restaurants) ? restaurants.length : 0);
-    } catch (error) {
-      console.error(" Error fetching restaurants:", error);
-      setTotalRestaurants(0);
-    }
-  };
-
-
   const fetchPartners = async () => {
     try {
       const response = await getAllDeliveryPartners();
@@ -219,14 +202,6 @@ const Dashboard = () => {
       icon: Users,
       color: "text-red-500",
       link: "/customers",
-    },
-    {
-      label: "Total Restaurants",
-      value: totalRestaurants,
-      change: "-",
-      icon: Utensils,
-      color: "text-red-500",
-      link: "/restaurants",
     },
     {
       label: "Total Delivery Partners",
@@ -261,7 +236,7 @@ const Dashboard = () => {
       link: "/offers",
     },
     {
-      label: "Total Earnings (7D)",
+      label: "Total Earnings",
       value: `₹${totalRevenue.toLocaleString()}`,
       change: "-",
       icon: Check,
@@ -271,7 +246,7 @@ const Dashboard = () => {
   ];
 
   const visibleStats = restaurantAdmin
-    ? stats.filter((stat) => ["/restaurants", "/orders", "/bookings/approval", "/offers"].includes(stat.link))
+    ? stats.filter((stat) => ["/orders", "/bookings/approval", "/offers", "/analytics"].includes(stat.link))
     : stats;
 
 

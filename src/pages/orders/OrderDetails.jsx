@@ -7,10 +7,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Mail, Phone, MapPin, CheckCircle, Circle, Printer, AlertTriangle, X, Navigation } from 'lucide-react';
 import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder } from '../../services/api';
 import DeliveryMap from '../../components/DeliveryMap';
+import { isRestaurantAdmin } from '../../utils/auth';
 
 const OrderDetails = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -373,7 +375,7 @@ const OrderDetails = () => {
       </div>
 
       {}
-      {hasDeliveryPartner && (
+      {hasDeliveryPartner && !restaurantAdmin && (
         <div className="bg-white rounded-lg shadow mb-6 p-6 border-l-4 border-red-500">
           <div className="flex items-center justify-between mb-4">
             <div>

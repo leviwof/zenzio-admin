@@ -3,9 +3,9 @@
 // =============================================
 import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { adminLogin } from "../../services/api";
+import { adminLogin, restaurantLogin } from "../../services/api";
 import logo from "../../assets/logoadmin.png";
-import { extractRestaurantUid, persistRestaurantUid } from "../../utils/auth";
+import { extractRestaurantUid, persistAuthUser, persistRestaurantUid, ROLES } from "../../utils/auth";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -24,10 +24,19 @@ const handleSubmit = async (e) => {
   setError("");
 
   try {
-    const res = await adminLogin(email, password, role);
+    let res;
+    if (role === ROLES.RESTAURANT_ADMIN) {
+      res = await restaurantLogin(email, password);
+    } else {
+      try {
+        res = await adminLogin(email, password, "1");
+      } catch (err) {
+        res = await adminLogin(email, password, "0");
+      }
+    }
 
-    const { status, data } = res.data;
-    if (status !== "success" || !data?.user || !data?.accessToken) {
+    const data = res.data?.data || res.data;
+    if (!data?.user || !data?.accessToken) {
       throw new Error("Login failed");
     }
 
@@ -40,6 +49,7 @@ const handleSubmit = async (e) => {
     localStorage.setItem("adminEmail", data.user.email);
     localStorage.setItem("adminRole", data.user.role);
     localStorage.setItem("loginRole", role);
+    persistAuthUser(data.user);
 
     const restaurantUid = extractRestaurantUid(data.user);
     persistRestaurantUid(restaurantUid);
@@ -109,8 +119,8 @@ const handleSubmit = async (e) => {
             className="w-full mb-4 px-4 py-3 border rounded"
           >
             <option value="">Select Role</option>
-            <option value="1">Super Admin</option>
-            <option value="2">Admin</option>
+            <option value={ROLES.ZENZIO_ADMIN}>Zenzio Admin</option>
+            <option value={ROLES.RESTAURANT_ADMIN}>Restaurant Admin</option>
           </select>
 
           <button

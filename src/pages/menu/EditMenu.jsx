@@ -5,7 +5,7 @@ import {
     IndianRupee, Percent, Tag,
     FileText, ImageIcon, CheckCircle, ChevronDown
 } from 'lucide-react';
-import { getAllRestaurants, editMenuByAdminWithImage, getMenuByUid, getMenuCategories, getAllCuisineCategories } from '../../services/api';
+import { getAllRestaurants, editMenuByAdminWithImage, editMenuForRestaurant, uploadMenuImages, getMenuByUid, getMenuCategories, getAllCuisineCategories } from '../../services/api';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const EditMenu = () => {
@@ -206,7 +206,22 @@ const EditMenu = () => {
             console.log('📤 Submitting menu update for UID:', menuUid);
             console.log('📤 Form data:', Object.fromEntries(submitData));
 
-            const response = await editMenuByAdminWithImage(menuUid, submitData);
+            const response = restaurantAdmin
+                ? await editMenuForRestaurant(menuUid, {
+                    menu_name: formData.menu_name,
+                    price: parseFloat(formData.price),
+                    discount: formData.discount ? parseInt(formData.discount) : 0,
+                    description: formData.description || '',
+                    category: formData.category || '',
+                    food_type: formData.food_type || 'Veg',
+                    cuisine_type: formData.cuisine_type || '',
+                    isActive: formData.isActive,
+                })
+                : await editMenuByAdminWithImage(menuUid, submitData);
+
+            if (restaurantAdmin && imageFile) {
+                await uploadMenuImages(menuUid, [imageFile]);
+            }
             console.log('✅ Menu update response:', response);
 
             // Update image preview with the new image from response
@@ -223,11 +238,6 @@ const EditMenu = () => {
             if (topRef.current) {
                 topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
-
-            // Show success message for 1 seconds, then go back
-            setTimeout(() => {
-                navigate('/menu');
-            }, 1000);
 
         } catch (error) {
             console.error('Failed to update menu:', error);
@@ -256,7 +266,7 @@ const EditMenu = () => {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <button
-                                onClick={() => navigate('/menu')}
+                                onClick={() => navigate(formData.restaurant_uid ? `/menu?restaurant=${formData.restaurant_uid}` : '/menu')}
                                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                                 <ArrowLeft size={20} />
@@ -577,7 +587,7 @@ const EditMenu = () => {
                     <div className="flex justify-end gap-4">
                         <button
                             type="button"
-                            onClick={() => navigate('/menu')}
+                            onClick={() => navigate(formData.restaurant_uid ? `/menu?restaurant=${formData.restaurant_uid}` : '/menu')}
                             className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
                         >
                             Cancel

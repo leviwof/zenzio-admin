@@ -11,7 +11,7 @@ import {
     UtensilsCrossed, IndianRupee, Percent, Tag,
     FileText, ImageIcon, CheckCircle, ChevronDown, Search
 } from 'lucide-react';
-import { getAllRestaurants, createMenuByAdminWithImage, getMenuCategories, getAllCuisineCategories } from '../../services/api';
+import { getAllRestaurants, createMenuByAdminWithImage, createMenuForRestaurant, uploadMenuImages, getMenuCategories, getAllCuisineCategories } from '../../services/api';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const AddMenu = () => {
@@ -200,23 +200,40 @@ const AddMenu = () => {
             setLoading(true);
 
 
-            const submitData = new FormData();
-            submitData.append('restaurant_uid', formData.restaurant_uid);
-            submitData.append('menu_name', formData.menu_name);
-            submitData.append('price', parseFloat(formData.price));
-            submitData.append('discount', formData.discount ? parseInt(formData.discount) : 0);
-            submitData.append('description', formData.description || '');
-            submitData.append('category', formData.category || '');
-            submitData.append('food_type', formData.food_type || 'Veg');
-            submitData.append('cuisine_type', formData.cuisine_type || '');
-            submitData.append('isActive', formData.isActive ? '1' : '0');
+            if (restaurantAdmin) {
+                const response = await createMenuForRestaurant({
+                    menu_name: formData.menu_name,
+                    price: parseFloat(formData.price),
+                    discount: formData.discount ? parseInt(formData.discount) : 0,
+                    description: formData.description || '',
+                    category: formData.category || '',
+                    food_type: formData.food_type || 'Veg',
+                    cuisine_type: formData.cuisine_type || '',
+                    isActive: formData.isActive,
+                    is_available: true,
+                });
+                const createdMenuUid = response.data?.data?.restaurant_menu?.menu_uid;
+                if (imageFile && createdMenuUid) {
+                    await uploadMenuImages(createdMenuUid, [imageFile]);
+                }
+            } else {
+                const submitData = new FormData();
+                submitData.append('restaurant_uid', formData.restaurant_uid);
+                submitData.append('menu_name', formData.menu_name);
+                submitData.append('price', parseFloat(formData.price));
+                submitData.append('discount', formData.discount ? parseInt(formData.discount) : 0);
+                submitData.append('description', formData.description || '');
+                submitData.append('category', formData.category || '');
+                submitData.append('food_type', formData.food_type || 'Veg');
+                submitData.append('cuisine_type', formData.cuisine_type || '');
+                submitData.append('isActive', formData.isActive ? '1' : '0');
 
+                if (imageFile) {
+                    submitData.append('files', imageFile);
+                }
 
-            if (imageFile) {
-                submitData.append('files', imageFile);
+                await createMenuByAdminWithImage(submitData);
             }
-
-            await createMenuByAdminWithImage(submitData);
             setSuccessMessage('Menu item added successfully!');
             
             // Scroll to top using ref

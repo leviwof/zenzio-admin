@@ -571,7 +571,7 @@ const RestaurantDetails = () => {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-500">Total Sales</p>
-              <h3 className="text-2xl font-bold text-gray-900">₹{stats.sales}</h3>
+              <h3 className="text-2xl font-bold text-gray-900">₹{Number(stats.sales).toFixed(2)}</h3>
             </div>
           </div>
         </div>

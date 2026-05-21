@@ -1,20 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, Eye, Edit, Trash2, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { getAllMenus, getMenusByRestaurant, toggleMenuStatus, bulkUpdateMenuStatus, deleteMenu, bulkDeleteMenu, getAllRestaurants } from '../../services/api';
+import { getAllMenus, getMenusByRestaurant, toggleMenuStatus, toggleMenuAvailability, bulkUpdateMenuStatus, deleteMenu, bulkDeleteMenu, getAllRestaurants } from '../../services/api';
 import { getImageUrl } from '../../utils/imageUtils';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const MenuManagement = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const restaurantAdmin = isRestaurantAdmin();
   const ownRestaurantUid = getCurrentRestaurantUid();
+  const restaurantFromQuery = new URLSearchParams(location.search).get('restaurant');
   const [menus, setMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRestaurant, setSelectedRestaurant] = useState(restaurantAdmin ? ownRestaurantUid : 'all');
+  const [selectedRestaurant, setSelectedRestaurant] = useState(
+    restaurantAdmin ? ownRestaurantUid : restaurantFromQuery || 'all',
+  );
   const [restaurants, setRestaurants] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [restaurantSearch, setRestaurantSearch] = useState('');
@@ -34,6 +38,18 @@ const MenuManagement = () => {
   useEffect(() => {
     fetchRestaurantsList();
   }, []);
+
+  useEffect(() => {
+    if (restaurantAdmin) {
+      setSelectedRestaurant(ownRestaurantUid);
+      return;
+    }
+
+    const selectedFromUrl = new URLSearchParams(location.search).get('restaurant');
+    setSelectedRestaurant(selectedFromUrl || 'all');
+    setCurrentPage(1);
+    setSelectedIds([]);
+  }, [location.search, restaurantAdmin, ownRestaurantUid]);
 
   useEffect(() => {
     if (selectedRestaurant === 'all') {
@@ -139,6 +155,7 @@ const MenuManagement = () => {
   const handleRestaurantFilter = (restaurantUid) => {
     if (restaurantAdmin) return;
     setSelectedRestaurant(restaurantUid);
+    navigate(restaurantUid === 'all' ? '/menu' : `/menu?restaurant=${restaurantUid}`, { replace: true });
     setCurrentPage(1);
     setPagination({ total: 0, page: 1, limit: 10, totalPages: 1 });
     setSelectedIds([]);
@@ -151,9 +168,15 @@ const MenuManagement = () => {
 
   const handleToggleStatus = async (menuUid, currentStatus) => {
     try {
-      await toggleMenuStatus(menuUid, !currentStatus);
-      toast.success(`Menu ${currentStatus ? 'deactivated' : 'activated'}`);
-      setMenus(prev => prev.map(m => m.menu_uid === menuUid ? { ...m, isActive: !currentStatus } : m));
+      if (restaurantAdmin) {
+        await toggleMenuAvailability(menuUid, !currentStatus);
+        toast.success(`Menu ${currentStatus ? 'unavailable' : 'available'}`);
+        setMenus(prev => prev.map(m => m.menu_uid === menuUid ? { ...m, is_available: !currentStatus } : m));
+      } else {
+        await toggleMenuStatus(menuUid, !currentStatus);
+        toast.success(`Menu ${currentStatus ? 'deactivated' : 'activated'}`);
+        setMenus(prev => prev.map(m => m.menu_uid === menuUid ? { ...m, isActive: !currentStatus } : m));
+      }
     } catch (error) {
       toast.error('Failed to update status');
     }
@@ -395,7 +418,7 @@ const MenuManagement = () => {
           )}
         </div>
 
-        {selectedIds.length > 0 && (
+        {!restaurantAdmin && selectedIds.length > 0 && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-center justify-between">
             <span className="text-blue-700">{selectedIds.length} item(s) selected</span>
              <div className="flex gap-2">
@@ -433,9 +456,11 @@ const MenuManagement = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-4 py-3 text-left">
-                        <input type="checkbox" checked={selectedIds.length === menus.length && menus.length > 0} onChange={handleSelectAll} className="rounded" />
-                      </th>
+                      {!restaurantAdmin && (
+                        <th className="px-4 py-3 text-left">
+                          <input type="checkbox" checked={selectedIds.length === menus.length && menus.length > 0} onChange={handleSelectAll} className="rounded" />
+                        </th>
+                      )}
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Image</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
@@ -448,9 +473,11 @@ const MenuManagement = () => {
                   <tbody className="divide-y divide-gray-200">
                     {menus.map((menu) => (
                       <tr key={menu.menu_uid} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <input type="checkbox" checked={selectedIds.includes(menu.menu_uid)} onChange={() => handleSelectOne(menu.menu_uid)} className="rounded" />
-                        </td>
+                        {!restaurantAdmin && (
+                          <td className="px-4 py-3">
+                            <input type="checkbox" checked={selectedIds.includes(menu.menu_uid)} onChange={() => handleSelectOne(menu.menu_uid)} className="rounded" />
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100">
                             {getFirstImage(menu.images) ? (
@@ -476,9 +503,12 @@ const MenuManagement = () => {
                         </td>
                         <td className="px-4 py-3">
                           <label className="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" checked={menu.isActive} onChange={() => handleToggleStatus(menu.menu_uid, menu.isActive)} className="sr-only peer" />
-                            <div className={`w-11 h-6 rounded-full transition-colors peer-focus:ring-2 ${menu.isActive ? 'bg-green-500 peer-focus:ring-green-300' : 'bg-gray-300 peer-focus:ring-gray-300'} after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${menu.isActive ? 'peer-checked:after:translate-x-full after:border-white' : 'after:border-gray-300'} `}></div>
+                            <input type="checkbox" checked={restaurantAdmin ? menu.is_available !== false : menu.isActive} onChange={() => handleToggleStatus(menu.menu_uid, restaurantAdmin ? menu.is_available !== false : menu.isActive)} className="sr-only peer" />
+                            <div className={`w-11 h-6 rounded-full transition-colors peer-focus:ring-2 ${(restaurantAdmin ? menu.is_available !== false : menu.isActive) ? 'bg-green-500 peer-focus:ring-green-300' : 'bg-gray-300 peer-focus:ring-gray-300'} after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${(restaurantAdmin ? menu.is_available !== false : menu.isActive) ? 'peer-checked:after:translate-x-full after:border-white' : 'after:border-gray-300'} `}></div>
                           </label>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {restaurantAdmin ? 'Availability' : 'Active'}
+                          </div>
                         </td>
                          <td className="px-4 py-3">
                             <div className="flex gap-2">

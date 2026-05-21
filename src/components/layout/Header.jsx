@@ -1,8 +1,9 @@
 import React, { useRef, useMemo, useCallback } from 'react';
 import { Menu, Bell, LogOut, Check, ShoppingBag, XCircle, Truck, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { getNotifications, markNotificationAsRead } from '../../services/api';
+import { getNotifications, getRestaurantById, markNotificationAsRead } from '../../services/api';
 import { useOrderNotifications } from '../../context/OrderNotificationContext';
+import { getAuthUser, getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 
 const isToday = (dateStr) => {
@@ -93,10 +94,19 @@ const extractOrderId = (notif) => {
   return null;
 };
 
+const getDisplayInitial = (name) => {
+  const trimmed = String(name || '').trim();
+  const match = trimmed.match(/[a-z0-9]/i);
+  return match ? match[0].toUpperCase() : 'A';
+};
+
 const Header = ({ onToggleSidebar, onLogout }) => {
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
   const [allNotifications, setAllNotifications] = React.useState([]);
   const [showDropdown, setShowDropdown] = React.useState(false);
+  const [displayName, setDisplayName] = React.useState('Admin');
+  const [displayInitial, setDisplayInitial] = React.useState('A');
   const knownUnreadIds = useRef(new Set());
   const knownSyntheticIds = useRef(new Set());
   const isInitialLoad = useRef(true);
@@ -105,6 +115,56 @@ const Header = ({ onToggleSidebar, onLogout }) => {
   const { unreadOrderCount, syntheticNotifs, markSyntheticNotifRead } = useOrderNotifications();
   const [badgeAnim, setBadgeAnim] = React.useState(false);
   const dropdownRef = useRef(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadIdentity = async () => {
+      if (!restaurantAdmin) {
+        const authUser = getAuthUser();
+        const name = authUser?.name || localStorage.getItem('adminEmail') || 'Admin';
+        if (!cancelled) {
+          setDisplayName('Admin');
+          setDisplayInitial(getDisplayInitial(name));
+        }
+        return;
+      }
+
+      const restaurantUid = getCurrentRestaurantUid();
+      if (!restaurantUid) return;
+
+      try {
+        const response = await getRestaurantById(restaurantUid);
+        const restaurant =
+          response.data?.data?.restaurant ||
+          response.data?.restaurant ||
+          response.data?.data ||
+          {};
+        const restaurantName =
+          restaurant.profile?.restaurant_name ||
+          restaurant.restaurant_name ||
+          restaurant.name ||
+          'Restaurant Admin';
+
+        if (!cancelled) {
+          setDisplayName(restaurantName);
+          setDisplayInitial(getDisplayInitial(restaurantName));
+        }
+      } catch (error) {
+        const fallbackName = getAuthUser()?.name || 'Restaurant Admin';
+        if (!cancelled) {
+          setDisplayName(fallbackName);
+          setDisplayInitial(getDisplayInitial(fallbackName));
+        }
+      }
+    };
+
+    loadIdentity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantAdmin]);
 
   const allMergedNotifications = useMemo(() => {
     const apiItems = allNotifications.map(n => ({ ...n, _source: 'api' }));
@@ -426,9 +486,9 @@ const Header = ({ onToggleSidebar, onLogout }) => {
 
         <div className="flex items-center space-x-2">
           <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white font-bold">
-            A
+            {displayInitial}
           </div>
-          <span className="font-medium">Admin</span>
+          <span className="font-medium max-w-[180px] truncate">{displayName}</span>
         </div>
 
         <button
