@@ -4,6 +4,7 @@ import { Search, Download, RefreshCw, Calendar, X, AlertTriangle, Bell, Clock, R
 import { getAllOrders, getOrderStats, getOrderMonitoringStats, updateDeliveryStatusByAdmin } from "../../services/api";
 import { saveAs } from "file-saver";
 import { useOrderNotifications } from "../../context/OrderNotificationContext";
+import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
 
 const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 const loudNotificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
@@ -21,6 +22,8 @@ const debug = (msg, ...args) => {
 
 const OrdersList = () => {
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
   const [allOrders, setAllOrders] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +68,7 @@ const OrdersList = () => {
   const toastIdCounter = useRef(0);
   const [toasts, setToasts] = useState([]);
   const soundPlayedThisCycle = useRef(false);
+  const initialFetchRef = useRef(false);
   const [lastUpdatedTime, setLastUpdatedTime] = useState(null);
   const [lastUpdatedAgo, setLastUpdatedAgo] = useState(null);
   const [notifPermission, setNotifPermission] = useState("default");
@@ -73,6 +77,18 @@ const OrdersList = () => {
   const hasInteracted = useRef(false);
 
   const { resetUnreadOrders, addNewOrders, addNewOrderNotification } = useOrderNotifications();
+
+  const orderBelongsToOwnRestaurant = useCallback((order) => {
+    if (!restaurantAdmin || !ownRestaurantUid) return true;
+    return (
+      order.restaurant_uid === ownRestaurantUid ||
+      order.restaurantUid === ownRestaurantUid ||
+      order.restaurant_id === ownRestaurantUid ||
+      order.restaurantId === ownRestaurantUid ||
+      order.restaurant?.uid === ownRestaurantUid ||
+      order.restaurant?.id === ownRestaurantUid
+    );
+  }, [restaurantAdmin, ownRestaurantUid]);
 
   useEffect(() => {
     hasInteracted.current = false;
@@ -290,13 +306,13 @@ const OrdersList = () => {
     soundPlayedThisCycle.current = false;
     try {
       const params = {
-        status: activeTab,
         search: searchTerm,
         startDate: startDate,
-        endDate: endDate
+        endDate: endDate,
+        ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
       };
       const res = await getAllOrders(params);
-      const newOrders = res.data || [];
+      const newOrders = (res.data || []).filter(orderBelongsToOwnRestaurant);
 
       const newIds = new Set(newOrders.map(o => o.orderId || o.id));
       const hasNewOrder = knownOrderIds.current.size > 0 &&
@@ -341,19 +357,26 @@ const OrdersList = () => {
       newOrders.forEach(o => knownOrderStatuses.current.set(o.orderId || o.id, (o.restaurantStatus || o.status || '').toUpperCase()));
 
       setAllOrders(newOrders);
-      setOrders(newOrders);
+      const filterFn = statusFilters[activeTab] || statusFilters.All;
+      setOrders(newOrders.filter(filterFn));
+      const totalPages = Math.ceil(newOrders.length / PAGE_SIZE);
       setPagination((prev) => ({
         ...prev,
         totalOrders: newOrders.length,
-        totalPages: Math.ceil(newOrders.length / PAGE_SIZE),
+        totalPages,
+        currentPage: Math.min(prev.currentPage, totalPages) || 1,
       }));
 
       setLastUpdatedTime(Date.now());
       setLiveConnected(true);
       pollStartTime.current = Date.now();
 
-      const statsRes = await getOrderMonitoringStats();
-      setStats(statsRes.data);
+      if (restaurantAdmin) {
+        setStats(computeStats(newOrders));
+      } else {
+        const statsRes = await getOrderMonitoringStats();
+        setStats(statsRes.data);
+      }
     } catch (err) {
       console.error("Error polling orders:", err);
       setLiveConnected(false);
@@ -379,16 +402,23 @@ const OrdersList = () => {
     fetchStats();
     fetchOrders();
     hasInteracted.current = true;
+    initialFetchRef.current = true;
     resetUnreadOrders();
   }, [activeTab]);
 
   useEffect(() => {
     if ((startDate && endDate) || (!startDate && !endDate)) {
+      if (initialFetchRef.current && !startDate && !endDate) return;
       fetchOrders();
     }
   }, [startDate, endDate]);
 
   const fetchStats = async () => {
+    if (restaurantAdmin) {
+      setLoadingStats(false);
+      return;
+    }
+
     try {
       const res = await getOrderMonitoringStats();
       setStats(res.data);
@@ -399,20 +429,41 @@ const OrdersList = () => {
     }
   };
 
+  const computeStats = (orders) => ({
+    all: orders.length,
+    active: orders.filter(o => !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
+    pending: orders.filter(o => ['NEW', 'PENDING', 'PENDING_PAYMENT'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
+    delivered: orders.filter(o => ['DELIVERED', 'COMPLETED'].includes((o.restaurantStatus || o.status || '').toUpperCase())).length,
+    cancelled: orders.filter(o => (o.restaurantStatus || o.status || '').toUpperCase() === 'CANCELLED').length,
+  });
+
+  const statusFilters = {
+    All: () => true,
+    Active: (o) => !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes((o.restaurantStatus || o.status || '').toUpperCase()),
+    Pending: (o) => ['NEW', 'PENDING', 'PENDING_PAYMENT'].includes((o.restaurantStatus || o.status || '').toUpperCase()),
+    Delivered: (o) => ['DELIVERED', 'COMPLETED'].includes((o.restaurantStatus || o.status || '').toUpperCase()),
+    Cancelled: (o) => (o.restaurantStatus || o.status || '').toUpperCase() === 'CANCELLED',
+  };
+
   const fetchOrders = async () => {
     try {
       setLoading(true);
       const params = {
-        status: activeTab,
         search: searchTerm,
         startDate: startDate,
-        endDate: endDate
+        endDate: endDate,
+        ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
       };
 
       const res = await getAllOrders(params);
-      const fetched = res.data || [];
+      const fetched = (res.data || []).filter(orderBelongsToOwnRestaurant);
       setAllOrders(fetched);
-      setOrders(fetched);
+
+      const filterFn = statusFilters[activeTab] || statusFilters.All;
+      const filtered = fetched.filter(filterFn);
+      setOrders(filtered);
+
+      setStats(computeStats(fetched));
 
       const newStatusOrders = fetched.filter(o => shouldNotifyByStatus(o));
       newStatusOrders.forEach(order => {
@@ -843,7 +894,7 @@ const OrdersList = () => {
                             >
                               View
                             </button>
-                            {order.restaurantStatus?.toUpperCase() !== 'CANCELLED' && order.restaurantStatus?.toUpperCase() !== 'DELIVERED' && order.restaurantStatus?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'COMPLETED' && (
+                            {!restaurantAdmin && order.restaurantStatus?.toUpperCase() !== 'CANCELLED' && order.restaurantStatus?.toUpperCase() !== 'DELIVERED' && order.restaurantStatus?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'COMPLETED' && (
                               <button
                                 onClick={() => handleOpenCancelModal(order)}
                                 className="px-2 py-1 text-xs font-medium text-gray-400 hover:text-red-600 hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-md transition-all duration-150"

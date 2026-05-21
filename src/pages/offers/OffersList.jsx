@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter } from 'lucide-react';
 import { getAllOffers, approveOffer, rejectOffer } from '../../services/api';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const PAGE_SIZE = 6;
 const BACKEND_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '');
 
 const OffersList = () => {
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('PENDING');
@@ -24,9 +27,26 @@ const OffersList = () => {
   const fetchOffers = async () => {
     try {
       setLoading(true);
-      const params = { approvalStatus: activeTab, search: searchText, offerType, page, pageSize: PAGE_SIZE };
+      const params = {
+        approvalStatus: activeTab,
+        search: searchText,
+        offerType,
+        page,
+        pageSize: PAGE_SIZE,
+        ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
+      };
       const response = await getAllOffers(params);
-      const backendOffers = response.data?.data || [];
+      const backendOffers = (response.data?.data || []).filter((offer) => {
+        if (!restaurantAdmin || !ownRestaurantUid) return true;
+        return (
+          offer.restaurant_uid === ownRestaurantUid ||
+          offer.restaurantUid === ownRestaurantUid ||
+          offer.restaurantId === ownRestaurantUid ||
+          offer.restaurant_id === ownRestaurantUid ||
+          offer.restaurant?.uid === ownRestaurantUid ||
+          offer.restaurant?.id === ownRestaurantUid
+        );
+      });
       const totalCount = response.data?.count || 0;
       setTotalPages(Math.ceil(totalCount / PAGE_SIZE));
 
@@ -183,7 +203,7 @@ const OffersList = () => {
 
                     <p className="text-xs text-gray-500 mb-3">{offer.termsCount} terms & conditions apply</p>
 
-                    {activeTab === 'PENDING' && (
+                    {activeTab === 'PENDING' && !restaurantAdmin && (
                       <div className="space-y-2">
                         <div className="flex space-x-2">
                           <button

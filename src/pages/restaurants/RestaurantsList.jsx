@@ -3,15 +3,18 @@
 // FIXED: Contact Information properly showing
 // =============================================
 import React, { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Navigate, useNavigate, useLocation } from "react-router-dom";
 import { Search, Download, AlertCircle, Eye, Loader2, Trash2, Power } from "lucide-react";
 import { getAllRestaurants, getRestaurantById, toggleRestaurantActive, toggleRestaurantOff, permanentlyDeleteRestaurant } from "../../services/api";
 import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
+import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
 
 const RestaurantsList = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(location.state?.tab || "all");
@@ -253,6 +256,20 @@ const RestaurantsList = () => {
     { label: "On", value: "active" },
     { label: "Off", value: "off" },
   ];
+
+  if (restaurantAdmin) {
+    if (ownRestaurantUid) {
+      return <Navigate to={`/restaurants/${ownRestaurantUid}`} replace />;
+    }
+
+    return (
+      <div className="p-6 bg-gray-50 min-h-screen">
+        <div className="bg-white border border-amber-200 rounded-lg p-6 text-amber-800">
+          Restaurant access is not linked to your account yet. Please contact Zenzio support.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">

@@ -7,9 +7,12 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Loader2, AlertCircle, IndianRupee, Tag, Utensils, Calendar, Image as ImageIcon, Power, PowerOff } from 'lucide-react';
 import { getMenuByUid, toggleMenuStatus } from '../../services/api';
 import { getImageUrl } from '../../utils/imageUtils';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const MenuDetails = () => {
   const { menuUid } = useParams();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [menu, setMenu] = useState(null);
@@ -43,6 +46,10 @@ const MenuDetails = () => {
       if (!menuData) {
         console.error('❌ Menu data not found');
         throw new Error('Menu data not found in response');
+      }
+
+      if (restaurantAdmin && ownRestaurantUid && menuData.restaurant_uid && menuData.restaurant_uid !== ownRestaurantUid) {
+        throw new Error('You can only view menus for your own restaurant.');
       }
       
       console.log('✅ Menu data extracted:', menuData);

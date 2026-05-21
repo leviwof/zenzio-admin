@@ -2,17 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, Eye, Edit, Trash2, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { getAllMenus, getMenusByRestaurant, getMenuByUid, toggleMenuStatus, bulkUpdateMenuStatus, deleteMenu, bulkDeleteMenu, getAllRestaurants } from '../../services/api';
+import { getAllMenus, getMenusByRestaurant, getMenuByUid, toggleMenuStatus, toggleMenuAvailability, bulkUpdateMenuStatus, deleteMenu, bulkDeleteMenu, getAllRestaurants } from '../../services/api';
 import { getImageUrl } from '../../utils/imageUtils';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const MenuManagement = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
+  const restaurantFromQuery = new URLSearchParams(location.search).get('restaurant');
+  const restaurantFromState = location.state?.selectedRestaurant;
   const [menus, setMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRestaurant, setSelectedRestaurant] = useState(location.state?.selectedRestaurant || 'all');
+  const [selectedRestaurant, setSelectedRestaurant] = useState(
+    restaurantAdmin ? ownRestaurantUid : restaurantFromState || restaurantFromQuery || 'all',
+  );
   const [restaurants, setRestaurants] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [restaurantSearch, setRestaurantSearch] = useState('');
@@ -34,6 +41,18 @@ const MenuManagement = () => {
   }, []);
 
   useEffect(() => {
+    if (restaurantAdmin) {
+      setSelectedRestaurant(ownRestaurantUid);
+      return;
+    }
+
+    const selectedFromUrl = new URLSearchParams(location.search).get('restaurant');
+    setSelectedRestaurant(location.state?.selectedRestaurant || selectedFromUrl || 'all');
+    setCurrentPage(1);
+    setSelectedIds([]);
+  }, [location.search, location.state?.selectedRestaurant, restaurantAdmin, ownRestaurantUid]);
+
+  useEffect(() => {
     if (selectedRestaurant === 'all') {
       fetchMenus();
     } else {
@@ -47,6 +66,11 @@ const MenuManagement = () => {
   }, [searchQuery]);
 
   const fetchRestaurantsList = async () => {
+    if (restaurantAdmin) {
+      setRestaurants(ownRestaurantUid ? [{ uid: ownRestaurantUid, name: 'Your Restaurant' }] : []);
+      return;
+    }
+
     try {
       const response = await getAllRestaurants({ limit: 500 });
       let restaurantData = [];
@@ -182,7 +206,9 @@ const MenuManagement = () => {
   };
 
   const handleRestaurantFilter = (restaurantUid) => {
+    if (restaurantAdmin) return;
     setSelectedRestaurant(restaurantUid);
+    navigate(restaurantUid === 'all' ? '/menu' : `/menu?restaurant=${restaurantUid}`, { replace: true });
     setCurrentPage(1);
     setPagination({ total: 0, page: 1, limit: 10, totalPages: 1 });
     setSelectedIds([]);
@@ -195,9 +221,15 @@ const MenuManagement = () => {
 
   const handleToggleStatus = async (menuUid, currentStatus) => {
     try {
-      await toggleMenuStatus(menuUid, !currentStatus);
-      toast.success(`Menu ${currentStatus ? 'deactivated' : 'activated'}`);
-      setMenus(prev => prev.map(m => m.menu_uid === menuUid ? { ...m, isActive: !currentStatus } : m));
+      if (restaurantAdmin) {
+        await toggleMenuAvailability(menuUid, !currentStatus);
+        toast.success(`Menu ${currentStatus ? 'unavailable' : 'available'}`);
+        setMenus(prev => prev.map(m => m.menu_uid === menuUid ? { ...m, is_available: !currentStatus } : m));
+      } else {
+        await toggleMenuStatus(menuUid, !currentStatus);
+        toast.success(`Menu ${currentStatus ? 'deactivated' : 'activated'}`);
+        setMenus(prev => prev.map(m => m.menu_uid === menuUid ? { ...m, isActive: !currentStatus } : m));
+      }
     } catch (error) {
       toast.error('Failed to update status');
     }
@@ -301,6 +333,16 @@ const MenuManagement = () => {
     setSearchQuery('');
   };
 
+  if (restaurantAdmin && !ownRestaurantUid) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="bg-white border border-amber-200 rounded-xl p-6 text-amber-800">
+          Restaurant access is not linked to your account yet. Please contact Zenzio support.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {deleteModal.show && (
@@ -320,8 +362,15 @@ const MenuManagement = () => {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/menu/bulk-upload')} className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Bulk Upload</button>
-            <button onClick={() => navigate('/menu/add')} className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg font-medium">+ Add Menu</button>
+            {!restaurantAdmin && (
+              <button onClick={() => navigate('/menu/bulk-upload')} className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Bulk Upload</button>
+            )}
+            <button
+              onClick={() => navigate(restaurantAdmin && ownRestaurantUid ? `/menu/add?restaurant=${ownRestaurantUid}` : '/menu/add')}
+              className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg font-medium"
+            >
+              + Add Menu
+            </button>
           </div>
         </div>
       </div>
@@ -341,6 +390,7 @@ const MenuManagement = () => {
               />
             </div>
 
+            {!restaurantAdmin && (
             <div className="relative min-w-[250px] z-50">
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -404,6 +454,7 @@ const MenuManagement = () => {
                 </>
               )}
             </div>
+            )}
 
             {searchTerm && (
               <button onClick={handleClearSearch} className="px-4 py-2 text-red-500 border border-red-500 rounded-md hover:bg-red-50">Clear</button>
@@ -420,7 +471,7 @@ const MenuManagement = () => {
           )}
         </div>
 
-        {selectedIds.length > 0 && (
+        {!restaurantAdmin && selectedIds.length > 0 && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-center justify-between">
             <span className="text-blue-700">{selectedIds.length} item(s) selected</span>
              <div className="flex gap-2">
@@ -458,9 +509,11 @@ const MenuManagement = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-4 py-3 text-left">
-                        <input type="checkbox" checked={selectedIds.length === menus.length && menus.length > 0} onChange={handleSelectAll} className="rounded" />
-                      </th>
+                      {!restaurantAdmin && (
+                        <th className="px-4 py-3 text-left">
+                          <input type="checkbox" checked={selectedIds.length === menus.length && menus.length > 0} onChange={handleSelectAll} className="rounded" />
+                        </th>
+                      )}
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Image</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
@@ -473,9 +526,11 @@ const MenuManagement = () => {
                   <tbody className="divide-y divide-gray-200">
                     {menus.map((menu) => (
                       <tr key={menu.menu_uid} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <input type="checkbox" checked={selectedIds.includes(menu.menu_uid)} onChange={() => handleSelectOne(menu.menu_uid)} className="rounded" />
-                        </td>
+                        {!restaurantAdmin && (
+                          <td className="px-4 py-3">
+                            <input type="checkbox" checked={selectedIds.includes(menu.menu_uid)} onChange={() => handleSelectOne(menu.menu_uid)} className="rounded" />
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100">
                             {getFirstImage(menu.images) ? (
@@ -501,9 +556,12 @@ const MenuManagement = () => {
                         </td>
                         <td className="px-4 py-3">
                           <label className="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" checked={menu.isActive} onChange={() => handleToggleStatus(menu.menu_uid, menu.isActive)} className="sr-only peer" />
-                            <div className={`w-11 h-6 rounded-full transition-colors peer-focus:ring-2 ${menu.isActive ? 'bg-green-500 peer-focus:ring-green-300' : 'bg-gray-300 peer-focus:ring-gray-300'} after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${menu.isActive ? 'peer-checked:after:translate-x-full after:border-white' : 'after:border-gray-300'} `}></div>
+                            <input type="checkbox" checked={restaurantAdmin ? menu.is_available !== false : menu.isActive} onChange={() => handleToggleStatus(menu.menu_uid, restaurantAdmin ? menu.is_available !== false : menu.isActive)} className="sr-only peer" />
+                            <div className={`w-11 h-6 rounded-full transition-colors peer-focus:ring-2 ${(restaurantAdmin ? menu.is_available !== false : menu.isActive) ? 'bg-green-500 peer-focus:ring-green-300' : 'bg-gray-300 peer-focus:ring-gray-300'} after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${(restaurantAdmin ? menu.is_available !== false : menu.isActive) ? 'peer-checked:after:translate-x-full after:border-white' : 'after:border-gray-300'} `}></div>
                           </label>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {restaurantAdmin ? 'Availability' : 'Active'}
+                          </div>
                         </td>
                          <td className="px-4 py-3">
                             <div className="flex gap-2">

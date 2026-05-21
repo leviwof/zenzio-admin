@@ -10,6 +10,7 @@ import { getRestaurantById, toggleRestaurantActive, toggleRestaurantOff, getRest
 import { getRestaurantImageUrl, getRestaurantLogoUrl } from '../../utils/imageUtils'; 
 import { saveAs } from 'file-saver';
 import toast from 'react-hot-toast';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const getStatusDisplay = (restaurant) => {
   if (!restaurant) return { label: 'Unknown', className: 'bg-gray-100 text-gray-800' };
@@ -25,6 +26,8 @@ const getStatusDisplay = (restaurant) => {
 const RestaurantDetails = () => {
   const { uid } = useParams();
   const navigate = useNavigate();
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -72,6 +75,11 @@ const RestaurantDetails = () => {
   useEffect(() => {
     if (!uid || uid === 'undefined') {
       setError('Invalid restaurant ID');
+      setLoading(false);
+      return;
+    }
+    if (restaurantAdmin && ownRestaurantUid && uid !== ownRestaurantUid) {
+      setError('You can only view your own restaurant.');
       setLoading(false);
       return;
     }
@@ -138,6 +146,19 @@ const RestaurantDetails = () => {
     } catch (err) {
       console.error('Error:', err);
       toast.error(err.response?.data?.message || 'Failed to update restaurant');
+    }
+  };
+
+  const handleToggleOpen = async () => {
+    if (!restaurant.uid) return;
+
+    try {
+      await toggleRestaurantOff(restaurant.uid);
+      toast.success(restaurant.isOpen === false ? 'Restaurant opened successfully' : 'Restaurant closed successfully');
+      fetchRestaurantDetails();
+    } catch (err) {
+      console.error('Error:', err);
+      toast.error(err.response?.data?.message || 'Failed to update restaurant status');
     }
   };
 
@@ -511,17 +532,18 @@ const RestaurantDetails = () => {
                 <span className="text-xs text-gray-400 mt-1">No Logo</span>
               </div>
             )}
-            {/* Upload button overlay */}
-            <label className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-50 rounded-xl cursor-pointer transition-all opacity-0 hover:opacity-100">
-              <ImageIcon className="w-6 h-6 text-white" />
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleLogoUpload}
-                disabled={isUpdatingProfile}
-                className="hidden"
-              />
-            </label>
+            {!restaurantAdmin && (
+              <label className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-50 rounded-xl cursor-pointer transition-all opacity-0 hover:opacity-100">
+                <ImageIcon className="w-6 h-6 text-white" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  disabled={isUpdatingProfile}
+                  className="hidden"
+                />
+              </label>
+            )}
           </div>
 
           <div className="flex-1">
@@ -529,7 +551,7 @@ const RestaurantDetails = () => {
             <p className="text-sm text-gray-500 mt-1">
               ID: {restaurant.uid} • {displayEmail}
             </p>
-            <p className="text-xs text-gray-400 mt-2">Hover over logo to upload new image</p>
+            {!restaurantAdmin && <p className="text-xs text-gray-400 mt-2">Hover over logo to upload new image</p>}
           </div>
 
           <div>
@@ -549,7 +571,7 @@ const RestaurantDetails = () => {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-500">Total Sales</p>
-              <h3 className="text-2xl font-bold text-gray-900">₹{stats.sales}</h3>
+              <h3 className="text-2xl font-bold text-gray-900">₹{Number(stats.sales).toFixed(2)}</h3>
             </div>
           </div>
         </div>
@@ -602,13 +624,15 @@ const RestaurantDetails = () => {
                 <Building2 className="w-5 h-5 text-red-600" />
                 Basic Information
               </h3>
-              <button
-                onClick={handleOpenEditProfile}
-                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors flex items-center gap-1"
-              >
-                <Edit className="w-4 h-4" />
-                Edit
-              </button>
+              {!restaurantAdmin && (
+                <button
+                  onClick={handleOpenEditProfile}
+                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors flex items-center gap-1"
+                >
+                  <Edit className="w-4 h-4" />
+                  Edit
+                </button>
+              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -630,13 +654,15 @@ const RestaurantDetails = () => {
               <div className="md:col-span-2">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium text-gray-500">Address</label>
-                  <button
-                    onClick={handleOpenEditAddress}
-                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors flex items-center gap-1"
-                  >
-                    <Edit className="w-3 h-3" />
-                    Edit Address
-                  </button>
+                  {!restaurantAdmin && (
+                    <button
+                      onClick={handleOpenEditAddress}
+                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors flex items-center gap-1"
+                    >
+                      <Edit className="w-3 h-3" />
+                      Edit Address
+                    </button>
+                  )}
                 </div>
                 <p className="text-gray-900 mt-1">
                   {address?.address || '-'}, {address?.city || '-'}, {address?.state || '-'} - {address?.pincode || '-'}
@@ -655,12 +681,14 @@ const RestaurantDetails = () => {
                   <FileText className="w-5 h-5 text-red-600" />
                   Documents
                 </h3>
-                <button
-                  onClick={handleOpenEditDocs}
-                  className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors flex items-center gap-1"
-                >
-                  <Edit className="w-4 h-4" /> Edit Numbers
-                </button>
+                {!restaurantAdmin && (
+                  <button
+                    onClick={handleOpenEditDocs}
+                    className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors flex items-center gap-1"
+                  >
+                    <Edit className="w-4 h-4" /> Edit Numbers
+                  </button>
+                )}
               </div>
 
               {/* FSSAI */}
@@ -668,7 +696,7 @@ const RestaurantDetails = () => {
                 <div className="mb-6">
                   <div className="flex justify-between items-center mb-2">
                     <h4 className="font-medium text-gray-900">FSSAI License - {doc.fssai_number}</h4>
-                    <div className="flex items-center gap-2">
+                    <div className={`${restaurantAdmin ? 'hidden ' : ''}flex items-center gap-2`}>
                       <label className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 cursor-pointer border border-blue-200 rounded">
                         Upload New
                         <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'fssai')} />
@@ -689,7 +717,7 @@ const RestaurantDetails = () => {
                           {renderDocument(file, index, 'FSSAI')}
                           <button
                             onClick={() => handleDeleteDocFile('fssai', file)}
-                            className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            className={`${restaurantAdmin ? 'hidden ' : ''}absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity`}
                             title="Remove this file"
                           >
                             <X className="w-3 h-3" />
@@ -706,7 +734,7 @@ const RestaurantDetails = () => {
                 <div className="mb-6">
                   <div className="flex justify-between items-center mb-2">
                     <h4 className="font-medium text-gray-900">GST Certificate - {doc.gst_number}</h4>
-                    <div className="flex items-center gap-2">
+                    <div className={`${restaurantAdmin ? 'hidden ' : ''}flex items-center gap-2`}>
                       <label className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 cursor-pointer border border-blue-200 rounded">
                         Upload New
                         <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'gst')} />
@@ -727,7 +755,7 @@ const RestaurantDetails = () => {
                           {renderDocument(file, index, 'GST')}
                           <button
                             onClick={() => handleDeleteDocFile('gst', file)}
-                            className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            className={`${restaurantAdmin ? 'hidden ' : ''}absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity`}
                             title="Remove this file"
                           >
                             <X className="w-3 h-3" />
@@ -744,7 +772,7 @@ const RestaurantDetails = () => {
                 <div className="mb-6">
                   <div className="flex justify-between items-center mb-2">
                     <h4 className="font-medium text-gray-900">Trade License - {doc.trade_license_number}</h4>
-                    <div className="flex items-center gap-2">
+                    <div className={`${restaurantAdmin ? 'hidden ' : ''}flex items-center gap-2`}>
                       <label className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 cursor-pointer border border-blue-200 rounded">
                         Upload New
                         <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'trade')} />
@@ -765,7 +793,7 @@ const RestaurantDetails = () => {
                           {renderDocument(file, index, 'Trade License')}
                           <button
                             onClick={() => handleDeleteDocFile('trade', file)}
-                            className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            className={`${restaurantAdmin ? 'hidden ' : ''}absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity`}
                             title="Remove this file"
                           >
                             <X className="w-3 h-3" />
@@ -782,7 +810,7 @@ const RestaurantDetails = () => {
                 <div className="mb-6">
                   <div className="flex justify-between items-center mb-2">
                     <h4 className="font-medium text-gray-900">Other Documents - {doc.otherDocumentType}</h4>
-                    <div className="flex items-center gap-2">
+                    <div className={`${restaurantAdmin ? 'hidden ' : ''}flex items-center gap-2`}>
                       <label className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 cursor-pointer border border-blue-200 rounded">
                         Upload New
                         <input type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e, 'other')} />
@@ -803,7 +831,7 @@ const RestaurantDetails = () => {
                           {renderDocument(file, index, 'Other Doc')}
                           <button
                             onClick={() => handleDeleteDocFile('other', file)}
-                            className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            className={`${restaurantAdmin ? 'hidden ' : ''}absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity`}
                             title="Remove this file"
                           >
                             <X className="w-3 h-3" />
@@ -841,32 +869,42 @@ const RestaurantDetails = () => {
               >
                 + Add Menu Item
               </button>
-              <button
-                onClick={() => navigate(`/dining/add?restaurant=${restaurant.uid}&name=${encodeURIComponent(profile?.restaurant_name || 'Restaurant')}`)}
-                className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-medium text-sm transition-colors"
-              >
-                + Add Dining Space
-              </button>
-              <button
-                onClick={() => navigate(`/events/add?restaurant=${restaurant.uid}&name=${encodeURIComponent(profile?.restaurant_name || 'Restaurant')}`)}
-                className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 font-medium text-sm transition-colors"
-              >
-                + Add Event
-              </button>
+              {!restaurantAdmin && (
+                <>
+                  <button
+                    onClick={() => navigate(`/dining/add?restaurant=${restaurant.uid}&name=${encodeURIComponent(profile?.restaurant_name || 'Restaurant')}`)}
+                    className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-medium text-sm transition-colors"
+                  >
+                    + Add Dining Space
+                  </button>
+                  <button
+                    onClick={() => navigate(`/events/add?restaurant=${restaurant.uid}&name=${encodeURIComponent(profile?.restaurant_name || 'Restaurant')}`)}
+                    className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 font-medium text-sm transition-colors"
+                  >
+                    + Add Event
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => navigate(`/menu`)}
                 className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm transition-colors"
               >
-                Manage All Menus
+                Manage Menu
               </button>
               <button
-                onClick={handleToggleActive}
-                className={`w-full px-4 py-2.5 rounded-lg font-medium text-sm transition-colors ${restaurant.isActive
+                onClick={restaurantAdmin ? handleToggleOpen : handleToggleActive}
+                className={`w-full px-4 py-2.5 rounded-lg font-medium text-sm transition-colors ${restaurantAdmin
+                  ? restaurant.isOpen === false
+                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  : restaurant.isActive
                   ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   : 'bg-green-100 text-green-700 hover:bg-green-200'
                   }`}
               >
-                {restaurant.isActive ? 'Block Restaurant' : 'Unblock Restaurant'}
+                {restaurantAdmin
+                  ? restaurant.isOpen === false ? 'Open Restaurant' : 'Close Restaurant'
+                  : restaurant.isActive ? 'Block Restaurant' : 'Unblock Restaurant'}
               </button>
             </div>
           </div>

@@ -5,13 +5,16 @@ import {
     IndianRupee, Percent, Tag,
     FileText, ImageIcon, CheckCircle, ChevronDown
 } from 'lucide-react';
-import { getAllRestaurants, editMenuByAdminWithImage, getMenuByUid, getMenuCategories, getAllCuisineCategories } from '../../services/api';
+import { getAllRestaurants, editMenuByAdminWithImage, editMenuForRestaurant, uploadMenuImages, getMenuByUid, getMenuCategories, getAllCuisineCategories } from '../../services/api';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const EditMenu = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { menuUid } = useParams();
     const topRef = useRef(null);
+    const restaurantAdmin = isRestaurantAdmin();
+    const ownRestaurantUid = getCurrentRestaurantUid();
 
     const [loading, setLoading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -54,7 +57,7 @@ const EditMenu = () => {
             // Fetch menu details, restaurants, and categories/cuisines in parallel
             const [menuResponse, restaurantsResponse, categoriesResponse] = await Promise.all([
                 getMenuByUid(menuUid),
-                getAllRestaurants({ limit: 500 }),
+                restaurantAdmin ? Promise.resolve({ data: [] }) : getAllRestaurants({ limit: 500 }),
                 getAllCuisineCategories()
             ]);
 
@@ -100,6 +103,12 @@ const EditMenu = () => {
             // Set form data
             if (menuData) {
                 const restaurantUid = menuData.restaurant_uid || menuData.restaurantUid;
+                if (restaurantAdmin && ownRestaurantUid && restaurantUid && restaurantUid !== ownRestaurantUid) {
+                    alert('You can only edit menus for your own restaurant.');
+                    navigate('/menu');
+                    return;
+                }
+
                 const selectedRestaurant = formattedRestaurants.find(r => r.uid === restaurantUid);
                 
                 setFormData({
@@ -114,7 +123,10 @@ const EditMenu = () => {
                     isActive: menuData.isActive !== undefined ? menuData.isActive : menuData.is_active !== undefined ? menuData.is_active : true,
                 });
 
-                if (selectedRestaurant) {
+                if (restaurantAdmin) {
+                    setRestaurants(ownRestaurantUid ? [{ uid: ownRestaurantUid, name: 'Your Restaurant' }] : []);
+                    setRestaurantName('Your Restaurant');
+                } else if (selectedRestaurant) {
                     setRestaurantName(selectedRestaurant.name);
                 }
 
@@ -195,7 +207,22 @@ const EditMenu = () => {
             console.log('📤 Submitting menu update for UID:', menuUid);
             console.log('📤 Form data:', Object.fromEntries(submitData));
 
-            const response = await editMenuByAdminWithImage(menuUid, submitData);
+            const response = restaurantAdmin
+                ? await editMenuForRestaurant(menuUid, {
+                    menu_name: formData.menu_name,
+                    price: parseFloat(formData.price),
+                    discount: formData.discount ? parseInt(formData.discount) : 0,
+                    description: formData.description || '',
+                    category: formData.category || '',
+                    food_type: formData.food_type || 'Veg',
+                    cuisine_type: formData.cuisine_type || '',
+                    isActive: formData.isActive,
+                })
+                : await editMenuByAdminWithImage(menuUid, submitData);
+
+            if (restaurantAdmin && imageFile) {
+                await uploadMenuImages(menuUid, [imageFile]);
+            }
             console.log('✅ Menu update response:', response);
 
             // Update image preview with the new image from response
@@ -250,7 +277,7 @@ const EditMenu = () => {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <button
-                                onClick={() => navigate('/menu')}
+                                onClick={() => navigate(formData.restaurant_uid ? `/menu?restaurant=${formData.restaurant_uid}` : '/menu')}
                                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                                 <ArrowLeft size={20} />

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../utils/auth';
 
 
 const CLIENT_ID = import.meta.env.VITE_CLIENT_ID;
@@ -61,6 +62,12 @@ api.interceptors.response.use(
       localStorage.removeItem('adminId');
       localStorage.removeItem('adminEmail');
       localStorage.removeItem('adminRole');
+      localStorage.removeItem('loginRole');
+      localStorage.removeItem('restaurantUid');
+      localStorage.removeItem('restaurant_uid');
+      localStorage.removeItem('restaurantId');
+      localStorage.removeItem('restaurant_id');
+      localStorage.removeItem('authUser');
 
       // Redirect to login with message
       if (window.location.pathname !== '/login') {
@@ -76,6 +83,9 @@ api.interceptors.response.use(
 
 export const adminLogin = (email, password, role) =>
   api.post('/super-admin/login', { email, password, role });
+
+export const restaurantLogin = (email, password) =>
+  api.post('/restaurants/auth/login/email', { email, password });
 
 export const adminRegister = (formData) =>
   api.post('/super-admin/create', formData);
@@ -94,7 +104,11 @@ export const confirmPasswordReset = (data) => api.post('/user/auth/confirm-reset
 
 
 
-export const getAllCustomers = (params) => api.get('/users', { params });
+const rejectRestrictedApi = (message = 'This action is restricted for restaurant admins') =>
+  Promise.reject(new Error(message));
+
+export const getAllCustomers = (params) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/users', { params });
 export const getCustomerStats = () => api.get('/users/stats');
 export const getCustomerById = (id) => api.get(`/users/${id}`);
 export const updateCustomerStatus = (uid, payload) =>
@@ -104,7 +118,17 @@ export const deleteCustomer = (uid) => api.delete(`/users/${uid}`);
 
 
 
-export const getAllRestaurants = (params) => api.get('/restaurants', { params });
+export const getAllRestaurants = (params) => {
+  if (isRestaurantAdmin()) {
+    const uid = getCurrentRestaurantUid();
+    if (!uid) return rejectRestrictedApi('Restaurant account is not linked');
+    return getRestaurantById(uid).then((response) => ({
+      ...response,
+      data: [response.data?.data?.restaurant || response.data?.restaurant || response.data?.data],
+    }));
+  }
+  return api.get('/restaurants', { params });
+};
 export const getRestaurantById = (uid) => api.get(`/restaurants/${uid}/admin`);
 export const toggleRestaurantActive = (id) => api.patch(`/restaurants/${id}/toggle-active`);
 export const toggleRestaurantOff = (id) => api.patch(`/restaurants/${id}/toggle-off`);
@@ -114,13 +138,13 @@ export const getCuisineTypes = () => api.get('/restaurants/cuisines');
 
 
 export const updateRestaurantStatus = (uid, status) =>
-  api.patch(`/restaurants/${uid}/status/admin`, {
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/restaurants/${uid}/status/admin`, {
     status: status ? 1 : 0,
     isActive: status ? 1 : 0
   });
 
 export const permanentlyDeleteRestaurant = (uid) =>
-  api.delete(`/restaurants/${uid}/admin/permanent`);
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/restaurants/${uid}/admin/permanent`);
 
 
 
@@ -136,7 +160,8 @@ export const deleteCategory = (id) => api.delete(`/categories/${id}`);
 
 export const getMenuCategories = () => api.get('/restaurant-menu/categories');
 
-export const getAllDeliveryPartners = (params) => api.get('fleets/', { params });
+export const getAllDeliveryPartners = (params) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('fleets/', { params });
 export const getPartnerStats = () => api.get('/delivery-partners/stats');
 export const getVehicleTypes = () => api.get('/delivery-partners/vehicles');
 export const getDeliveryPartnerById = (id) => api.get(`/fleets/${id}`);
@@ -173,19 +198,28 @@ export const getLivePartnerLocations = () => api.get('/fleets/live-tracking/all'
 
 
 
-export const getAllOrders = (params) => api.get('/orders/admin/all', { params });
+export const getAllOrders = (params = {}) =>
+  api.get('/orders/admin/all', {
+    params: {
+      ...params,
+      ...(isRestaurantAdmin() && getCurrentRestaurantUid()
+        ? { restaurant_uid: getCurrentRestaurantUid() }
+        : {}),
+    },
+  });
 export const getOrderStats = () => api.get('/orders/stats');
 export const getOrderMonitoringStats = () => api.get('/orders/monitoring-stats');
 export const getOrderDetails = (orderId) => api.get(`/orders/${orderId}/admin-details`);
 export const updateOrderStatus = (orderId, status) => api.put(`/orders/${orderId}/status`, { status });
-export const getAdminAnalytics = (period) => api.get('/orders/admin/analytics', { params: { period } });
+export const getAdminAnalytics = (period) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/orders/admin/analytics', { params: { period } });
 
 
 export const updateDeliveryStatusByAdmin = (orderId, status, reason = '') =>
-  api.put(`/orders/${orderId}/admin/delivery-status`, { status, reason });
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.put(`/orders/${orderId}/admin/delivery-status`, { status, reason });
 
 export const reassignOrder = (orderId, newPartnerUid, reason = '') =>
-  api.put(`/orders/${orderId}/admin/reassign`, { newPartnerUid, reason });
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.put(`/orders/${orderId}/admin/reassign`, { newPartnerUid, reason });
 
 
 
@@ -217,18 +251,19 @@ export const requestChanges = (offerId, comments) =>
   api.put(`/offers/${offerId}/request-changes`, { comments });
 
 export const getAdminOffers = (params = {}) =>
-  api.get('/offers/admin-created', { params });
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/offers/admin-created', { params });
 export const getAdminOfferById = (id) =>
-  api.get(`/offers/admin-created/${id}`);
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get(`/offers/admin-created/${id}`);
 export const createOfferByAdmin = (formData) =>
-  api.post('/offers/admin-create', formData, {
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/offers/admin-create', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
 export const updateAdminOffer = (id, formData) =>
-  api.put(`/offers/admin-created/${id}`, formData, {
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.put(`/offers/admin-created/${id}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-export const deleteAdminOffer = (id) => api.delete(`/offers/admin-created/${id}`);
+export const deleteAdminOffer = (id) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/offers/admin-created/${id}`);
 
 
 
@@ -245,7 +280,14 @@ export const deleteCuisineCategory = (id) => api.delete(`/restaurant_enum/${id}`
 
 
 
-export const getAllMenus = (params) => api.get('/restaurant-menu', { params });
+export const getAllMenus = (params = {}) => {
+  if (isRestaurantAdmin()) {
+    const uid = getCurrentRestaurantUid();
+    if (!uid) return rejectRestrictedApi('Restaurant account is not linked');
+    return getMenusByRestaurant(uid, params);
+  }
+  return api.get('/restaurant-menu', { params: { includeInactive: 'true', ...params } });
+};
 
 export const getMenusByRestaurant = (restaurantUid, params) =>
   api.get(`/restaurant-menu/by-restaurant`, { params: { restaurant_uid: restaurantUid, includeInactive: 'true', ...params } });
@@ -254,35 +296,48 @@ export const getMenuByUid = (menuUid) => api.get(`/restaurant-menu/${menuUid}`);
 
 
 export const toggleMenuStatus = (menuUid, newStatus) =>
-  api.patch(`/restaurant-menu/${menuUid}/status/admin`, {
+  isRestaurantAdmin() ? api.patch(`/restaurant-menu/${menuUid}/toggle`) : api.patch(`/restaurant-menu/${menuUid}/status/admin`, {
     status: newStatus ? 1 : 0,
     isActive: newStatus ? 1 : 0
   });
+
+export const toggleMenuAvailability = (menuUid, isAvailable) =>
+  api.patch(`/restaurant-menu/${menuUid}/availability`, { is_available: isAvailable });
 
 export const deleteMenu = (menuUid) =>
   api.delete(`/restaurant-menu/${menuUid}/soft`);
 
 export const bulkUpdateMenuStatus = (menuUids, newStatus) =>
-  api.patch('/restaurant-menu/bulk-status', {
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch('/restaurant-menu/bulk-status', {
     ids: menuUids,
     isActive: newStatus
   });
 
 export const bulkDeleteMenu = (menuUids) =>
-  api.delete('/restaurant-menu/bulk-soft', { data: { ids: menuUids } });
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete('/restaurant-menu/bulk-soft', { data: { ids: menuUids } });
 
 
 
 
 export const createMenuByAdmin = (data) => api.post('/restaurant-menu/admin-create', data);
+export const createMenuForRestaurant = (data) => api.post('/restaurant-menu', data);
 export const createMenuByAdminWithImage = (formData) =>
   api.post('/restaurant-menu/admin-create', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+export const editMenuForRestaurant = (menuUid, data) =>
+  api.patch(`/restaurant-menu/${menuUid}`, data);
 export const editMenuByAdminWithImage = (menuUid, formData) =>
   api.patch(`/restaurant-menu/admin-edit/${menuUid}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+export const uploadMenuImages = (menuUid, files) => {
+  const formData = new FormData();
+  Array.from(files || []).forEach((file) => formData.append('files', file));
+  return api.post(`/restaurant-menu/upload-image/${menuUid}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
 
 export const bulkUploadMenu = (formData) =>
   api.post('/restaurant-menu/admin-bulk-upload', formData, {

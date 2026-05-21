@@ -11,16 +11,20 @@ import {
     UtensilsCrossed, IndianRupee, Percent, Tag,
     FileText, ImageIcon, CheckCircle, ChevronDown, Search
 } from 'lucide-react';
-import { getAllRestaurants, createMenuByAdminWithImage, getMenuCategories, getAllCuisineCategories } from '../../services/api';
+import { getAllRestaurants, createMenuByAdminWithImage, createMenuForRestaurant, uploadMenuImages, getMenuCategories, getAllCuisineCategories } from '../../services/api';
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const AddMenu = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const topRef = useRef(null);
+    const restaurantAdmin = isRestaurantAdmin();
+    const ownRestaurantUid = getCurrentRestaurantUid();
 
 
     const preSelectedRestaurant = searchParams.get('restaurant');
     const preSelectedName = searchParams.get('name');
+    const lockedRestaurantUid = restaurantAdmin ? ownRestaurantUid : preSelectedRestaurant;
 
     const [loading, setLoading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -31,7 +35,7 @@ const AddMenu = () => {
     const [imageFile, setImageFile] = useState(null);
     const [success, setSuccess] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
-    const [isRestaurantLocked, setIsRestaurantLocked] = useState(false);
+    const [isRestaurantLocked, setIsRestaurantLocked] = useState(Boolean(lockedRestaurantUid));
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [restaurantSearch, setRestaurantSearch] = useState('');
     const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
@@ -39,7 +43,7 @@ const AddMenu = () => {
     const [foodTypeDropdownOpen, setFoodTypeDropdownOpen] = useState(false);
 
     const [formData, setFormData] = useState({
-        restaurant_uid: preSelectedRestaurant || '',
+        restaurant_uid: lockedRestaurantUid || '',
         menu_name: '',
         price: '',
         discount: '',
@@ -64,12 +68,17 @@ const AddMenu = () => {
         fetchCategoriesAndCuisines();
 
 
-        if (preSelectedRestaurant) {
+        if (lockedRestaurantUid) {
             setIsRestaurantLocked(true);
         }
-    }, [preSelectedRestaurant]);
+    }, [lockedRestaurantUid]);
 
     const fetchRestaurants = async () => {
+        if (restaurantAdmin) {
+            setRestaurants(ownRestaurantUid ? [{ uid: ownRestaurantUid, name: 'Your Restaurant' }] : []);
+            return;
+        }
+
         try {
             const response = await getAllRestaurants({ limit: 500 });
             console.log('📤 Full restaurants response:', response.data);
@@ -191,23 +200,40 @@ const AddMenu = () => {
             setLoading(true);
 
 
-            const submitData = new FormData();
-            submitData.append('restaurant_uid', formData.restaurant_uid);
-            submitData.append('menu_name', formData.menu_name);
-            submitData.append('price', parseFloat(formData.price));
-            submitData.append('discount', formData.discount ? parseInt(formData.discount) : 0);
-            submitData.append('description', formData.description || '');
-            submitData.append('category', formData.category || '');
-            submitData.append('food_type', formData.food_type || 'Veg');
-            submitData.append('cuisine_type', formData.cuisine_type || '');
-            submitData.append('isActive', formData.isActive ? '1' : '0');
+            if (restaurantAdmin) {
+                const response = await createMenuForRestaurant({
+                    menu_name: formData.menu_name,
+                    price: parseFloat(formData.price),
+                    discount: formData.discount ? parseInt(formData.discount) : 0,
+                    description: formData.description || '',
+                    category: formData.category || '',
+                    food_type: formData.food_type || 'Veg',
+                    cuisine_type: formData.cuisine_type || '',
+                    isActive: formData.isActive,
+                    is_available: true,
+                });
+                const createdMenuUid = response.data?.data?.restaurant_menu?.menu_uid;
+                if (imageFile && createdMenuUid) {
+                    await uploadMenuImages(createdMenuUid, [imageFile]);
+                }
+            } else {
+                const submitData = new FormData();
+                submitData.append('restaurant_uid', formData.restaurant_uid);
+                submitData.append('menu_name', formData.menu_name);
+                submitData.append('price', parseFloat(formData.price));
+                submitData.append('discount', formData.discount ? parseInt(formData.discount) : 0);
+                submitData.append('description', formData.description || '');
+                submitData.append('category', formData.category || '');
+                submitData.append('food_type', formData.food_type || 'Veg');
+                submitData.append('cuisine_type', formData.cuisine_type || '');
+                submitData.append('isActive', formData.isActive ? '1' : '0');
 
+                if (imageFile) {
+                    submitData.append('files', imageFile);
+                }
 
-            if (imageFile) {
-                submitData.append('files', imageFile);
+                await createMenuByAdminWithImage(submitData);
             }
-
-            await createMenuByAdminWithImage(submitData);
             setSuccessMessage('Menu item added successfully!');
             
             // Scroll to top using ref
@@ -246,6 +272,9 @@ const AddMenu = () => {
     };
 
     const getBackPath = () => {
+        if (restaurantAdmin) {
+            return '/menu';
+        }
         if (preSelectedRestaurant) {
             return `/restaurants/${preSelectedRestaurant}`;
         }
@@ -255,6 +284,16 @@ const AddMenu = () => {
     const filteredRestaurants = restaurants.filter(restaurant =>
         restaurant.name.toLowerCase().includes(restaurantSearch.toLowerCase())
     );
+
+    if (restaurantAdmin && !ownRestaurantUid) {
+        return (
+            <div className="min-h-screen bg-gray-50 p-6">
+                <div className="bg-white border border-amber-200 rounded-xl p-6 text-amber-800">
+                    Restaurant access is not linked to your account yet. Please contact Zenzio support.
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div ref={topRef} className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
