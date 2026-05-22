@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from "react";
 import { Navigate, useNavigate, useLocation } from "react-router-dom";
 import { Search, Download, AlertCircle, Eye, Loader2, Trash2, Power } from "lucide-react";
-import { getAllRestaurants, getRestaurantById, toggleRestaurantActive, toggleRestaurantOff, permanentlyDeleteRestaurant } from "../../services/api";
+import { getAllRestaurants, getRestaurantById, toggleRestaurantActive, updateRestaurantStatus, permanentlyDeleteRestaurant } from "../../services/api";
 import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
 import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
@@ -170,9 +170,16 @@ const RestaurantsList = () => {
   const handleToggleActive = async (restaurantId) => {
     try {
       setToggleLoading(prev => ({ ...prev, [restaurantId]: true }));
-      await toggleRestaurantActive(restaurantId);
       const restaurant = restaurants.find(r => r.uid === restaurantId);
-      toast.success(restaurant?.isActive === false ? 'Restaurant unblocked successfully' : 'Restaurant blocked successfully');
+      const nextStatus = restaurant?.isActive === false;
+
+      if (restaurantAdmin) {
+        await toggleRestaurantActive(restaurantId);
+      } else {
+        await updateRestaurantStatus(restaurantId, nextStatus);
+      }
+
+      toast.success(nextStatus ? 'Restaurant turned on successfully' : 'Restaurant turned off successfully');
       fetchRestaurants();
     } catch (error) {
       console.error("❌ Error:", error);
