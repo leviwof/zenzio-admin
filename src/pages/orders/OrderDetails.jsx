@@ -189,29 +189,6 @@ const OrderDetails = () => {
     return statusConfig?.color || 'bg-gray-100 text-gray-700';
   };
 
-  // Calculate distance between two coordinates using Haversine formula
-  const calculateDistance = (lat1, lng1, lat2, lng2) => {
-    const R = 6371; // Earth's radius in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  // Calculate delivery charge based on distance
-  const calculateDeliveryCharge = (distanceKm) => {
-    if (!distanceKm || distanceKm <= 0) return { base: 0, extra: 0, total: 0, extraKm: 0 };
-    if (distanceKm <= 5) {
-      return { base: 25, extra: 0, total: 25, extraKm: 0 };
-    }
-    const extraKm = Math.ceil(distanceKm - 5);
-    const extra = extraKm * 5;
-    return { base: 25, extra, total: 25 + extra, extraKm };
-  };
-
   const formatDateTime = (date) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleString('en-IN', {
@@ -441,6 +418,11 @@ const OrderDetails = () => {
   const hasDeliveryPartner = order.deliveryPartnerInformation !== null;
   const currentDeliveryStatus = getCurrentOrderStatus(order).toLowerCase();
   const orderTimeline = buildOrderTimeline(order);
+  const hasJourneyPricing = Boolean(order.delivery_pricing_version);
+  const partnerToRestaurantKm = order.partner_to_restaurant_km ?? null;
+  const restaurantToCustomerKm = order.restaurant_to_customer_km ?? order.restaurantToCustomerDistance ?? null;
+  const totalJourneyKm = order.total_journey_km ?? null;
+  const chargedDeliveryFee = order.delivery_charge ?? order.priceSummary?.deliveryFee ?? order.priceSummary?.deliveryCharge ?? 0;
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
@@ -642,41 +624,35 @@ const OrderDetails = () => {
               </div>
 
               {/* Restaurant to Customer Distance & Delivery Charge Breakdown */}
-              {order.restaurantToCustomerDistance !== null && order.restaurantToCustomerDistance !== undefined ? (
+              {restaurantToCustomerKm !== null && restaurantToCustomerKm !== undefined ? (
                 <>
                   {(() => {
-                    const restaurantToCustomerKm = order.restaurantToCustomerDistance;
-                    const chargeBreakdown = calculateDeliveryCharge(restaurantToCustomerKm);
+                    const displayRestaurantToCustomerKm = restaurantToCustomerKm;
+                    const deliveryFee = chargedDeliveryFee;
 
                     return (
                       <>
                         <div className="bg-green-50 p-3 rounded-md space-y-1.5">
                           <div className="flex justify-between items-center">
                             <span className="text-xs font-semibold text-green-700 uppercase tracking-wider">Restaurant → Customer Distance</span>
-                            <span className="text-sm font-bold text-green-700">{restaurantToCustomerKm.toFixed(2)} km</span>
+                            <span className="text-sm font-bold text-green-700">{Number(displayRestaurantToCustomerKm).toFixed(2)} km</span>
                           </div>
                           <div className="text-xs text-green-600 space-y-0.5 mt-2">
-                            <p className="text-xs text-green-600 mb-1.5 italic">Delivery charge calculation:</p>
+                            <p className="text-xs text-green-600 mb-1.5 italic">{hasJourneyPricing ? 'Delivery charge based on total delivery journey' : 'Old order pricing basis'}</p>
                             <div className="flex justify-between">
                               <span>Base (first 5km):</span>
-                              <span className="font-medium">₹{chargeBreakdown.base}</span>
+                              <span className="font-medium">Backend calculated</span>
                             </div>
-                            {chargeBreakdown.extraKm > 0 && (
-                              <div className="flex justify-between">
-                                <span>Extra ({chargeBreakdown.extraKm}km × ₹5/km):</span>
-                                <span className="font-medium">₹{chargeBreakdown.extra}</span>
-                              </div>
-                            )}
                             <div className="flex justify-between font-semibold text-green-700 border-t border-green-200 pt-1 mt-1">
                               <span>Calculated Total:</span>
-                              <span>₹{chargeBreakdown.total}</span>
+                              <span>₹{deliveryFee}</span>
                             </div>
                           </div>
                         </div>
 
                         <div className="flex justify-between text-gray-600">
                           <span>Delivery Fee (Charged):</span>
-                          <span className="font-medium">₹{order.priceSummary.deliveryFee}</span>
+                          <span className="font-medium">₹{chargedDeliveryFee}</span>
                         </div>
                       </>
                     );
@@ -685,7 +661,7 @@ const OrderDetails = () => {
               ) : (
                 <div className="flex justify-between text-gray-600">
                   <span>Delivery Fee:</span>
-                  <span>₹{order.priceSummary.deliveryFee}</span>
+                  <span>₹{chargedDeliveryFee}</span>
                 </div>
               )}
 
@@ -709,22 +685,33 @@ const OrderDetails = () => {
           {/* ===== Distance Summary ===== */}
           <div className="mt-4 space-y-2">
             {/* Restaurant to Customer Distance (Primary - for delivery charge) */}
-            {order.restaurantToCustomerDistance !== null && order.restaurantToCustomerDistance !== undefined ? (
+            {restaurantToCustomerKm !== null && restaurantToCustomerKm !== undefined ? (
               <div className="p-3 bg-green-50 rounded-lg border border-green-200">
                 <p className="text-xs font-semibold uppercase tracking-wider text-green-600">
                   🍽️ Restaurant → Customer
                 </p>
                 <p className="mt-1 text-xl font-bold text-green-700">
-                  {order.restaurantToCustomerDistance.toFixed(2)} km
+                  {Number(restaurantToCustomerKm).toFixed(2)} km
                 </p>
                 <p className="mt-1 text-xs text-green-600">
-                  Delivery pricing basis
+                  {hasJourneyPricing ? 'Restaurant segment' : 'Old order pricing basis'}
                 </p>
               </div>
             ) : null}
 
-            {/* Total Distance Traveled */}
-            {order.totalDistance !== null && order.totalDistance !== undefined ? (
+            {hasJourneyPricing && totalJourneyKm !== null && totalJourneyKm !== undefined ? (
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+                  Partner to Restaurant to Customer
+                </p>
+                <p className="mt-1 text-xl font-bold text-blue-700">
+                  {Number(totalJourneyKm).toFixed(2)} km
+                </p>
+                <p className="mt-1 text-xs text-blue-600">
+                  Delivery charge based on total delivery journey
+                </p>
+              </div>
+            ) : order.totalDistance !== null && order.totalDistance !== undefined ? (
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                 <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
                   🛵 Total Journey
@@ -733,7 +720,7 @@ const OrderDetails = () => {
                   {Number(order.totalDistance).toFixed(2)} km
                 </p>
                 <p className="mt-1 text-xs text-blue-600">
-                  Partner → Restaurant → Customer
+                  Partner to Restaurant to Customer
                 </p>
               </div>
             ) : null}
@@ -799,26 +786,39 @@ const OrderDetails = () => {
               {/* ===== Distance Information ===== */}
               <div className="space-y-3 border-t pt-3">
                 {/* Restaurant to Customer Distance (Delivery Charge Basis) */}
-                {order.restaurantToCustomerDistance !== null && order.restaurantToCustomerDistance !== undefined ? (
+                {restaurantToCustomerKm !== null && restaurantToCustomerKm !== undefined ? (
                   <div className="flex items-start space-x-2 bg-green-50 p-3 rounded-lg border border-green-200">
                     <Navigation size={18} className="text-green-600 mt-1 flex-shrink-0" />
                     <div className="flex-1">
                       <p className="text-xs font-semibold uppercase tracking-wider text-green-600">Restaurant → Customer</p>
                       <p className="font-bold text-2xl text-green-700 my-1">
-                        {order.restaurantToCustomerDistance.toFixed(2)} km
+                        {Number(restaurantToCustomerKm).toFixed(2)} km
                       </p>
                       <p className="text-xs text-green-600">
-                        💰 Delivery charge based on this distance
+                        {hasJourneyPricing ? 'Restaurant segment' : 'Old order delivery charge basis'}
                       </p>
                       <div className="mt-2 pt-2 border-t border-green-200 text-xs text-green-600">
-                        <p>Calculation: ₹25 (first 5km) + ₹{Math.max(0, Math.ceil(order.restaurantToCustomerDistance - 5) * 5)} (extra) = ₹{calculateDeliveryCharge(order.restaurantToCustomerDistance).total}</p>
+                        <p>Backend delivery charge: ₹{chargedDeliveryFee}</p>
                       </div>
                     </div>
                   </div>
                 ) : null}
 
                 {/* Total Distance Display */}
-                {order.totalDistance !== null && order.totalDistance !== undefined ? (
+                {hasJourneyPricing && totalJourneyKm !== null && totalJourneyKm !== undefined ? (
+                  <div className="flex items-start space-x-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                    <Navigation size={18} className="text-blue-600 mt-1 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Partner to Restaurant to Customer</p>
+                      <p className="font-bold text-2xl text-blue-700 my-1">
+                        {Number(totalJourneyKm).toFixed(2)} km
+                      </p>
+                      <p className="text-xs text-blue-600">
+                        Delivery charge based on total delivery journey
+                      </p>
+                    </div>
+                  </div>
+                ) : order.totalDistance !== null && order.totalDistance !== undefined ? (
                   <div className="flex items-start space-x-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
                     <Navigation size={18} className="text-blue-600 mt-1 flex-shrink-0" />
                     <div className="flex-1">
@@ -827,7 +827,7 @@ const OrderDetails = () => {
                         {Number(order.totalDistance).toFixed(2)} km
                       </p>
                       <p className="text-xs text-blue-600">
-                        🛵 Partner → Restaurant → Customer (complete trip)
+                        Partner to Restaurant to Customer (complete trip)
                       </p>
                     </div>
                   </div>
