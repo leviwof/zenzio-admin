@@ -108,7 +108,7 @@ const normalizePartner = (data) => {
   };
 };
 
-const DeliveryPartnerDetails = () => {
+const DeliveryExecutiveDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -141,7 +141,7 @@ const DeliveryPartnerDetails = () => {
 
 
   useEffect(() => {
-    fetchPartnerDetails();
+    fetchExecutiveDetails();
   }, [id]);
 
   const showAlert = (type, message) => {
@@ -149,28 +149,28 @@ const DeliveryPartnerDetails = () => {
     setTimeout(() => setAlert({ show: false }), 3000);
   };
 
-  const fetchPartnerDetails = async () => {
+  const fetchExecutiveDetails = async () => {
     try {
       setLoading(true);
       setError(null);
 
       const response = await getDeliveryPartnerById(id);
-      console.log("Full Partner Data:", response);
+      console.log("Full Executive Data:", response);
 
       if (response.data) {
         const partnerData = response.data.data || response.data;
         if (partnerData) {
           setPartner(normalizePartner(partnerData));
         } else {
-          setError("Invalid partner data received");
+          setError("Invalid executive data received");
         }
       } else {
-        setError("Failed to fetch partner details");
+        setError("Failed to fetch executive details");
       }
     } catch (err) {
       console.error(err);
       setError(
-        err.response?.data?.message || "Failed to fetch partner details"
+        err.response?.data?.message || "Failed to fetch executive details"
       );
     } finally {
       setLoading(false);
@@ -204,7 +204,7 @@ const DeliveryPartnerDetails = () => {
       setActionLoading(true);
       const status = newStatus === "active";
       await updatePartnerStatus(id, status);
-      await fetchPartnerDetails();
+      await fetchExecutiveDetails();
     } catch (err) {
       showAlert(
         "error",
@@ -269,7 +269,7 @@ const DeliveryPartnerDetails = () => {
 
       showAlert("success", "Shift timings updated successfully!");
       setShowTimeModal(false);
-      fetchPartnerDetails(); 
+      fetchExecutiveDetails();
 
     } catch (err) {
       console.error(err);
@@ -313,7 +313,7 @@ const DeliveryPartnerDetails = () => {
 
       showAlert("success", "Shift updated successfully!");
       setShowShiftModal(false);
-      fetchPartnerDetails();
+      fetchExecutiveDetails();
 
     } catch (err) {
       console.error(err);
@@ -583,7 +583,7 @@ const DeliveryPartnerDetails = () => {
 
               {shiftForm.locked && (
                 <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
-                  When locked, the partner cannot change their shift. Only admin can modify.
+                  When locked, the executive cannot change their shift. Only admin can modify.
                 </p>
               )}
 
@@ -614,11 +614,11 @@ const DeliveryPartnerDetails = () => {
         onClick={() => navigate("/delivery-partners")}
         className="flex items-center mb-4 text-gray-600 font-medium hover:text-black transition"
       >
-        <ChevronLeft className="w-5 h-5 mr-1" /> Back to Partners
+        <ChevronLeft className="w-5 h-5 mr-1" /> Back to Executives
       </button>
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Delivery Partner Details</h1>
+        <h1 className="text-2xl font-bold">Delivery Executive Details</h1>
 
         {}
         <div className="flex gap-3">
@@ -628,7 +628,7 @@ const DeliveryPartnerDetails = () => {
               disabled={actionLoading}
               className="bg-red-500 text-white px-4 py-2 rounded shadow hover:bg-red-600 transition"
             >
-              Block Partner
+              Block Executive
             </button>
           )}
 
@@ -638,7 +638,7 @@ const DeliveryPartnerDetails = () => {
               disabled={actionLoading}
               className="bg-green-500 text-white px-4 py-2 rounded shadow hover:bg-green-600 transition"
             >
-              {currentStatus === "inactive" ? "Approve & Activate" : "Unblock Partner"}
+              {currentStatus === "inactive" ? "Approve & Activate" : "Unblock Executive"}
             </button>
           ) : null}
 
@@ -908,4 +908,4 @@ const DeliveryPartnerDetails = () => {
   );
 };
 
-export default DeliveryPartnerDetails;
+export default DeliveryExecutiveDetails;

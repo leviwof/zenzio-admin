@@ -118,15 +118,15 @@ const DeliveryPartnersList = () => {
     }
   };
 
-  const handleDeletePartner = async (uid, name) => {
-    if (window.confirm(`Are you sure you want to PERMANENTLY delete partner ${name}? This action cannot be undone and will delete their Firebase account too.`)) {
+  const handleDeleteExecutive = async (uid, name) => {
+    if (window.confirm(`Are you sure you want to PERMANENTLY delete executive ${name}? This action cannot be undone and will delete their Firebase account too.`)) {
       try {
         await permanentlyDeletePartner(uid);
-        showAlert('success', 'Partner deleted successfully');
+        showAlert('success', 'Executive deleted successfully');
         fetchPartners();
       } catch (error) {
         console.error('Error deleting partner:', error);
-        showAlert('error', error.response?.data?.message || 'Failed to delete partner');
+        showAlert('error', error.response?.data?.message || 'Failed to delete executive');
       }
     }
   };
@@ -156,16 +156,16 @@ const DeliveryPartnersList = () => {
   };
 
   const mainTabs = [
-    { label: 'Delivery Partner Info', value: 'info' },
+    { label: 'Delivery Executive Info', value: 'info' },
     { label: 'Referral', value: 'referral', isUpcoming: true }
   ];
 
   const filterTabs = [
-    { label: 'All Partners', value: 'All', color: 'bg-gray-50 text-gray-600' },
+    { label: 'All Executives', value: 'All', color: 'bg-gray-50 text-gray-600' },
     { label: 'Pending Approval', value: 'pending', color: 'bg-yellow-50 text-yellow-600' },
-    { label: 'Active Partners', value: 'active', color: 'bg-green-50 text-green-600' },
+    { label: 'Active Executives', value: 'active', color: 'bg-green-50 text-green-600' },
     { label: 'On-Duty', value: 'on-duty', color: 'bg-blue-50 text-blue-600' },
-    { label: 'Inactive Partners', value: 'inactive', color: 'bg-gray-50 text-gray-600' }
+    { label: 'Inactive Executives', value: 'inactive', color: 'bg-gray-50 text-gray-600' }
   ];
 
   const getVehicleIcon = (type) => {
@@ -235,7 +235,7 @@ const DeliveryPartnersList = () => {
         </div>
       )}
 
-      <h1 className="text-3xl font-bold mb-6">Delivery Partner Management</h1>
+      <h1 className="text-3xl font-bold mb-6">Delivery Executive Management</h1>
 
       <div className="bg-white rounded-lg shadow">
         {/* Main Tabs */}
@@ -350,7 +350,7 @@ const DeliveryPartnersList = () => {
               </div>
             ) : partners.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-500 text-lg">No delivery partners found</p>
+                <p className="text-gray-500 text-lg">No delivery executives found</p>
               </div>
             ) : (
               <>
@@ -359,7 +359,7 @@ const DeliveryPartnersList = () => {
                     <thead className="bg-gray-50 border-b">
                       <tr>
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">
-                          Partner Name
+                          Executive Name
                         </th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">
                           Contact
@@ -423,7 +423,7 @@ const DeliveryPartnersList = () => {
                                 <Clock size={18} />
                               </button>
                               <button
-                                onClick={() => handleDeletePartner(p.fleetUid, p.name)}
+                                onClick={() => handleDeleteExecutive(p.fleetUid, p.name)}
                                 className="text-red-600 hover:text-red-800 transition p-1"
                                 title="Permanently Delete"
                               >
@@ -440,7 +440,7 @@ const DeliveryPartnersList = () => {
                 {/* Pagination */}
                 <div className="flex items-center justify-between mt-6 pt-4 border-t">
                   <p className="text-sm text-gray-600">
-                    1-10 of {pagination.totalPartners} partners
+                    1-10 of {pagination.totalPartners} executives
                   </p>
 
                   <div className="flex items-center space-x-1">

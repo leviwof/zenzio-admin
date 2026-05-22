@@ -113,7 +113,7 @@ const DeliveryMap = ({ partner, restaurant, customer, totalDistance }) => {
           <Marker position={partnerCoord} icon={PARTNER_ICON}>
             <Popup>
               <div className="text-sm">
-                <p className="font-bold text-blue-600">{partner?.label || 'Delivery Partner'}</p>
+                <p className="font-bold text-blue-600">{partner?.label || 'Delivery Executive'}</p>
                 <p className="text-gray-500">{partnerCoord[0].toFixed(4)}, {partnerCoord[1].toFixed(4)}</p>
               </div>
             </Popup>

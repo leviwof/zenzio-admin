@@ -204,7 +204,7 @@ const Dashboard = () => {
       link: "/customers",
     },
     {
-      label: "Total Delivery Partners",
+      label: "Total Delivery Executives",
       value: totalDeliveryPartners,
       change: "-",
       icon: Truck,
