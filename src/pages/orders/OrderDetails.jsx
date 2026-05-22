@@ -640,8 +640,8 @@ const OrderDetails = () => {
                           <div className="text-xs text-green-600 space-y-0.5 mt-2">
                             <p className="text-xs text-green-600 mb-1.5 italic">{hasJourneyPricing ? 'Delivery charge based on total delivery journey' : 'Old order pricing basis'}</p>
                             <div className="flex justify-between">
-                              <span>Base (first 5km):</span>
-                              <span className="font-medium">Backend calculated</span>
+                              {/* <span>Base (first 5km):</span> */}
+                              {/* <span className="font-medium">Backend calculated</span> */}
                             </div>
                             <div className="flex justify-between font-semibold text-green-700 border-t border-green-200 pt-1 mt-1">
                               <span>Calculated Total:</span>
