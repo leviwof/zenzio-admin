@@ -412,17 +412,17 @@ const LiveTracking = () => {
                     <div>
                         <h1 className="flex items-center gap-3 text-3xl font-bold text-slate-900">
                             <Navigation className="text-red-500" />
-                            Live Partner Tracking
+                            Live Executive Tracking
                         </h1>
                         <p className="mt-2 text-sm text-slate-500">
-                            Track the current partner location on the map and open order details from the partner list.
+                            Track the current executive location on the map and open order details from the executive list.
                         </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
                         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">
                             <span className="font-semibold text-slate-900">{onlinePartners.length} live</span>
-                            <span className="text-slate-400"> / {partners.length} total partners</span>
+                            <span className="text-slate-400"> / {partners.length} total executives</span>
                         </div>
                         <button
                             onClick={() => fetchLocations(true)}
@@ -456,9 +456,9 @@ const LiveTracking = () => {
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                         <SummaryCard
                             icon={Bike}
-                            label="Live Partners"
+                            label="Live Executives"
                             value={onlinePartners.length}
-                            hint="Partners sending GPS right now"
+                            hint="Executives sending GPS right now"
                             tone="blue"
                         />
                         <SummaryCard
@@ -472,14 +472,14 @@ const LiveTracking = () => {
                             icon={Package}
                             label="Active Orders"
                             value={partnersWithActiveOrders}
-                            hint="Partners currently linked to an order"
+                            hint="Executives currently linked to an order"
                             tone="emerald"
                         />
                         <SummaryCard
                             icon={User}
                             label="Trackable"
                             value={filteredPartners.length}
-                            hint="Partners matching the current filter"
+                            hint="Executives matching the current filter"
                             tone="red"
                         />
                     </div>
@@ -490,9 +490,9 @@ const LiveTracking = () => {
                         <div className="border-b border-slate-100 p-5">
                             <div className="flex items-start justify-between gap-4">
                                 <div>
-                                    <h2 className="text-lg font-bold text-slate-900">Trackable Partners</h2>
+                                    <h2 className="text-lg font-bold text-slate-900">Trackable Executives</h2>
                                     <p className="mt-1 text-sm text-slate-500">
-                                        Choose a partner to focus the map. Details will open in the same card.
+                                        Choose an executive to focus the map. Details will open in the same card.
                                     </p>
                                 </div>
                                 <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -504,7 +504,7 @@ const LiveTracking = () => {
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input
                                     type="text"
-                                    placeholder="Search by partner name or ID"
+                                    placeholder="Search by executive name or ID"
                                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-50"
                                     value={searchQuery}
                                     onChange={(event) => setSearchQuery(event.target.value)}
@@ -516,8 +516,8 @@ const LiveTracking = () => {
                             {filteredPartners.length === 0 ? (
                                 <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
                                     <Search className="mb-3 text-slate-300" size={28} />
-                                    <p className="text-sm font-semibold text-slate-700">No partners match this search</p>
-                                    <p className="mt-1 text-sm text-slate-500">Try a different name or partner ID.</p>
+                                    <p className="text-sm font-semibold text-slate-700">No executives match this search</p>
+                                    <p className="mt-1 text-sm text-slate-500">Try a different name or executive ID.</p>
                                 </div>
                             ) : (
                                 <div className="space-y-3">
@@ -554,7 +554,7 @@ const LiveTracking = () => {
                                                                         {partner.name}
                                                                     </p>
                                                                     <p className="mt-1 truncate text-xs text-slate-500">
-                                                                        Partner ID: {partner.uid}
+                                                                        Executive ID: {partner.uid}
                                                                     </p>
                                                                 </div>
                                                                 <div className="flex items-center gap-2">
@@ -682,7 +682,7 @@ const LiveTracking = () => {
                                                                             {Number(order.totalDistance ?? order.distance_km).toFixed(2)} km
                                                                         </p>
                                                                         <p className="mt-1 text-xs text-blue-500">
-                                                                            Partner - Restaurant - Customer
+                                                                            Executive - Restaurant - Customer
                                                                         </p>
                                                                     </div>
                                                                 ) : (
@@ -731,7 +731,7 @@ const LiveTracking = () => {
                                                             </div>
                                                         ) : (
                                                             <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                                                                This partner does not have an active order right now.
+                                                                This executive does not have an active order right now.
                                                             </div>
                                                         )}
                                                     </div>
@@ -825,10 +825,10 @@ const LiveTracking = () => {
                         <div className="pointer-events-none absolute inset-x-4 top-4 z-[1000] flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                             <div className="pointer-events-auto max-w-md rounded-3xl border border-white/80 bg-white/95 p-4 shadow-lg backdrop-blur">
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                                    Current Partner Location
+                                    Current Executive Location
                                 </p>
                                 <p className="mt-2 text-xl font-bold text-slate-900">
-                                    {focusedPartner?.name || 'Select a partner'}
+                                    {focusedPartner?.name || 'Select an executive'}
                                 </p>
                                 <div className="mt-3 flex flex-wrap gap-2">
                                     {focusedPartner ? (
@@ -860,7 +860,7 @@ const LiveTracking = () => {
                                         </>
                                     ) : (
                                         <p className="text-sm text-slate-500">
-                                            Choose a partner from the left panel to center the map.
+                                            Choose an executive from the left panel to center the map.
                                         </p>
                                     )}
                                 </div>
@@ -871,7 +871,7 @@ const LiveTracking = () => {
                                         return (lat === null || lng === null || (lat === 0 && lng === 0));
                                     })() && (
                                     <p className="mt-3 text-sm text-amber-600">
-                                        Current location is not available for this partner yet.
+                                        Current location is not available for this executive yet.
                                     </p>
                                 )}
                             </div>

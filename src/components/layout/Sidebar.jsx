@@ -49,7 +49,7 @@ const Sidebar = ({ isOpen }) => {
     { id: 'dashboard', path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'customers', path: '/customers', icon: Users, label: 'Customers' },
     { id: 'restaurants', path: '/restaurants', icon: Utensils, label: 'Restaurants' },
-    { id: 'delivery-partners', path: '/delivery-partners', icon: Truck, label: 'Delivery Partners' },
+    { id: 'delivery-partners', path: '/delivery-partners', icon: Truck, label: 'Delivery Executives' },
     { id: 'live-tracking', path: '/live-tracking', icon: Navigation, label: 'Live Tracking' },
     { id: 'orders', path: '/orders', icon: ClipboardList, label: 'Order Monitoring' },
 

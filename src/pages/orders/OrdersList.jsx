@@ -390,7 +390,7 @@ const OrdersList = () => {
   const CANCEL_REASONS = [
     "Customer requested cancellation",
     "Restaurant closed/unavailable",
-    "Delivery partner unavailable",
+    "Delivery executive unavailable",
     "Order cannot be fulfilled",
     "Payment failed",
     "Suspected fraud",
@@ -561,7 +561,7 @@ const OrdersList = () => {
     }
 
     const csvContent = [
-      ["Order ID", "Customer", "Restaurant", "Order Time", "Total Amount", "Status", "Delivery Partner"],
+      ["Order ID", "Customer", "Restaurant", "Order Time", "Total Amount", "Status", "Delivery Executive"],
       ...orders.map((o) => [
         o.id,
         o.user?.name || "N/A",
@@ -812,7 +812,7 @@ const OrdersList = () => {
                       Status
                     </th>
                     <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider bg-white/80 backdrop-blur-sm border-b border-gray-100 hidden lg:table-cell">
-                      Partner
+                      Executive
                     </th>
                     <th className="px-5 py-3.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider bg-white/80 backdrop-blur-sm border-b border-gray-100">
                       Actions
@@ -1065,7 +1065,7 @@ const OrdersList = () => {
 
               <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
                 <p className="text-sm text-yellow-800">
-                  <strong>Warning:</strong> This action will cancel the order and notify all parties (Customer, Restaurant, Delivery Partner).
+                  <strong>Warning:</strong> This action will cancel the order and notify all parties (Customer, Restaurant, Delivery Executive).
                 </p>
               </div>
             </div>

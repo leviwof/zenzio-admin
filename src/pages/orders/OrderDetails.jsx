@@ -16,12 +16,12 @@ const ORDER_TIMELINE_STEPS = [
   { status: 'ACCEPTED', message: 'Order accepted by restaurant' },
   { status: 'PREPARING', message: 'Restaurant is preparing your order' },
   { status: 'READY', message: 'Order is ready for pickup' },
-  { status: 'ASSIGNED', message: 'Delivery partner assigned' },
-  { status: 'ON_THE_WAY_TO_RESTAURANT', message: 'Delivery partner is on the way to restaurant' },
-  { status: 'REACHED_RESTAURANT', message: 'Delivery partner has reached the restaurant' },
-  { status: 'PICKED_UP', message: 'Order picked up by delivery partner' },
+  { status: 'ASSIGNED', message: 'Delivery executive assigned' },
+  { status: 'ON_THE_WAY_TO_RESTAURANT', message: 'Delivery executive is on the way to restaurant' },
+  { status: 'REACHED_RESTAURANT', message: 'Delivery executive has reached the restaurant' },
+  { status: 'PICKED_UP', message: 'Order picked up by delivery executive' },
   { status: 'OUT_FOR_DELIVERY', message: 'Order is out for delivery' },
-  { status: 'ON_THE_WAY_TO_CUSTOMER', message: 'Delivery partner is on the way to customer' },
+  { status: 'ON_THE_WAY_TO_CUSTOMER', message: 'Delivery executive is on the way to customer' },
   { status: 'DELIVERED', message: 'Order delivered successfully' },
 ];
 
@@ -69,10 +69,10 @@ const OrderDetails = () => {
 
   
   const [showReassignModal, setShowReassignModal] = useState(false);
-  const [availablePartners, setAvailablePartners] = useState([]);
-  const [selectedPartner, setSelectedPartner] = useState('');
+  const [availableExecutives, setAvailableExecutives] = useState([]);
+  const [selectedExecutive, setSelectedExecutive] = useState('');
   const [reassignReason, setReassignReason] = useState('');
-  const [loadingPartners, setLoadingPartners] = useState(false);
+  const [loadingExecutives, setLoadingExecutives] = useState(false);
 
   
   const DELIVERY_STATUSES = [
@@ -227,26 +227,26 @@ const OrderDetails = () => {
     }
   };
 
-  const fetchAvailablePartners = async () => {
+  const fetchAvailableExecutives = async () => {
     try {
-      setLoadingPartners(true);
+      setLoadingExecutives(true);
       const res = await getAllDeliveryPartners({ status: 'on-duty', limit: 100 });
-      setAvailablePartners(res.data?.data || []);
+      setAvailableExecutives(res.data?.data || []);
     } catch (err) {
       console.error("Error fetching partners:", err);
     } finally {
-      setLoadingPartners(false);
+      setLoadingExecutives(false);
     }
   };
 
   const handleReassign = async () => {
-    if (!selectedPartner) return;
+    if (!selectedExecutive) return;
     setIsUpdating(true);
     try {
-      await reassignOrder(orderId, selectedPartner, reassignReason);
+      await reassignOrder(orderId, selectedExecutive, reassignReason);
       await fetchOrderDetails();
       setShowReassignModal(false);
-      setSelectedPartner('');
+      setSelectedExecutive('');
       setReassignReason('');
       alert('Order successfully reassigned!');
     } catch (error) {
@@ -472,19 +472,19 @@ const OrderDetails = () => {
             <div>
               <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
                 <AlertTriangle size={20} className="text-red-500" />
-                Delivery Partner Control
+                Delivery Executive Control
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Admin can cancel or change the delivery status. Changes will be reflected across User, Restaurant, and Delivery Partner apps.
+                Admin can cancel or change the delivery status. Changes will be reflected across User, Restaurant, and Delivery Executive apps.
               </p>
             </div>
             <div className="flex gap-2">
               {order.status?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'DELIVERED' && order.status?.toUpperCase() !== 'CANCELLED' && (
                 <button
-                  onClick={() => { setShowReassignModal(true); fetchAvailablePartners(); }}
+                  onClick={() => { setShowReassignModal(true); fetchAvailableExecutives(); }}
                   className="px-4 py-2 border border-blue-500 text-blue-500 rounded-md hover:bg-blue-50 transition-colors font-medium"
                 >
-                  Reassign Partner
+                  Reassign Executive
                 </button>
               )}
               {order.status?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'DELIVERED' && order.status?.toUpperCase() !== 'CANCELLED' && (
@@ -507,7 +507,7 @@ const OrderDetails = () => {
               </span>
             </div>
             <div className="border-l border-gray-300 pl-4">
-              <p className="text-sm text-gray-500">Assigned Partner</p>
+              <p className="text-sm text-gray-500">Assigned Executive</p>
               <p className="font-medium text-gray-800">{order.deliveryPartnerInformation?.name || 'N/A'}</p>
             </div>
             <div className="border-l border-gray-300 pl-4">
@@ -702,7 +702,7 @@ const OrderDetails = () => {
             {hasJourneyPricing && totalJourneyKm !== null && totalJourneyKm !== undefined ? (
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                 <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
-                  Partner to Restaurant to Customer
+                  Executive to Restaurant to Customer
                 </p>
                 <p className="mt-1 text-xl font-bold text-blue-700">
                   {Number(totalJourneyKm).toFixed(2)} km
@@ -720,7 +720,7 @@ const OrderDetails = () => {
                   {Number(order.totalDistance).toFixed(2)} km
                 </p>
                 <p className="mt-1 text-xs text-blue-600">
-                  Partner to Restaurant to Customer
+                  Executive to Restaurant to Customer
                 </p>
               </div>
             ) : null}
@@ -764,12 +764,12 @@ const OrderDetails = () => {
 
         {}
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="font-bold text-lg mb-4 text-gray-800">Delivery Partner Information</h3>
+          <h3 className="font-bold text-lg mb-4 text-gray-800">Delivery Executive Information</h3>
           {order.deliveryPartnerInformation ? (
             <div className="space-y-3 text-sm">
               <div>
                 <p className="font-semibold text-gray-900">{order.deliveryPartnerInformation.name}</p>
-                <p className="text-xs text-gray-500">Partner ID: {order.deliveryPartnerInformation.partnerId.substring(0, 12)}</p>
+                <p className="text-xs text-gray-500">Executive ID: {order.deliveryPartnerInformation.partnerId.substring(0, 12)}</p>
               </div>
               <div className="flex items-start space-x-2">
                 <Phone size={16} className="text-red-500 mt-1" />
@@ -809,7 +809,7 @@ const OrderDetails = () => {
                   <div className="flex items-start space-x-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
                     <Navigation size={18} className="text-blue-600 mt-1 flex-shrink-0" />
                     <div className="flex-1">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Partner to Restaurant to Customer</p>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Executive to Restaurant to Customer</p>
                       <p className="font-bold text-2xl text-blue-700 my-1">
                         {Number(totalJourneyKm).toFixed(2)} km
                       </p>
@@ -827,7 +827,7 @@ const OrderDetails = () => {
                         {Number(order.totalDistance).toFixed(2)} km
                       </p>
                       <p className="text-xs text-blue-600">
-                        Partner to Restaurant to Customer (complete trip)
+                        Executive to Restaurant to Customer (complete trip)
                       </p>
                     </div>
                   </div>
@@ -843,7 +843,7 @@ const OrderDetails = () => {
               </div>
             </div>
           ) : (
-            <p className="text-gray-500 text-sm">No delivery partner assigned yet</p>
+            <p className="text-gray-500 text-sm">No delivery executive assigned yet</p>
           )}
         </div>
 
@@ -989,7 +989,7 @@ const OrderDetails = () => {
                   <ul className="text-sm text-yellow-700 list-disc list-inside mt-1">
                     <li>Customer (via push notification)</li>
                     <li>Restaurant (via push notification)</li>
-                    <li>Delivery Partner (via push notification)</li>
+                    <li>Delivery Executive (via push notification)</li>
                   </ul>
                 </div>
               </div>
@@ -1091,7 +1091,7 @@ const OrderDetails = () => {
               <button
                 onClick={() => {
                   setShowReassignModal(false);
-                  setSelectedPartner('');
+                  setSelectedExecutive('');
                   setReassignReason('');
                 }}
                 className="text-gray-500 hover:text-gray-700"
@@ -1103,18 +1103,18 @@ const OrderDetails = () => {
             <div className="p-4 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select New Partner
+                  Select New Executive
                 </label>
-                {loadingPartners ? (
-                  <div className="text-sm text-gray-500">Loading partners...</div>
+                {loadingExecutives ? (
+                  <div className="text-sm text-gray-500">Loading executives...</div>
                 ) : (
                   <select
-                    value={selectedPartner}
-                    onChange={(e) => setSelectedPartner(e.target.value)}
+                    value={selectedExecutive}
+                    onChange={(e) => setSelectedExecutive(e.target.value)}
                     className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">-- Select Partner --</option>
-                    {availablePartners.map((partner) => (
+                    <option value="">-- Select Executive --</option>
+                    {availableExecutives.map((partner) => (
                       <option key={partner.uid} value={partner.uid}>
                         {partner.profile?.first_name} {partner.profile?.last_name} ({partner.isActive ? 'Online' : 'Offline'})
                       </option>
@@ -1138,7 +1138,7 @@ const OrderDetails = () => {
 
               <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> Previous partner will be cancelled and notified. New partner will receive assignment Notification.
+                  <strong>Note:</strong> Previous executive will be cancelled and notified. New executive will receive assignment notification.
                 </p>
               </div>
             </div>
@@ -1147,7 +1147,7 @@ const OrderDetails = () => {
               <button
                 onClick={() => {
                   setShowReassignModal(false);
-                  setSelectedPartner('');
+                  setSelectedExecutive('');
                   setReassignReason('');
                 }}
                 className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100"
@@ -1157,7 +1157,7 @@ const OrderDetails = () => {
               </button>
               <button
                 onClick={handleReassign}
-                disabled={!selectedPartner || isUpdating}
+                disabled={!selectedExecutive || isUpdating}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isUpdating ? 'Reassigning...' : 'Confirm Reassign'}

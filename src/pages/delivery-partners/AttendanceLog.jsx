@@ -29,7 +29,7 @@ const AttendanceLog = () => {
   const fetchAttendance = async () => {
     if (!partnerId || partnerId === 'undefined') {
       console.error("AttendanceLog: partnerId is missing or 'undefined'");
-      setError("Invalid partner ID access");
+      setError("Invalid executive ID access");
       setLoading(false);
       return;
     }
@@ -72,18 +72,18 @@ const AttendanceLog = () => {
           totalBreakHours: data.total_break_hours || 0
         });
 
-        // Fetch partner details if not already set
+        // Fetch executive details if not already set
         if (!partnerName) {
           try {
             const partnerRes = await getDeliveryPartnerById(partnerId);
             const pData = partnerRes.data?.data || partnerRes.data;
             if (pData && pData.profile) {
-              setPartnerName(`${pData.profile.first_name || ''} ${pData.profile.last_name || ''}`.trim() || 'Partner');
+              setPartnerName(`${pData.profile.first_name || ''} ${pData.profile.last_name || ''}`.trim() || 'Executive');
             } else if (pData && pData.name) {
               setPartnerName(pData.name);
             }
           } catch (e) {
-            console.error("Partner details fetch failed", e);
+            console.error("Executive details fetch failed", e);
           }
         }
       } else {
@@ -151,7 +151,7 @@ const AttendanceLog = () => {
           className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
         >
           <ChevronLeft size={20} />
-          <span>Back to Partner Details</span>
+          <span>Back to Executive Details</span>
         </button>
         <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-lg flex items-center space-x-2">
           <AlertCircle size={20} />
@@ -168,7 +168,7 @@ const AttendanceLog = () => {
         className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
       >
         <ChevronLeft size={20} />
-        <span className="ml-1">Back to Partner Details</span>
+        <span className="ml-1">Back to Executive Details</span>
       </button>
 
       <div className="bg-white rounded-lg shadow p-6">
