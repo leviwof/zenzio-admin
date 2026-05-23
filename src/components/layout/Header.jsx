@@ -1,39 +1,22 @@
-import React, { useRef, useMemo, useCallback } from 'react';
-import { Menu, Bell, LogOut, Check, ShoppingBag, XCircle, Truck, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Bell, LogOut, Search, ChevronDown,
+  ShoppingBag, Check, Clock, ExternalLink,
+  XCircle, Truck, AlertTriangle, Settings as SettingsIcon
+} from 'lucide-react';
 import { getNotifications, getRestaurantById, markNotificationAsRead } from '../../services/api';
 import { useOrderNotifications } from '../../context/OrderNotificationContext';
 import { getAuthUser, getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
-const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
+
+const notificationSoundPath = `${import.meta.env.BASE_URL}notification.mp3`;
 
 const isToday = (dateStr) => {
   if (!dateStr) return false;
   try {
-    const now = new Date();
-    const date = new Date(dateStr);
-    return date.toDateString() === now.toDateString();
+    return new Date(dateStr).toDateString() === new Date().toDateString();
   } catch { return false; }
-};
-
-const formatRelativeTime = (dateStr) => {
-  if (!dateStr) return '';
-  try {
-    const now = new Date();
-    const date = new Date(dateStr);
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHrs = Math.floor(diffMins / 60);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHrs < 24) return `${diffHrs}h ago`;
-
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-
-    return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-  } catch { return ''; }
 };
 
 const formatFullTimestamp = (dateStr) => {
@@ -48,122 +31,87 @@ const formatFullTimestamp = (dateStr) => {
 
 const getNotificationMeta = (title, body, type) => {
   if (type === "NEW_ORDER") {
-    return { icon: ShoppingBag, label: 'New Order', iconClass: 'text-green-600', bgClass: 'bg-green-50', borderClass: 'border-l-green-500' };
+    return { icon: ShoppingBag, label: 'New Order', iconClass: 'text-emerald-600', bgClass: 'bg-emerald-50', borderClass: 'border-l-emerald-500' };
   }
-
   const text = `${title || ''} ${body || ''}`.toLowerCase();
-
-  if (text.includes('new') && (text.includes('order') || text.includes('booking') || text.includes('placed'))) {
-    return { icon: ShoppingBag, label: 'New Order', iconClass: 'text-green-600', bgClass: 'bg-green-50', borderClass: 'border-l-green-500' };
+  if (text.includes('new') && (text.includes('order') || text.includes('booking'))) {
+    return { icon: ShoppingBag, label: 'New Order', iconClass: 'text-emerald-600', bgClass: 'bg-emerald-50', borderClass: 'border-l-emerald-500' };
   }
   if (text.includes('cancel')) {
     return { icon: XCircle, label: 'Cancelled', iconClass: 'text-red-500', bgClass: 'bg-red-50', borderClass: 'border-l-red-400' };
   }
-  if (text.includes('deliver') || text.includes('picked') || text.includes('out for') || text.includes('on the way') || text.includes('assigned')) {
+  if (text.includes('deliver') || text.includes('out for')) {
     return { icon: Truck, label: 'Delivery Update', iconClass: 'text-orange-500', bgClass: 'bg-orange-50', borderClass: 'border-l-orange-400' };
   }
-  if (text.includes('refund') || text.includes('payment') || text.includes('issue') || text.includes('failed') || text.includes('error')) {
+  if (text.includes('refund') || text.includes('failed') || text.includes('error')) {
     return { icon: AlertTriangle, label: 'Alert', iconClass: 'text-purple-500', bgClass: 'bg-purple-50', borderClass: 'border-l-purple-400' };
-  }
-  if (text.includes('order') || text.includes('booking')) {
-    return { icon: ShoppingBag, label: 'Order Update', iconClass: 'text-indigo-500', bgClass: 'bg-indigo-50', borderClass: 'border-l-indigo-400' };
   }
   return { icon: Bell, label: 'Notification', iconClass: 'text-gray-500', bgClass: 'bg-gray-50', borderClass: 'border-l-gray-300' };
 };
 
 const extractOrderId = (notif) => {
   if (!notif) return null;
-
   if (notif.orderId || notif.order_id) return notif.orderId || notif.order_id;
   if (notif.targetId || notif.targetUid) return notif.targetId || notif.targetUid;
-  if (notif.data?.orderId || notif.data?.order_id) return notif.data.orderId || notif.data.order_id;
-  if (notif.metadata?.orderId || notif.metadata?.order_id) return notif.metadata.orderId || notif.metadata.order_id;
-
+  if (notif.data?.orderId) return notif.data.orderId;
   const text = `${notif.title || ''} ${notif.body || ''}`;
-  const patterns = [
-    /#([A-Z0-9_-]{5,})/i,
-    /\border\s*(?:id)?\s*[#:]\s*([A-Z0-9]{5,})/i,
-    /\b(ORD[A-Z0-9]{3,})/i,
-    /\b([A-F0-9]{24})\b/i,
-    /([a-z0-9]{20,})/i,
-  ];
-  for (const pat of patterns) {
-    const m = text.match(pat);
-    if (m) return m[1];
-  }
-  return null;
+  const m = text.match(/#([A-Z0-9_-]{5,})/i);
+  return m ? m[1] : null;
 };
 
-const getDisplayInitial = (name) => {
-  const trimmed = String(name || '').trim();
-  const match = trimmed.match(/[a-z0-9]/i);
-  return match ? match[0].toUpperCase() : 'A';
-};
-
-const Header = ({ onToggleSidebar, onLogout }) => {
+const Header = ({ onLogout }) => {
   const navigate = useNavigate();
   const restaurantAdmin = isRestaurantAdmin();
-  const [allNotifications, setAllNotifications] = React.useState([]);
-  const [showDropdown, setShowDropdown] = React.useState(false);
-  const [displayName, setDisplayName] = React.useState('Admin');
-  const [displayInitial, setDisplayInitial] = React.useState('A');
+  const [allNotifications, setAllNotifications] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [displayName, setDisplayName] = useState('Admin');
+  const [displayInitial, setDisplayInitial] = useState('A');
   const knownUnreadIds = useRef(new Set());
   const knownSyntheticIds = useRef(new Set());
   const isInitialLoad = useRef(true);
   const audioRef = useRef(null);
   const audioUnlocked = useRef(false);
   const { unreadOrderCount, syntheticNotifs, markSyntheticNotifRead } = useOrderNotifications();
-  const [badgeAnim, setBadgeAnim] = React.useState(false);
+  const [badgeAnim, setBadgeAnim] = useState(false);
   const dropdownRef = useRef(null);
+  const searchRef = useRef(null);
+  const profileMenuRef = useRef(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
-
     const loadIdentity = async () => {
       if (!restaurantAdmin) {
         const authUser = getAuthUser();
         const name = authUser?.name || localStorage.getItem('adminEmail') || 'Admin';
         if (!cancelled) {
           setDisplayName('Admin');
-          setDisplayInitial(getDisplayInitial(name));
+          setDisplayInitial(name.charAt(0).toUpperCase());
         }
         return;
       }
-
       const restaurantUid = getCurrentRestaurantUid();
       if (!restaurantUid) return;
-
       try {
         const response = await getRestaurantById(restaurantUid);
-        const restaurant =
-          response.data?.data?.restaurant ||
-          response.data?.restaurant ||
-          response.data?.data ||
-          {};
-        const restaurantName =
-          restaurant.profile?.restaurant_name ||
-          restaurant.restaurant_name ||
-          restaurant.name ||
-          'Restaurant Admin';
-
+        const restaurant = response.data?.data?.restaurant || response.data?.restaurant || response.data?.data || {};
+        const name = restaurant.profile?.restaurant_name || restaurant.restaurant_name || restaurant.name || 'Restaurant Admin';
         if (!cancelled) {
-          setDisplayName(restaurantName);
-          setDisplayInitial(getDisplayInitial(restaurantName));
+          setDisplayName(name);
+          setDisplayInitial(name.charAt(0).toUpperCase());
         }
-      } catch (error) {
-        const fallbackName = getAuthUser()?.name || 'Restaurant Admin';
+      } catch {
+        const fallback = getAuthUser()?.name || 'Restaurant Admin';
         if (!cancelled) {
-          setDisplayName(fallbackName);
-          setDisplayInitial(getDisplayInitial(fallbackName));
+          setDisplayName(fallback);
+          setDisplayInitial(fallback.charAt(0).toUpperCase());
         }
       }
     };
-
     loadIdentity();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [restaurantAdmin]);
 
   const allMergedNotifications = useMemo(() => {
@@ -178,17 +126,11 @@ const Header = ({ onToggleSidebar, onLogout }) => {
     });
   }, [allNotifications, syntheticNotifs]);
 
-  const displayNotifications = useMemo(() => {
-    return allMergedNotifications.slice(0, 30);
-  }, [allMergedNotifications]);
+  const displayNotifications = useMemo(() => allMergedNotifications.slice(0, 30), [allMergedNotifications]);
+  const todayUnreadCount = useMemo(() => allMergedNotifications.filter(n => !n.isRead && isToday(n.createdAt)).length, [allMergedNotifications]);
 
-  const todayUnreadCount = useMemo(() => {
-    const count = allMergedNotifications.filter(n => !n.isRead && isToday(n.createdAt)).length;
-    return count;
-  }, [allMergedNotifications]);
-
-  React.useEffect(() => {
-    audioRef.current = new Audio(notificationSound);
+  useEffect(() => {
+    audioRef.current = new Audio(notificationSoundPath);
     audioRef.current.preload = 'auto';
     const unlock = () => {
       if (!audioUnlocked.current) {
@@ -196,8 +138,6 @@ const Header = ({ onToggleSidebar, onLogout }) => {
           audioRef.current.pause();
           audioRef.current.currentTime = 0;
           audioUnlocked.current = true;
-          document.removeEventListener('click', unlock);
-          document.removeEventListener('touchstart', unlock);
         }).catch(() => {});
       }
     };
@@ -209,36 +149,43 @@ const Header = ({ onToggleSidebar, onLogout }) => {
     };
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setShowDropdown(false);
-      }
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setShowDropdown(false);
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) setShowProfileMenu(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowDropdown(false);
+        setShowProfileMenu(false);
+        setShowSearch(false);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowSearch(true);
+        setTimeout(() => searchRef.current?.focus(), 100);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const playNotificationSound = useCallback(() => {
     if (audioRef.current && audioUnlocked.current) {
-      try {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play().catch(() => {});
-      } catch (e) {
-        console.warn('[Header Sound] error:', e);
-      }
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {});
     }
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const unreadSynthetic = syntheticNotifs.filter(n => !n.isRead);
-    const newSynthIds = unreadSynthetic
-      .map(n => n.id)
-      .filter(id => !knownSyntheticIds.current.has(id));
-
-    if (newSynthIds.length > 0 && !isInitialLoad.current) {
-      playNotificationSound();
-    }
+    const newSynthIds = unreadSynthetic.map(n => n.id).filter(id => !knownSyntheticIds.current.has(id));
+    if (newSynthIds.length > 0 && !isInitialLoad.current) playNotificationSound();
     unreadSynthetic.forEach(n => knownSyntheticIds.current.add(n.id));
   }, [syntheticNotifs, playNotificationSound]);
 
@@ -246,52 +193,35 @@ const Header = ({ onToggleSidebar, onLogout }) => {
     try {
       const response = await getNotifications();
       let docs = [];
-      if (Array.isArray(response.data?.data)) {
-        docs = response.data.data;
-      } else if (Array.isArray(response.data?.notifications)) {
-        docs = response.data.notifications;
-      } else if (Array.isArray(response.data)) {
-        docs = response.data;
-      } else if (response.data?.data && typeof response.data.data === 'object') {
-        docs = response.data.data.data || Object.values(response.data.data);
-      }
-
+      if (Array.isArray(response.data?.data)) docs = response.data.data;
+      else if (Array.isArray(response.data?.notifications)) docs = response.data.notifications;
+      else if (Array.isArray(response.data)) docs = response.data;
       const docsList = Array.isArray(docs) ? docs : [];
-
       const unreadAll = docsList.filter(n => !n.isRead);
       const unreadIds = new Set(unreadAll.map(n => n.id));
-
       const hasNewUnread = [...unreadIds].some(id => !knownUnreadIds.current.has(id));
-
-      if (!isInitialLoad.current && hasNewUnread) {
-        playNotificationSound();
-      }
+      if (!isInitialLoad.current && hasNewUnread) playNotificationSound();
       isInitialLoad.current = false;
       knownUnreadIds.current = unreadIds;
-
       setAllNotifications(docsList);
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
     }
   }, [playNotificationSound]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 15000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (unreadOrderCount > 0) {
       setBadgeAnim(true);
       const t = setTimeout(() => setBadgeAnim(false), 300);
       return () => clearTimeout(t);
     }
   }, [unreadOrderCount]);
-
-  const handleOrderBadgeClick = useCallback(() => {
-    navigate('/orders');
-  }, [navigate]);
 
   const handleMarkAsRead = useCallback(async (e, id) => {
     e.stopPropagation();
@@ -324,179 +254,234 @@ const Header = ({ onToggleSidebar, onLogout }) => {
         }
       }
     }
-
     const orderId = extractOrderId(notif);
-
-    if (orderId) {
-      navigate(`/orders/${orderId}`);
-    } else {
-      navigate('/orders');
-    }
+    navigate(orderId ? `/orders/${orderId}` : '/orders');
     setShowDropdown(false);
   }, [navigate, markSyntheticNotifRead]);
 
-  const listenForEsc = useCallback((e) => {
-    if (e.key === 'Escape') setShowDropdown(false);
-  }, []);
-
-  React.useEffect(() => {
-    document.addEventListener('keydown', listenForEsc);
-    return () => document.removeEventListener('keydown', listenForEsc);
-  }, [listenForEsc]);
-
   return (
-    <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-      <button onClick={onToggleSidebar} className="text-gray-600 hover:text-gray-900">
-        <Menu size={24} />
-      </button>
-
-      <div className="flex items-center space-x-4">
-        {unreadOrderCount > 0 && (
-          <button
-            onClick={handleOrderBadgeClick}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 border border-red-200 hover:bg-red-100 transition-all ${badgeAnim ? 'animate-badge-pop' : ''}`}
-            title="View new orders"
-          >
-            <ShoppingBag size={14} className="text-red-500" />
-            <span className="text-xs font-bold text-red-600">{unreadOrderCount} New Order{unreadOrderCount > 1 ? 's' : ''}</span>
-          </button>
-        )}
-        <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setShowDropdown(prev => !prev)}
-            className={`relative p-2 rounded-full hover:bg-gray-100 transition-colors ${showDropdown ? 'bg-gray-100' : ''}`}
-            aria-label="Notifications"
-          >
-            <Bell size={20} className="text-gray-600" />
-            {todayUnreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-4.5 h-4.5 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold leading-none">
-                {todayUnreadCount > 9 ? '9+' : todayUnreadCount}
-              </span>
-            )}
-          </button>
-
-          {showDropdown && (
-            <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-                <div className="flex items-center gap-2">
-                  <Bell size={14} className="text-gray-600" />
-                  <span className="font-bold text-sm text-gray-800">Notifications</span>
+    <header className="sticky top-0 z-40 glass border-b border-gray-200/60">
+      <div className="flex items-center justify-between h-16 px-4 lg:px-6">
+        <div className="flex items-center gap-3">
+          <AnimatePresence>
+            {showSearch ? (
+              <motion.div
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: 280, opacity: 1 }}
+                exit={{ width: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onBlur={() => { if (!searchQuery) setShowSearch(false); }}
+                    placeholder="Search orders, restaurants..."
+                    className="w-full pl-9 pr-3 py-2 text-sm bg-gray-100 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all"
+                  />
+                  <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 bg-white border border-gray-200 rounded px-1.5 py-0.5 hidden sm:inline">
+                    ⌘K
+                  </kbd>
                 </div>
-                {todayUnreadCount > 0 && (
-                  <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                    {todayUnreadCount} New
-                  </span>
-                )}
-              </div>
+              </motion.div>
+            ) : (
+              <motion.button
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowSearch(true)}
+                className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm text-gray-400 bg-gray-100 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all"
+              >
+                <Search size={16} />
+                <span>Search...</span>
+                <kbd className="text-[10px] text-gray-400 bg-white border border-gray-200 rounded px-1.5 py-0.5 ml-6">⌘K</kbd>
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
 
-              <div className="max-h-96 overflow-y-auto">
-                {displayNotifications.length === 0 ? (
-                  <div className="px-4 py-10 text-center">
-                    <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
-                      <Bell size={20} className="text-gray-300" />
-                    </div>
-                    <p className="text-sm font-medium text-gray-500">No new notifications today</p>
-                    <p className="text-xs text-gray-400 mt-1">You're all caught up!</p>
-                  </div>
-                ) : (
-                  displayNotifications.map((notif) => {
-                    const isUnread = !notif.isRead;
-                    const meta = getNotificationMeta(notif.title, notif.body, notif.type);
-                    const Icon = meta.icon;
-                    const orderId = extractOrderId(notif);
-                    return (
-                      <div
-                        key={notif.id}
-                        onClick={() => handleNotificationClick(notif)}
-                        className={`
-                          px-4 py-3 border-b border-gray-50 cursor-pointer
-                          transition-all duration-150
-                          ${isUnread ? 'bg-blue-50/40 hover:bg-blue-50' : 'hover:bg-gray-50'}
-                          border-l-[3px] ${meta.borderClass}
-                        `}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className={`flex-shrink-0 w-8 h-8 rounded-full ${meta.bgClass} flex items-center justify-center`}>
-                            <Icon size={15} className={meta.iconClass} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className={`text-xs font-semibold ${isUnread ? 'text-gray-900' : 'text-gray-500'}`}>
-                                {notif.title || meta.label}
-                              </p>
-                              {isUnread && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />}
-                            </div>
-                            {notif.body && (
-                              <p className={`text-xs mt-0.5 line-clamp-2 ${isUnread ? 'text-gray-600' : 'text-gray-400'}`}>
-                                {notif.body}
-                              </p>
-                            )}
-                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                              {orderId && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 border border-red-100 text-[10px] font-mono font-bold text-red-600">
-                                  <ShoppingBag size={9} />
-                                  #{orderId.length > 12 ? orderId.slice(0, 12) + '...' : orderId}
-                                </span>
-                              )}
-                              <span
-                                className="text-[10px] text-gray-400"
-                                title={formatFullTimestamp(notif.createdAt)}
-                              >
-                                <Clock size={10} className="inline mr-0.5" />
-                                {formatFullTimestamp(notif.createdAt)}
-                              </span>
-                              {orderId && (
-                                <span className="text-[10px] text-red-400 ml-auto flex items-center gap-0.5 font-medium">
-                                  View order
-                                  <ExternalLink size={9} />
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {isUnread && (
-                            <button
-                              onClick={(e) => handleMarkAsRead(e, notif.id)}
-                              className="flex-shrink-0 p-1 mt-0.5 rounded text-gray-300 hover:text-green-500 hover:bg-green-50 transition-colors"
-                              title="Mark as read"
-                            >
-                              <Check size={13} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50 text-center">
-                <button
-                  onClick={() => {
-                    setShowDropdown(false);
-                    navigate('/activity-log');
-                  }}
-                  className="text-[11px] font-bold text-red-500 hover:text-red-600 uppercase tracking-widest"
-                >
-                  View All Activity
-                </button>
-              </div>
-            </div>
+        <div className="flex items-center gap-2 sm:gap-3">
+          {unreadOrderCount > 0 && (
+            <motion.button
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              onClick={() => navigate('/orders')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all ${badgeAnim ? 'animate-badge-pop' : ''}`}
+            >
+              <ShoppingBag size={14} className="text-emerald-600" />
+              <span className="text-xs font-bold text-emerald-700">{unreadOrderCount}</span>
+            </motion.button>
           )}
-        </div>
 
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white font-bold">
-            {displayInitial}
+          <div className="relative" ref={dropdownRef}>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowDropdown(!showDropdown)}
+              className="relative p-2 rounded-xl hover:bg-gray-100 transition-colors"
+            >
+              <Bell size={20} className="text-gray-600" />
+              {todayUnreadCount > 0 && (
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold"
+                >
+                  {todayUnreadCount > 9 ? '9+' : todayUnreadCount}
+                </motion.span>
+              )}
+            </motion.button>
+
+            <AnimatePresence>
+              {showDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-200 z-50 overflow-hidden"
+                >
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bell size={14} className="text-gray-600" />
+                      <span className="font-semibold text-sm text-gray-800">Notifications</span>
+                    </div>
+                    {todayUnreadCount > 0 && (
+                      <span className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded-full font-semibold">
+                        {todayUnreadCount} new
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="max-h-96 overflow-y-auto">
+                    {displayNotifications.length === 0 ? (
+                      <div className="px-4 py-10 text-center">
+                        <div className="w-10 h-10 mx-auto mb-3 rounded-xl bg-gray-100 flex items-center justify-center">
+                          <Bell size={18} className="text-gray-300" />
+                        </div>
+                        <p className="text-sm font-medium text-gray-500">No notifications</p>
+                        <p className="text-xs text-gray-400 mt-0.5">You're all caught up!</p>
+                      </div>
+                    ) : (
+                      displayNotifications.map((notif) => {
+                        const isUnread = !notif.isRead;
+                        const meta = getNotificationMeta(notif.title, notif.body, notif.type);
+                        const Icon = meta.icon;
+                        const orderId = extractOrderId(notif);
+                        return (
+                          <motion.div
+                            key={notif.id}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            onClick={() => handleNotificationClick(notif)}
+                            className={`px-4 py-3 border-b border-gray-50 cursor-pointer transition-all duration-150 border-l-[3px] ${meta.borderClass} ${
+                              isUnread ? 'bg-indigo-50/30 hover:bg-indigo-50/60' : 'hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className={`flex-shrink-0 w-8 h-8 rounded-xl ${meta.bgClass} flex items-center justify-center`}>
+                                <Icon size={15} className={meta.iconClass} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className={`text-xs font-semibold ${isUnread ? 'text-gray-900' : 'text-gray-500'}`}>
+                                    {notif.title || meta.label}
+                                  </p>
+                                  {isUnread && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 flex-shrink-0" />}
+                                </div>
+                                {notif.body && (
+                                  <p className={`text-xs mt-0.5 line-clamp-2 ${isUnread ? 'text-gray-600' : 'text-gray-400'}`}>
+                                    {notif.body}
+                                  </p>
+                                )}
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  {orderId && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-red-50 border border-red-100 text-[9px] font-mono font-bold text-red-600">
+                                      <ShoppingBag size={8} />
+                                      #{orderId.length > 10 ? orderId.slice(0, 10) + '..' : orderId}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-gray-400">
+                                    <Clock size={9} className="inline mr-0.5" />
+                                    {formatFullTimestamp(notif.createdAt)}
+                                  </span>
+                                </div>
+                              </div>
+                              {isUnread && (
+                                <button
+                                  onClick={(e) => handleMarkAsRead(e, notif.id)}
+                                  className="flex-shrink-0 p-1 rounded text-gray-300 hover:text-emerald-500 hover:bg-emerald-50 transition-colors"
+                                >
+                                  <Check size={13} />
+                                </button>
+                              )}
+                            </div>
+                          </motion.div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50 text-center">
+                    <button
+                      onClick={() => { setShowDropdown(false); navigate('/activity-log'); }}
+                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 uppercase tracking-wider"
+                    >
+                      View All Activity
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-          <span className="font-medium max-w-[180px] truncate">{displayName}</span>
-        </div>
 
-        <button
-          onClick={onLogout}
-          className="text-gray-600 hover:text-red-500 flex items-center space-x-1"
-        >
-          <LogOut size={18} />
-        </button>
+          <div className="relative" ref={profileMenuRef}>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-gray-100 transition-colors"
+            >
+              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-sm">
+                {displayInitial}
+              </div>
+              <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate hidden sm:block">{displayName}</span>
+              <ChevronDown size={14} className="text-gray-400 hidden sm:block" />
+            </motion.button>
+
+            <AnimatePresence>
+              {showProfileMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-gray-200 z-50 overflow-hidden"
+                >
+                  <div className="p-2">
+                    <button
+                      onClick={() => { setShowProfileMenu(false); navigate('/settings'); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-700 rounded-xl hover:bg-gray-100 transition-colors"
+                    >
+                      <SettingsIcon size={16} />
+                      Settings
+                    </button>
+                    <button
+                      onClick={onLogout}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-600 rounded-xl hover:bg-red-50 transition-colors"
+                    >
+                      <LogOut size={16} />
+                      Sign out
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
       </div>
     </header>
   );
