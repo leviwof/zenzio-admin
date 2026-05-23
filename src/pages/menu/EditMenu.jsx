@@ -29,6 +29,21 @@ const EditMenu = () => {
     const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
     const [cuisineDropdownOpen, setCuisineDropdownOpen] = useState(false);
     const [foodTypeDropdownOpen, setFoodTypeDropdownOpen] = useState(false);
+    const [mealDropdownOpen, setMealDropdownOpen] = useState(false);
+
+    const mealOptions = [
+        { key: 'breakfast', label: 'Breakfast' },
+        { key: 'lunch', label: 'Lunch' },
+        { key: 'snacks', label: 'Snacks' },
+        { key: 'dinner', label: 'Dinner' },
+    ];
+
+    const defaultMealAvailability = {
+        breakfast: true,
+        lunch: true,
+        snacks: true,
+        dinner: true,
+    };
 
     const [formData, setFormData] = useState({
         restaurant_uid: '',
@@ -40,6 +55,7 @@ const EditMenu = () => {
         food_type: 'Veg',
         cuisine_type: '',
         isActive: true,
+        meal_availability: defaultMealAvailability,
     });
 
     const [restaurantName, setRestaurantName] = useState('');
@@ -121,6 +137,10 @@ const EditMenu = () => {
                     food_type: menuData.food_type || 'Veg',
                     cuisine_type: menuData.cuisine_type || '',
                     isActive: menuData.isActive !== undefined ? menuData.isActive : menuData.is_active !== undefined ? menuData.is_active : true,
+                    meal_availability: {
+                        ...defaultMealAvailability,
+                        ...(menuData.meal_availability || {}),
+                    },
                 });
 
                 if (restaurantAdmin) {
@@ -153,6 +173,27 @@ const EditMenu = () => {
             ...prev,
             [name]: type === 'checkbox' ? checked : value
         }));
+    };
+
+    const handleMealAvailabilityChange = (mealKey) => {
+        setFormData(prev => ({
+            ...prev,
+            meal_availability: {
+                ...defaultMealAvailability,
+                ...(prev.meal_availability || {}),
+                [mealKey]: !(prev.meal_availability?.[mealKey] ?? true),
+            },
+        }));
+    };
+
+    const getMealAvailabilityLabel = () => {
+        const selected = mealOptions
+            .filter(meal => formData.meal_availability?.[meal.key] !== false)
+            .map(meal => meal.label);
+
+        if (selected.length === mealOptions.length) return 'All meals';
+        if (selected.length === 0) return 'No meal selected';
+        return selected.join(', ');
     };
 
     const handleImageChange = (e) => {
@@ -198,6 +239,10 @@ const EditMenu = () => {
             submitData.append('food_type', formData.food_type || 'Veg');
             submitData.append('cuisine_type', formData.cuisine_type || '');
             submitData.append('isActive', formData.isActive ? '1' : '0');
+            submitData.append('meal_availability', JSON.stringify({
+                ...defaultMealAvailability,
+                ...(formData.meal_availability || {}),
+            }));
 
             // Only append image if a new one is selected
             if (imageFile) {
@@ -217,6 +262,10 @@ const EditMenu = () => {
                     food_type: formData.food_type || 'Veg',
                     cuisine_type: formData.cuisine_type || '',
                     isActive: formData.isActive,
+                    meal_availability: {
+                        ...defaultMealAvailability,
+                        ...(formData.meal_availability || {}),
+                    },
                 })
                 : await editMenuByAdminWithImage(menuUid, submitData);
 
@@ -563,6 +612,52 @@ const EditMenu = () => {
                                 />
                             </label>
                         )}
+                    </div>
+
+                    {/* Meal Availability */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
+                                <Tag className="w-5 h-5 text-orange-600" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-semibold text-gray-900">Meal Availability</h2>
+                                <p className="text-sm text-gray-500">Choose when this item can be ordered</p>
+                            </div>
+                        </div>
+
+                        <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setMealDropdownOpen(!mealDropdownOpen)}
+                                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-left"
+                            >
+                                <span className="text-base text-gray-900">{getMealAvailabilityLabel()}</span>
+                                <ChevronDown size={20} className={`text-gray-500 transition-transform ${mealDropdownOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {mealDropdownOpen && (
+                                <>
+                                    <div className="fixed inset-0 z-20" onClick={() => setMealDropdownOpen(false)}></div>
+                                    <div className="absolute top-full left-0 mt-2 w-full bg-white border border-gray-200 rounded-xl shadow-xl z-30 overflow-hidden">
+                                        {mealOptions.map((meal) => (
+                                            <label
+                                                key={meal.key}
+                                                className="flex items-center justify-between px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0"
+                                            >
+                                                <span className="text-sm font-medium text-gray-700">{meal.label}</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.meal_availability?.[meal.key] !== false}
+                                                    onChange={() => handleMealAvailabilityChange(meal.key)}
+                                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                />
+                                            </label>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
 
                     {/* Status */}
