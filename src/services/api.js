@@ -130,6 +130,8 @@ export const getAllRestaurants = (params) => {
   return api.get('/restaurants', { params });
 };
 export const getRestaurantById = (uid) => api.get(`/restaurants/${uid}/admin`);
+export const updateRestaurantOperationalHours = (uid, data) =>
+  api.put(`/restaurants/${uid}/operational-hours`, data);
 export const toggleRestaurantActive = (id) => api.patch(`/restaurants/${id}/toggle-active`);
 export const toggleRestaurantOff = (id) => api.patch(`/restaurants/${id}/toggle-off`);
 export const getRestaurantStats = () => api.get('/restaurants/stats');

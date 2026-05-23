@@ -1,20 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Users, Utensils, Truck,
   ClipboardList, Tag, Menu, BarChart3,
-  Settings, HelpCircle, CheckCircle, Calendar,
-  Gift, Award, Navigation, Image
+  Settings, CheckCircle, Calendar,
+  Gift, Navigation, Image, ChevronLeft,
+  ChevronRight, Plus
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { getAdminProfile } from '../../services/api';
 import { isRestaurantAdmin } from '../../utils/auth';
 
+const menuItems = [
+  { id: 'dashboard', path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { id: 'customers', path: '/customers', icon: Users, label: 'Customers', adminOnly: true },
+  { id: 'restaurants', path: '/restaurants', icon: Utensils, label: 'Restaurants' },
+  { id: 'delivery-partners', path: '/delivery-partners', icon: Truck, label: 'Delivery Executives', adminOnly: true },
+  { id: 'live-tracking', path: '/live-tracking', icon: Navigation, label: 'Live Tracking' },
+  { id: 'orders', path: '/orders', icon: ClipboardList, label: 'Order Monitoring' },
+  { id: 'subscription', path: '/subscription', icon: Calendar, label: 'Subscription', isUpcoming: true },
+  { id: 'booking-approval', path: '/bookings/approval', icon: CheckCircle, label: 'Dining Approval' },
+  { id: 'bookings', path: '/bookings', icon: Calendar, label: 'Booking Management', adminOnly: true },
+  { id: 'offers-approval', path: '/offers', icon: Tag, label: 'Restaurant Offers' },
+  { id: 'admin-offers', path: '/offers/existing', icon: Gift, label: 'Admin Offers', adminOnly: true },
+  { id: 'coupon', path: '/coupon', icon: Tag, label: 'Coupon', adminOnly: true },
+  { id: 'cuisine', path: '/cuisine', icon: Utensils, label: 'Cuisine Categories', adminOnly: true },
+  { id: 'menu', path: '/menu', icon: Menu, label: 'Menu' },
+  { id: 'banners', path: '/banners', icon: Image, label: 'Banners', adminOnly: true },
+  { id: 'analytics', path: '/analytics', icon: BarChart3, label: 'Analytics', adminOnly: true },
+  { id: 'settings', path: '/settings', icon: Settings, label: 'Settings', adminOnly: true },
+];
+
+const quickAddItems = [
+  { id: 'add-menu', path: '/menu/add', icon: Plus, label: 'Add Menu' },
+  { id: 'add-dining', path: '/dining/add', icon: Plus, label: 'Add Dining' },
+  { id: 'add-event', path: '/events/add', icon: Plus, label: 'Add Event' },
+];
+
 const Sidebar = ({ isOpen }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [platformName, setPlatformName] = useState('Zenzio Admin');
+  const [platformName, setPlatformName] = useState('Zenzio');
+  const [collapsed, setCollapsed] = useState(false);
   const restaurantAdmin = isRestaurantAdmin();
+  const [hoveredItem, setHoveredItem] = useState(null);
 
   useEffect(() => {
     const fetchPlatformName = async () => {
@@ -22,165 +52,187 @@ const Sidebar = ({ isOpen }) => {
         const response = await getAdminProfile();
         const data = response.data;
         const name = data.name || (data.data && data.data.name);
-        if (name) {
-          setPlatformName(name);
-        }
+        if (name) setPlatformName(name);
       } catch (error) {
-        console.error('Failed to fetch platform name for sidebar', error);
+        console.error('Failed to fetch platform name', error);
       }
     };
-
     fetchPlatformName();
-
-    const handleNameUpdate = (event) => {
-      if (event.detail && event.detail.name) {
-        setPlatformName(event.detail.name);
-      }
-    };
-
-    window.addEventListener('platformNameUpdated', handleNameUpdate);
-
-    return () => {
-      window.removeEventListener('platformNameUpdated', handleNameUpdate);
-    };
   }, []);
 
-  const menuItems = [
-    { id: 'dashboard', path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { id: 'customers', path: '/customers', icon: Users, label: 'Customers' },
-    { id: 'restaurants', path: '/restaurants', icon: Utensils, label: 'Restaurants' },
-    { id: 'delivery-partners', path: '/delivery-partners', icon: Truck, label: 'Delivery Executives' },
-    { id: 'live-tracking', path: '/live-tracking', icon: Navigation, label: 'Live Tracking' },
-    { id: 'orders', path: '/orders', icon: ClipboardList, label: 'Order Monitoring' },
+  const visibleMenuItems = menuItems.filter(item => {
+    if (restaurantAdmin && item.adminOnly) return false;
+    return true;
+  });
 
-    // Subscription Management
-    { id: 'subscription', path: '/subscription', icon: Calendar, label: 'My Subscription', isUpcoming: true },
+  const visibleQuickAdd = restaurantAdmin
+    ? quickAddItems.filter(i => i.id === 'add-menu')
+    : quickAddItems;
 
-    // Booking Management
-    { id: 'booking-approval', path: '/bookings/approval', icon: CheckCircle, label: 'Dining Approval' },
-    { id: 'bookings', path: '/bookings', icon: Calendar, label: 'Booking Management' },
-
-    // Offer Management - Two separate sections
-    { id: 'offers-approval', path: '/offers', icon: Tag, label: 'Restaurant Offers' },
-    { id: 'admin-offers', path: '/offers/existing', icon: Gift, label: 'Admin Offers' },
-
-    // Coupon Management
-    { id: 'coupon', path: '/coupon', icon: Tag, label: 'Coupon' },
-    { id: 'cuisine', path: '/cuisine', icon: Utensils, label: 'Cuisine Categories' },
-
-    { id: 'menu', path: '/menu', icon: Menu, label: 'Menu' },
-    { id: 'banners', path: '/banners', icon: Image, label: 'Banners' },
-    { id: 'analytics', path: '/analytics', icon: BarChart3, label: 'Analytics' },
-    { id: 'settings', path: '/settings', icon: Settings, label: 'Settings' },
-    // { id: 'support', path: '/support', icon: HelpCircle, label: 'Support' },
-
-  ];
-
-  // Admin Management Items (Add operations)
-  const adminItems = [
-    { id: 'add-menu', path: '/menu/add', icon: Menu, label: '+ Add Menu' },
-    { id: 'add-dining', path: '/dining/add', icon: Utensils, label: '+ Add Dining Space' },
-    { id: 'add-event', path: '/events/add', icon: Calendar, label: '+ Add Event' },
-  ];
-
-  const restaurantAllowedMenuIds = new Set([
-    'dashboard',
-    'restaurants',
-    'live-tracking',
-    'orders',
-    'booking-approval',
-    'offers-approval',
-    'menu',
-  ]);
-
-  const visibleMenuItems = restaurantAdmin
-    ? menuItems.filter(item => restaurantAllowedMenuIds.has(item.id))
-    : menuItems;
-
-  const visibleAdminItems = restaurantAdmin
-    ? adminItems.filter(item => item.id === 'add-menu')
-    : adminItems;
+  const isActive = (item) => {
+    if (item.id === 'admin-offers' && location.pathname.startsWith('/offers/') &&
+        !location.pathname.startsWith('/offers/approval') && !location.pathname.startsWith('/offers/create')) {
+      return true;
+    }
+    return location.pathname === item.path;
+  };
 
   if (!isOpen) return null;
 
   return (
-    <div className="w-64 bg-gray-900 text-white flex flex-col">
-      <div className="p-4 flex items-center space-x-3">
-        {/* Logo Image - Red box replace panniten */}
-        <div className="w-10 h-10 flex items-center justify-center">
-          <img
-            src={logo}
-            alt="Zenzio Admin"
-            className="w-full h-full object-contain"
-          />
-        </div>
-        <span className="font-bold text-lg">{platformName}</span>
+    <motion.aside
+      animate={{ width: collapsed ? 64 : 224 }}
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
+      className="bg-sidebar text-white flex flex-col h-screen flex-shrink-0 overflow-hidden border-r border-sidebar-border"
+    >
+      <div className="flex items-center justify-between px-4 h-16 border-b border-sidebar-border">
+        <AnimatePresence mode="wait">
+          {!collapsed ? (
+            <motion.div
+              key="expanded-logo"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex items-center gap-2.5 overflow-hidden"
+            >
+              <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center">
+                <img src={logo} alt="Logo" className="w-full h-full object-contain" />
+              </div>
+              <span className="font-bold text-sm truncate whitespace-nowrap">{platformName}</span>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="collapsed-logo"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full flex justify-center"
+            >
+              <div className="w-8 h-8 flex items-center justify-center">
+                <img src={logo} alt="Logo" className="w-full h-full object-contain" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="p-1 rounded-lg hover:bg-sidebar-hover text-gray-400 hover:text-white transition-colors flex-shrink-0"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-4">
-        {visibleMenuItems.map(item => {
-          // Check if current path matches or starts with the item path
-          const isActive = location.pathname === item.path ||
-            (item.id === 'admin-offers' && location.pathname.startsWith('/offers/'));
-
+      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5 show-scrollbar-on-hover">
+        {visibleMenuItems.map((item) => {
+          const active = isActive(item);
           return (
-            <button
-              key={item.id}
-              onClick={() => !item.isUpcoming && navigate(item.path)}
-              disabled={item.isUpcoming}
-              className={`w-full flex items-center justify-between px-6 py-3 transition ${isActive
-                ? 'bg-red-500 text-white'
-                : item.isUpcoming
-                  ? 'text-gray-600 cursor-not-allowed bg-transparent'
-                  : 'text-gray-300 hover:bg-gray-800'
+            <div key={item.id} className="relative group">
+              <motion.button
+                whileHover={{ x: 2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => !item.isUpcoming && navigate(item.path)}
+                disabled={item.isUpcoming}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 relative ${
+                  active
+                    ? 'bg-sidebar-active text-white'
+                    : item.isUpcoming
+                      ? 'text-gray-600 cursor-not-allowed'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-sidebar-hover'
                 }`}
-            >
-              <div className="flex items-center space-x-3">
-                <item.icon size={20} />
-                <span>{item.label}</span>
-              </div>
-              {item.isUpcoming && (
-                <span className="text-[10px] bg-red-500/10 text-red-500/50 px-2 py-0.5 rounded-full uppercase tracking-wider font-bold border border-red-500/20">
-                  Soon
-                </span>
+                onMouseEnter={() => setHoveredItem(item.id)}
+                onMouseLeave={() => setHoveredItem(null)}
+              >
+                {active && (
+                  <motion.div
+                    layoutId="activeIndicator"
+                    className="absolute left-0 w-0.5 h-5 bg-indigo-400 rounded-full"
+                    style={{ boxShadow: '0 0 8px rgba(99,102,241,0.5)' }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                  />
+                )}
+                <motion.div
+                  animate={active ? { scale: 1.05 } : { scale: 1 }}
+                  className="flex-shrink-0"
+                >
+                  <item.icon size={collapsed ? 20 : 18} />
+                </motion.div>
+                <AnimatePresence mode="wait">
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      className="text-sm font-medium truncate whitespace-nowrap"
+                    >
+                      {item.label}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+                {item.isUpcoming && !collapsed && (
+                  <span className="ml-auto text-[9px] bg-indigo-500/10 text-indigo-400/60 px-1.5 py-0.5 rounded-full uppercase tracking-wider font-bold border border-indigo-500/10">
+                    Soon
+                  </span>
+                )}
+              </motion.button>
+              {collapsed && hoveredItem === item.id && (
+                <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 px-2.5 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg shadow-xl whitespace-nowrap border border-gray-700">
+                  {item.label}
+                </div>
               )}
-            </button>
+            </div>
           );
         })}
 
-        {visibleAdminItems.length > 0 && (
+        {visibleQuickAdd.length > 0 && (
           <>
-            {/* Admin Quick Actions Divider */}
-            <div className="mx-4 my-4 border-t border-gray-700" />
-            <div className="px-6 py-2">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Quick Add</span>
-            </div>
+            <div className="my-3 mx-3 border-t border-sidebar-border" />
+            {!collapsed && (
+              <div className="px-3 py-1.5">
+                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">Quick Add</span>
+              </div>
+            )}
+            {visibleQuickAdd.map((item) => {
+              const active = location.pathname === item.path;
+              return (
+                <div key={item.id} className="relative group">
+                  <motion.button
+                    whileHover={{ x: 2 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => navigate(item.path)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 ${
+                      active
+                        ? 'bg-emerald-500/15 text-emerald-400'
+                        : 'text-emerald-500/60 hover:text-emerald-400 hover:bg-sidebar-hover'
+                    }`}
+                    onMouseEnter={() => setHoveredItem(item.id)}
+                    onMouseLeave={() => setHoveredItem(null)}
+                  >
+                    <Plus size={collapsed ? 16 : 14} />
+                    {!collapsed && (
+                      <span className="text-xs font-medium truncate whitespace-nowrap">{item.label}</span>
+                    )}
+                  </motion.button>
+                  {collapsed && hoveredItem === item.id && (
+                    <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 px-2.5 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg shadow-xl whitespace-nowrap border border-gray-700">
+                      {item.label}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </>
         )}
-
-        {visibleAdminItems.map(item => {
-          const isActive = location.pathname === item.path;
-
-          return (
-            <button
-              key={item.id}
-              onClick={() => navigate(item.path)}
-              className={`w-full flex items-center space-x-3 px-6 py-3 transition ${isActive
-                ? 'bg-green-600 text-white'
-                : 'text-green-400 hover:bg-gray-800 hover:text-green-300'
-                }`}
-            >
-              <item.icon size={18} />
-              <span className="text-sm font-medium">{item.label}</span>
-            </button>
-          );
-        })}
       </nav>
 
-      <div className="p-4 text-xs text-gray-500">
-        © 2025 Zenzio Admin<br />Version 1.2.4
+      <div className={`px-4 py-3 border-t border-sidebar-border ${collapsed ? 'text-center' : ''}`}>
+        {collapsed ? (
+          <p className="text-[10px] text-gray-600">v1.2</p>
+        ) : (
+          <p className="text-[10px] text-gray-600">© 2026 Zenzio Admin • v1.2.4</p>
+        )}
       </div>
-    </div>
+    </motion.aside>
   );
 };
 
