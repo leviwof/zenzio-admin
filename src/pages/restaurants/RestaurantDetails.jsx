@@ -982,7 +982,11 @@ const RestaurantDetails = () => {
                       </motion.button>
                     </>
                   )}
-                  <motion.button whileHover={{ x: 2 }} onClick={() => navigate(`/menu`)}
+                  <motion.button
+                    whileHover={{ x: 2 }}
+                    onClick={() => navigate(`/menu?restaurant=${restaurant.uid}`, {
+                      state: { selectedRestaurant: restaurant.uid, selectedRestaurantName: profile?.restaurant_name || '' }
+                    })}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">
                     <FileText size={15} /> Manage Menu
                   </motion.button>
