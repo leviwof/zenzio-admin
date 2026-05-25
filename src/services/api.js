@@ -297,7 +297,8 @@ export const getAllMenus = (params = {}) => {
 export const getMenusByRestaurant = (restaurantUid, params) =>
   api.get(`/restaurant-menu/by-restaurant`, { params: { restaurant_uid: restaurantUid, includeInactive: 'true', ...params } });
 
-export const getMenuByUid = (menuUid) => api.get(`/restaurant-menu/${menuUid}`);
+export const getMenuByUid = (menuUid) => api.get(`/restaurant-menu/admin/${menuUid}`);
+export const getPublicMenuByUid = (menuUid) => api.get(`/restaurant-menu/${menuUid}`);
 
 
 export const toggleMenuStatus = (menuUid, newStatus) =>

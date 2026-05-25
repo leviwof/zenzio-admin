@@ -78,7 +78,11 @@ const EditMenu = () => {
             ]);
 
             // Parse menu data
-            const menuData = menuResponse.data?.data.restaurant_menu || menuResponse.data;
+            const menuData =
+                menuResponse.data?.data?.restaurant_menu ||
+                menuResponse.data?.restaurant_menu ||
+                menuResponse.data?.data ||
+                menuResponse.data;
             console.log('📥 Menu data:', menuData);
 
             // Parse restaurants
