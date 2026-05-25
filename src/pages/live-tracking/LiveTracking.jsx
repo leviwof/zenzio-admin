@@ -1,891 +1,917 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import {
+    DirectionsRenderer,
+    GoogleMap,
+    MarkerF,
+    OverlayView,
+    PolylineF,
+    useJsApiLoader,
+} from '@react-google-maps/api';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
     Bike,
+    ChevronDown,
     Clock,
     LocateFixed,
     MapPin,
     Navigation,
     Package,
     RefreshCw,
+    Route,
     Search,
     Store,
     User,
-    X,
+    Wifi,
 } from 'lucide-react';
-import { getLivePartnerLocations } from '../../services/api';
+import { getLiveExecutives, getLivePartnerLocations } from '../../services/api';
 
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+const DEFAULT_CENTER = { lat: 11.9416, lng: 79.8083 };
+const ACTIVE_DELIVERY_STATUSES = new Set([
+    'accepted',
+    'picked_up',
+    'out_for_delivery',
+    'on_the_way_to_restaurant',
+    'on_the_way_to_customer',
+]);
+const STALE_GPS_MINUTES = 15;
+const GOOGLE_MAPS_API_KEY =
+    import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
+    import.meta.env.VITE_GOOGLE_API_KEY ||
+    import.meta.env.GOOGLE_MAPS_API_KEY ||
+    import.meta.env.GOOGLE_API_KEY;
+const GOOGLE_LIBRARIES = ['places'];
 
-const DEFAULT_CENTER = [12.9716, 77.5946];
+const mapStyle = [
+    { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+    { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#eef2f7' }] },
+    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#cbd5e1' }] },
+    { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#dbeafe' }] },
+    { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#f8fafc' }] },
+    { featureType: 'administrative', elementType: 'labels.text.fill', stylers: [{ color: '#64748b' }] },
+];
 
 const normalizeCoordinate = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
 };
 
-const ChangeView = ({ center, zoom }) => {
-    const map = useMap();
-
-    useEffect(() => {
-        if (center) {
-            map.flyTo(center, zoom, { duration: 1.2 });
-        }
-    }, [center, zoom, map]);
-
-    return null;
-};
-
-const PartnerMarker = ({ partner, isFocused, onFocus }) => {
-    const customIcon = new L.DivIcon({
-        html: `
-            <div class="relative">
-                <div class="h-11 w-11 rounded-full border-4 border-white shadow-xl flex items-center justify-center ${isFocused ? 'bg-red-500' : 'bg-slate-900'}">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="5.5" cy="17.5" r="2.5"></circle>
-                        <circle cx="18.5" cy="17.5" r="2.5"></circle>
-                        <path d="M15 6h2l3 5"></path>
-                        <path d="M5 17.5 8 8h7"></path>
-                    </svg>
-                </div>
-                <div class="absolute -top-9 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-bold text-slate-700 shadow-sm whitespace-nowrap">
-                    ${partner.name}
-                </div>
-            </div>
-        `,
-        className: 'custom-div-icon',
-        iconSize: [44, 44],
-        iconAnchor: [22, 22],
-    });
-
-    return (
-        <Marker
-            position={[partner.lat, partner.lng]}
-            icon={customIcon}
-            zIndexOffset={isFocused ? 1000 : 0}
-            eventHandlers={{ click: () => onFocus?.(partner) }}
-        >
-            <Popup>
-                <div className="min-w-[180px] p-1">
-                    <p className="font-bold text-slate-900">{partner.name}</p>
-                    <p className="mt-1 text-xs text-slate-500">ID: {partner.uid}</p>
-                    <p className="mt-2 text-xs text-slate-600">
-                        Status: <span className="font-semibold text-slate-900">{partner.status}</span>
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                        Last seen: {partner.lastUpdated ? new Date(partner.lastUpdated).toLocaleTimeString() : 'N/A'}
-                    </p>
-                </div>
-            </Popup>
-        </Marker>
-    );
-};
-
-const DeliveryLocationMarker = ({ order, isFocused }) => {
-    const lat = normalizeCoordinate(
-        order.deliveredLocationLat || 
-        order.deliveryLat || 
-        order.deliveryLocation?.lat ||
-        order.addressLat
-    );
-    const lng = normalizeCoordinate(
-        order.deliveredLocationLng || 
-        order.deliveryLng || 
-        order.deliveryLocation?.lng ||
-        order.addressLng
-    );
-
-    if (lat === null || lng === null || (lat === 0 && lng === 0)) {
-        return null;
-    }
-
-    const deliveryIcon = new L.DivIcon({
-        html: `
-            <div class="relative">
-                <div class="h-10 w-10 rounded-full border-4 border-white shadow-xl bg-violet-500 flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
-                        <circle cx="12" cy="10" r="3"></circle>
-                    </svg>
-                </div>
-            </div>
-        `,
-        className: 'delivery-marker-icon',
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
-    });
-
-    return (
-        <Marker position={[lat, lng]} icon={deliveryIcon} zIndexOffset={isFocused ? 999 : -1}>
-            <Popup>
-                <div className="min-w-[200px] p-1">
-                    <p className="font-bold text-violet-900">Delivery Location</p>
-                    <p className="mt-1 text-xs text-slate-500">Order: {order.orderId}</p>
-                    <p className="mt-2 text-xs text-slate-600">
-                        Address: <span className="font-semibold text-slate-900">{order.deliveredLocationAddress || 'N/A'}</span>
-                    </p>
-                    {order.deliveredAt && (
-                        <p className="mt-1 text-xs text-slate-500">
-                            Delivered: {new Date(order.deliveredAt).toLocaleTimeString()}
-                        </p>
-                    )}
-                </div>
-            </Popup>
-        </Marker>
-    );
-};
-
-const RestaurantMarker = ({ order, isFocused }) => {
-    const lat = normalizeCoordinate(order.restaurantLat);
-    const lng = normalizeCoordinate(order.restaurantLng);
-
-    if (lat === null || lng === null || (lat === 0 && lng === 0)) {
-        return null;
-    }
-
-    const restaurantIcon = new L.DivIcon({
-        html: `
-            <div class="relative">
-                <div class="h-10 w-10 rounded-full border-4 border-white shadow-xl bg-orange-500 flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"></path>
-                        <path d="M7 2v20"></path>
-                        <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"></path>
-                    </svg>
-                </div>
-            </div>
-        `,
-        className: 'restaurant-marker-icon',
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
-    });
-
-    return (
-        <Marker position={[lat, lng]} icon={restaurantIcon} zIndexOffset={isFocused ? 998 : -1}>
-            <Popup>
-                <div className="min-w-[200px] p-1">
-                    <p className="font-bold text-orange-900">Restaurant</p>
-                    <p className="mt-1 text-xs text-slate-500">Order: {order.orderId}</p>
-                    <p className="mt-2 text-xs text-slate-600">
-                        Name: <span className="font-semibold text-slate-900">{order.restaurantName || 'N/A'}</span>
-                    </p>
-                </div>
-            </Popup>
-        </Marker>
-    );
-};
-
-const formatDateTime = (value) => {
-    if (!value) return 'Not available';
-
-    return new Date(value).toLocaleString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'Asia/Kolkata',
-    });
-};
-
-const formatStatus = (value) => {
-    if (!value) return 'Unknown';
-    return value.replace(/_/g, ' ');
-};
-
-const getOrderBadgeLabel = (order) => {
-    if (!order) return 'No Active Order';
-    if (order.deliveryStatus === 'delivered') return 'Order Delivered';
-    return 'Active Order';
-};
-
-const formatCoordinatePair = (lat, lng) => {
+const toPoint = (lat, lng) => {
     const normalizedLat = normalizeCoordinate(lat);
     const normalizedLng = normalizeCoordinate(lng);
-
     if (normalizedLat === null || normalizedLng === null) return null;
-    return `${normalizedLat.toFixed(6)}, ${normalizedLng.toFixed(6)}`;
+    if (normalizedLat === 0 && normalizedLng === 0) return null;
+    return { lat: normalizedLat, lng: normalizedLng };
 };
 
-const getDeliveredLocationText = (order) => {
-    if (!order) return 'Location not available';
-    if (order.deliveredLocationAddress) return order.deliveredLocationAddress;
+const getExecutivePoint = (executive) =>
+    toPoint(executive?.latitude ?? executive?.lat, executive?.longitude ?? executive?.lng);
 
-    const coordinates = formatCoordinatePair(order.deliveredLocationLat, order.deliveredLocationLng);
-    return coordinates || 'Location not available';
+const getRoutePoints = (executive) => {
+    const order = executive?.orderDetails;
+    return {
+        executive: getExecutivePoint(executive),
+        restaurant: order?.locations?.restaurant || toPoint(order?.restaurantLat, order?.restaurantLng),
+        customer:
+            order?.locations?.customer ||
+            toPoint(
+                order?.customerLat ?? order?.deliveredLocationLat ?? order?.deliveryLat,
+                order?.customerLng ?? order?.deliveredLocationLng ?? order?.deliveryLng,
+            ),
+    };
 };
 
-const SummaryCard = ({ icon, label, value, hint, tone }) => {
-    const toneClasses = {
-        red: 'border-red-100 bg-red-50 text-red-600',
-        blue: 'border-blue-100 bg-blue-50 text-blue-600',
-        amber: 'border-amber-100 bg-amber-50 text-amber-600',
-        emerald: 'border-emerald-100 bg-emerald-50 text-emerald-600',
+const getInitials = (name = '') => {
+    const parts = String(name).trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'NA';
+    return parts.slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+};
+
+const formatAgo = (value) => {
+    if (!value) return 'no GPS';
+    const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+    if (diffSeconds < 10) return 'just now';
+    if (diffSeconds < 60) return `${diffSeconds}s ago`;
+    const minutes = Math.floor(diffSeconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+};
+
+const minutesSince = (value) => {
+    if (!value) return Number.POSITIVE_INFINITY;
+    return (Date.now() - new Date(value).getTime()) / 60000;
+};
+
+const formatStatus = (value) => String(value || 'Unknown').replace(/_/g, ' ');
+
+const formatKm = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? `${parsed.toFixed(1)} km` : '-';
+};
+
+const formatEta = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? `${Math.max(1, Math.round(parsed))} min` : '-';
+};
+
+const isActiveDelivery = (executive) =>
+    Boolean(executive?.orderDetails && ACTIVE_DELIVERY_STATUSES.has(executive.orderDetails.deliveryStatus));
+
+const isFreshGps = (executive) =>
+    Boolean(executive?.gpsActive && getExecutivePoint(executive) && minutesSince(executive.lastUpdated) <= STALE_GPS_MINUTES);
+
+const isOperationalExecutive = (executive) =>
+    Boolean(executive?.isActive && isFreshGps(executive) && isActiveDelivery(executive));
+
+const getStatusTone = (executive) => {
+    const status = String(executive?.status || '').toLowerCase();
+    if (!isFreshGps(executive)) return 'red';
+    if (status.includes('pickup') || status.includes('accepted')) return 'orange';
+    if (status.includes('deliver') || status.includes('customer')) return 'blue';
+    return 'green';
+};
+
+const toneClasses = {
+    green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    orange: 'bg-orange-50 text-orange-700 border-orange-100',
+    blue: 'bg-blue-50 text-blue-700 border-blue-100',
+    red: 'bg-red-50 text-red-700 border-red-100',
+    gray: 'bg-slate-100 text-slate-600 border-slate-200',
+};
+
+const markerColors = {
+    green: '#10b981',
+    orange: '#f97316',
+    blue: '#2563eb',
+    red: '#ef4444',
+    gray: '#64748b',
+};
+
+const Avatar = ({ name, imageUrl, icon: Icon, size = 'md' }) => {
+    const [imageFailed, setImageFailed] = useState(false);
+    const sizeClasses = {
+        sm: 'h-8 w-8 text-[10px]',
+        md: 'h-10 w-10 text-xs',
+        lg: 'h-11 w-11 text-sm',
     };
 
+    useEffect(() => {
+        setImageFailed(false);
+    }, [imageUrl]);
+
     return (
-        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start gap-4">
-                <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border ${toneClasses[tone]}`}>
-                    {React.createElement(icon, { size: 20 })}
-                </div>
-                <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</p>
-                    <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
-                    <p className="mt-1 text-sm text-slate-500">{hint}</p>
+        <div className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-900 font-black text-white ${sizeClasses[size]}`}>
+            {imageUrl && !imageFailed ? (
+                <img
+                    src={imageUrl}
+                    alt={name || 'Profile'}
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                    onError={() => setImageFailed(true)}
+                />
+            ) : Icon ? (
+                <Icon size={size === 'sm' ? 14 : 16} />
+            ) : (
+                getInitials(name)
+            )}
+        </div>
+    );
+};
+
+const MetricPill = ({ icon: Icon, label, value, tone = 'green' }) => (
+    <div className="flex min-w-[126px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${toneClasses[tone]}`}>
+            <Icon size={15} />
+        </div>
+        <div className="min-w-0">
+            <p className="truncate text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+            <p className="text-base font-black leading-tight text-slate-900">{value}</p>
+        </div>
+    </div>
+);
+
+const PulseMarker = ({ point, color, label, active }) => {
+    if (!point) return null;
+
+    return (
+        <OverlayView position={point} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+            <div className="relative -translate-x-1/2 -translate-y-1/2">
+                {active && <span className="absolute inset-0 h-10 w-10 animate-ping rounded-full opacity-20" style={{ backgroundColor: color }} />}
+                <div
+                    className="relative flex h-10 w-10 items-center justify-center rounded-full border-[3px] border-white text-[11px] font-black text-white shadow-xl"
+                    style={{ backgroundColor: color }}
+                >
+                    {label}
                 </div>
             </div>
-        </div>
+        </OverlayView>
+    );
+};
+
+const ExecutiveCard = ({ executive, selected, expanded, onSelect, onOpenOrder, onOpenExecutive }) => {
+    const order = executive.orderDetails;
+    const route = order?.route;
+    const tone = getStatusTone(executive);
+
+    return (
+        <motion.button
+            layout
+            onClick={() => onSelect(executive)}
+            className={`w-full rounded-xl border bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-red-200 hover:shadow-md ${
+                selected ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200'
+            }`}
+        >
+            <div className="flex items-center gap-3">
+                <div className="relative">
+                    <Avatar name={executive.name} imageUrl={executive.imageUrl} size="lg" />
+                    <span className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 animate-pulse rounded-full border-2 border-white bg-emerald-500" />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                            <p className="truncate text-sm font-black text-slate-900">{executive.name}</p>
+                            <p className="truncate text-[11px] font-semibold text-slate-500">{order?.orderId || executive.uid}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${toneClasses[tone]}`}>
+                                {formatEta(route?.totalEtaMinutes ?? order?.etaMinutes)}
+                            </span>
+                            <ChevronDown size={14} className={`text-slate-400 transition ${expanded ? 'rotate-180' : ''}`} />
+                        </div>
+                    </div>
+
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                        <span>Active order</span>
+                        <span className="text-slate-300">|</span>
+                        <span>{formatStatus(order?.deliveryStatus)}</span>
+                        <span className="text-slate-300">|</span>
+                        <span>{formatAgo(executive.lastUpdated)}</span>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            onOpenExecutive(executive);
+                        }}
+                        className="mt-2 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-700 transition hover:bg-red-50 hover:text-red-600"
+                    >
+                        Activity history
+                    </button>
+                </div>
+            </div>
+
+            <AnimatePresence initial={false}>
+                {expanded && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                    >
+                        <div className="mt-3 border-t border-slate-100 pt-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="flex -space-x-2">
+                                    <Avatar name={executive.name} imageUrl={executive.imageUrl} size="sm" />
+                                    <Avatar name={order?.restaurantName} imageUrl={order?.restaurantImageUrl} icon={Store} size="sm" />
+                                    <Avatar name={order?.customerName} imageUrl={order?.customerImageUrl} icon={User} size="sm" />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        onOpenOrder(order.orderId);
+                                    }}
+                                    className="rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-black text-white hover:bg-slate-800"
+                                >
+                                    View order
+                                </button>
+                            </div>
+
+                            <div className="mt-3 space-y-2">
+                                <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                                    <p className="truncate text-xs font-black text-slate-900">{order?.restaurantName || 'Restaurant'}</p>
+                                    <p className="truncate text-[11px] font-semibold text-slate-500">to {order?.customerName || 'Customer'}</p>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2 text-[11px]">
+                                    <div className="rounded-lg bg-blue-50 p-2">
+                                        <p className="font-bold text-blue-500">ETA</p>
+                                        <p className="font-black text-blue-900">{formatEta(route?.totalEtaMinutes)}</p>
+                                    </div>
+                                    <div className="rounded-lg bg-slate-50 p-2">
+                                        <p className="font-bold text-slate-400">Journey</p>
+                                        <p className="font-black text-slate-900">{formatKm(route?.totalDistanceKm)}</p>
+                                    </div>
+                                    <div className="rounded-lg bg-emerald-50 p-2">
+                                        <p className="font-bold text-emerald-500">GPS</p>
+                                        <p className="font-black text-emerald-900">{formatAgo(executive.lastUpdated)}</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
+                                    <Bike size={13} className="text-emerald-600" />
+                                    <span>Executive</span>
+                                    <Route size={13} className="text-slate-300" />
+                                    <Store size={13} className="text-orange-500" />
+                                    <span>Restaurant</span>
+                                    <Route size={13} className="text-slate-300" />
+                                    <MapPin size={13} className="text-blue-600" />
+                                    <span>Customer</span>
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.button>
+    );
+};
+
+const ActivityCard = ({ executive, onOpenExecutive }) => {
+    const gpsMissing = !isFreshGps(executive);
+    const order = executive.orderDetails;
+    const message = gpsMissing
+        ? 'GPS missing or stale'
+        : order
+            ? `Tracking ${order.orderId}`
+            : 'Online without active delivery';
+
+    return (
+        <button
+            type="button"
+            onClick={() => onOpenExecutive(executive)}
+            className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition hover:border-red-200 hover:bg-red-50/30"
+        >
+            <Avatar name={executive.name} imageUrl={executive.imageUrl} size="sm" />
+            <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-black text-slate-900">{executive.name}</p>
+                <p className="truncate text-[11px] font-semibold text-slate-500">
+                    {message} - {formatAgo(executive.lastUpdated)}
+                </p>
+            </div>
+            <span className="shrink-0 text-[10px] font-black text-red-500">Open</span>
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${gpsMissing ? 'bg-red-400' : 'bg-emerald-500'}`} />
+        </button>
     );
 };
 
 const LiveTracking = () => {
     const navigate = useNavigate();
-    const [partners, setPartners] = useState([]);
+    const [executives, setExecutives] = useState([]);
+    const [selectedId, setSelectedId] = useState(null);
+    const [expandedId, setExpandedId] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
-    const [zoom, setZoom] = useState(13);
-    const [lastRefreshed, setLastRefreshed] = useState(new Date());
     const [searchQuery, setSearchQuery] = useState('');
-    const [focusedPartnerId, setFocusedPartnerId] = useState(null);
-    const [hiddenPartnerIds, setHiddenPartnerIds] = useState(new Set());
-    const isInitialLoad = useRef(true);
+    const [lastRefreshed, setLastRefreshed] = useState(null);
+    const [directions, setDirections] = useState(null);
+    const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
+    const [mapZoom, setMapZoom] = useState(13);
+    const [trailByExecutive, setTrailByExecutive] = useState({});
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [activePanel, setActivePanel] = useState('routes');
+    const mapRef = useRef(null);
 
-    const fetchLocations = async (isManual = false) => {
-        if (isManual) setLoading(true);
+    const { isLoaded, loadError } = useJsApiLoader({
+        googleMapsApiKey: GOOGLE_MAPS_API_KEY || '',
+        libraries: GOOGLE_LIBRARIES,
+    });
+
+    const normalizeExecutive = useCallback((executive) => ({
+        ...executive,
+        uid: executive.uid || executive.executiveId,
+        executiveId: executive.executiveId || executive.uid,
+        name: executive.name || 'Delivery Executive',
+        lat: normalizeCoordinate(executive.latitude ?? executive.lat) ?? 0,
+        lng: normalizeCoordinate(executive.longitude ?? executive.lng) ?? 0,
+        gpsActive: Boolean(executive.gpsActive ?? getExecutivePoint(executive)),
+        status: executive.status || (executive.isActive ? 'Online' : 'Offline'),
+    }), []);
+
+    const fetchLocations = useCallback(async (manual = false) => {
+        if (manual) setLoading(true);
 
         try {
-            const response = await getLivePartnerLocations();
-
-            const docs = (response.data?.data || []).map((partner) => ({
-                ...partner,
-                lat: normalizeCoordinate(partner.lat) ?? 0,
-                lng: normalizeCoordinate(partner.lng) ?? 0,
-            }));
-            setPartners(docs);
-
-            const onlineDocs = docs.filter((partner) => partner.status === 'Online');
-            if (onlineDocs.length > 0 && isInitialLoad.current) {
-                const lat = onlineDocs.reduce((sum, partner) => sum + Number(partner.lat), 0) / onlineDocs.length;
-                const lng = onlineDocs.reduce((sum, partner) => sum + Number(partner.lng), 0) / onlineDocs.length;
-                setMapCenter([lat, lng]);
-                isInitialLoad.current = false;
+            let response;
+            try {
+                response = await getLiveExecutives();
+            } catch (error) {
+                if (error.response?.status !== 404) throw error;
+                response = await getLivePartnerLocations();
             }
 
+            const nextExecutives = (response.data?.data || []).map(normalizeExecutive);
+            setExecutives(nextExecutives);
             setLastRefreshed(new Date());
+
+            setTrailByExecutive((previous) => {
+                const next = { ...previous };
+                nextExecutives.forEach((executive) => {
+                    if (!isOperationalExecutive(executive)) return;
+                    const point = getExecutivePoint(executive);
+                    if (!point) return;
+
+                    const currentTrail = next[executive.uid] || [];
+                    const last = currentTrail[currentTrail.length - 1];
+                    const isSamePoint =
+                        last &&
+                        Math.abs(last.lat - point.lat) < 0.00001 &&
+                        Math.abs(last.lng - point.lng) < 0.00001;
+
+                    next[executive.uid] = isSamePoint ? currentTrail : [...currentTrail, point].slice(-12);
+                });
+                return next;
+            });
         } catch (error) {
-            console.error('Failed to fetch live locations:', error);
+            console.error('Failed to fetch live executive tracking:', error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [normalizeExecutive]);
 
     useEffect(() => {
         fetchLocations();
         const interval = setInterval(fetchLocations, 10000);
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchLocations]);
 
-    const onlinePartners = useMemo(
-        () => partners.filter((partner) => partner.status === 'Online'),
-        [partners]
+    const operationalExecutives = useMemo(
+        () => executives.filter(isOperationalExecutive),
+        [executives],
     );
-    const offlinePartnersCount = useMemo(
-        () => Math.max(partners.length - onlinePartners.length, 0),
-        [partners.length, onlinePartners.length]
+
+    const activityExecutives = useMemo(
+        () => executives.filter((executive) => !isOperationalExecutive(executive)),
+        [executives],
     );
-    const partnersWithActiveOrders = useMemo(
-        () => partners.filter((partner) => partner.orderDetails).length,
-        [partners]
+
+    const filteredActivityExecutives = useMemo(() => {
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) return activityExecutives;
+        return activityExecutives.filter((executive) =>
+            `${executive.name} ${executive.uid} ${executive.orderDetails?.orderId || ''} ${executive.status || ''}`.toLowerCase().includes(query),
+        );
+    }, [activityExecutives, searchQuery]);
+
+    const filteredExecutives = useMemo(() => {
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) return operationalExecutives;
+        return operationalExecutives.filter((executive) =>
+            `${executive.name} ${executive.uid} ${executive.orderDetails?.orderId || ''}`.toLowerCase().includes(query),
+        );
+    }, [operationalExecutives, searchQuery]);
+
+    const selectedExecutive = useMemo(
+        () => operationalExecutives.find((executive) => executive.uid === selectedId) || operationalExecutives[0] || null,
+        [operationalExecutives, selectedId],
     );
-    const visiblePartners = useMemo(
-        () => partners.filter((partner) => partner.isActive || partner.status === 'Online' || partner.orderDetails),
-        [partners]
-    );
-    const filteredPartners = useMemo(() => {
-        return visiblePartners.filter((partner) => {
-            const query = searchQuery.toLowerCase();
-            return !hiddenPartnerIds.has(partner.uid) && (
-                (partner.name || '').toLowerCase().includes(query) ||
-                (partner.uid || '').toLowerCase().includes(query)
-            );
-        });
-    }, [visiblePartners, searchQuery, hiddenPartnerIds]);
-    const hiddenPartners = useMemo(
-        () => {
-            const query = searchQuery.toLowerCase();
-            return partners.filter((partner) => hiddenPartnerIds.has(partner.uid) && (
-                (partner.name || '').toLowerCase().includes(query) ||
-                (partner.uid || '').toLowerCase().includes(query)
-            ));
-        },
-        [partners, hiddenPartnerIds, searchQuery]
-    );
-    const focusedPartner = useMemo(
-        () => partners.find((partner) => partner.uid === focusedPartnerId) || null,
-        [partners, focusedPartnerId]
-    );
-    const partnersWithMapLocation = useMemo(() => {
-        return partners.filter((partner) => {
-            const lat = normalizeCoordinate(partner.lat);
-            const lng = normalizeCoordinate(partner.lng);
-            return lat !== null && lng !== null && !(lat === 0 && lng === 0);
-        });
-    }, [partners]);
 
     useEffect(() => {
-        if (focusedPartnerId && !partners.some((partner) => partner.uid === focusedPartnerId)) {
-            setFocusedPartnerId(null);
-        }
-    }, [partners, focusedPartnerId]);
-
-    useEffect(() => {
-        if (focusedPartnerId || partners.length === 0) return;
-
-        const defaultPartner =
-            partners.find((partner) => partner.orderDetails) ||
-            partners.find((partner) => partner.status === 'Online') ||
-            partners.find((partner) => partner.isActive);
-
-        if (defaultPartner) {
-            setFocusedPartnerId(defaultPartner.uid);
-        }
-    }, [partners, focusedPartnerId]);
-
-    const handleFocusPartner = (partner) => {
-        setFocusedPartnerId(partner.uid);
-
-        const lat = Number(partner.lat);
-        const lng = Number(partner.lng);
-
-        if (Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0)) {
-            setMapCenter([lat, lng]);
-            setZoom(16);
-        }
-    };
-
-    const handleResetMap = () => {
-        if (onlinePartners.length > 0) {
-            const lat = onlinePartners.reduce((sum, partner) => sum + Number(partner.lat), 0) / onlinePartners.length;
-            const lng = onlinePartners.reduce((sum, partner) => sum + Number(partner.lng), 0) / onlinePartners.length;
-            setMapCenter([lat, lng]);
-            setZoom(13);
+        if (!selectedExecutive) {
+            setSelectedId(null);
+            setExpandedId(null);
             return;
         }
 
-        setMapCenter(DEFAULT_CENTER);
-        setZoom(13);
-    };
-
-    const handleHidePartner = (partnerId) => {
-        setHiddenPartnerIds((prev) => new Set([...prev, partnerId]));
-        if (focusedPartnerId === partnerId) {
-            setFocusedPartnerId(null);
+        if (selectedId !== selectedExecutive.uid) {
+            setSelectedId(selectedExecutive.uid);
         }
+
+        const point = getExecutivePoint(selectedExecutive);
+        if (point && !mapRef.current) {
+            setMapCenter(point);
+            setMapZoom(15);
+        }
+    }, [selectedExecutive, selectedId]);
+
+    const routePoints = useMemo(() => getRoutePoints(selectedExecutive), [selectedExecutive]);
+    const fallbackRoutePath = useMemo(
+        () => [routePoints.executive, routePoints.restaurant, routePoints.customer].filter(Boolean),
+        [routePoints],
+    );
+    const selectedTrail = useMemo(
+        () => (selectedExecutive ? trailByExecutive[selectedExecutive.uid] || [] : []),
+        [selectedExecutive, trailByExecutive],
+    );
+
+    useEffect(() => {
+        if (!isLoaded || !window.google || !routePoints.executive || !routePoints.restaurant || !routePoints.customer) {
+            setDirections(null);
+            return;
+        }
+
+        const service = new window.google.maps.DirectionsService();
+        service.route(
+            {
+                origin: routePoints.executive,
+                destination: routePoints.customer,
+                waypoints: [{ location: routePoints.restaurant, stopover: true }],
+                travelMode: window.google.maps.TravelMode.DRIVING,
+                drivingOptions: {
+                    departureTime: new Date(),
+                    trafficModel: window.google.maps.TrafficModel.BEST_GUESS,
+                },
+                optimizeWaypoints: false,
+            },
+            (result, status) => {
+                setDirections(status === 'OK' ? result : null);
+            },
+        );
+    }, [isLoaded, routePoints]);
+
+    const focusExecutive = useCallback((executive) => {
+        const shouldCollapse = expandedId === executive.uid;
+        setSelectedId(executive.uid);
+        setExpandedId(shouldCollapse ? null : executive.uid);
+        setDrawerOpen(false);
+
+        const point = getExecutivePoint(executive);
+        if (point) {
+            setMapCenter(point);
+            setMapZoom(16);
+            mapRef.current?.panTo(point);
+        }
+    }, [expandedId]);
+
+    const openExecutiveHistory = useCallback((executive) => {
+        const id = executive?.uid || executive?.executiveId;
+        if (!id) return;
+        navigate(`/delivery-partners/${id}`);
+    }, [navigate]);
+
+    const recenterSelected = () => {
+        const point = getExecutivePoint(selectedExecutive);
+        if (!point) return;
+        setMapCenter(point);
+        setMapZoom(16);
+        mapRef.current?.panTo(point);
     };
 
-    const handleShowHiddenPartner = (partnerId) => {
-        setHiddenPartnerIds((prev) => {
-            const newSet = new Set(prev);
-            newSet.delete(partnerId);
-            return newSet;
-        });
-    };
+    const avgEta = useMemo(() => {
+        const values = operationalExecutives
+            .map((executive) => executive.orderDetails?.route?.totalEtaMinutes)
+            .filter((value) => Number.isFinite(Number(value)))
+            .map(Number);
+        if (values.length === 0) return '-';
+        return `${Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)} min`;
+    }, [operationalExecutives]);
 
-    const handleClearHiddenPartners = () => {
-        setHiddenPartnerIds(new Set());
-    };
+    const mapOptions = useMemo(() => ({
+        styles: mapStyle,
+        disableDefaultUI: false,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: true,
+        clickableIcons: false,
+        gestureHandling: 'greedy',
+        zoomControlOptions:
+            typeof window !== 'undefined' && window.google
+                ? { position: window.google.maps.ControlPosition.RIGHT_CENTER }
+                : undefined,
+    }), [isLoaded]);
+
+    const route = selectedExecutive?.orderDetails?.route;
+    const selectedTone = getStatusTone(selectedExecutive);
 
     return (
-        <div className="min-h-[calc(100vh-100px)] bg-slate-50 p-6">
-            <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                    <div>
-                        <h1 className="flex items-center gap-3 text-3xl font-bold text-slate-900">
-                            <Navigation className="text-red-500" />
-                            Live Executive Tracking
-                        </h1>
-                        <p className="mt-2 text-sm text-slate-500">
-                            Track the current executive location on the map and open order details from the executive list.
+        <div className="min-h-[calc(100vh-86px)] bg-slate-100 p-2 lg:p-3">
+            <style>{`
+                .operations-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+                .operations-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+            `}</style>
+
+            <div className="mx-auto flex max-w-[1800px] flex-col gap-2">
+                <header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
+                    <div className="flex min-w-[310px] items-center gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+                            <Navigation size={21} />
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-black leading-tight text-slate-950">Live Executive Tracking</h1>
+                            <p className="mt-1 text-sm font-semibold text-slate-500">Today active deliveries only</p>
+                        </div>
+                    </div>
+
+                    <div className="operations-scroll flex flex-1 justify-center gap-3 overflow-x-auto pb-1 xl:pb-0">
+                        <MetricPill icon={Bike} label="Online" value={operationalExecutives.length} tone="green" />
+                        <MetricPill icon={Package} label="Active Deliveries" value={operationalExecutives.length} tone="blue" />
+                        <MetricPill icon={Clock} label="Avg ETA" value={avgEta} tone="orange" />
+                        <MetricPill icon={MapPin} label="GPS Active" value={operationalExecutives.filter(isFreshGps).length} tone="green" />
+                        <MetricPill icon={Wifi} label="Live Sync" value={loading ? 'Syncing' : 'Active'} tone={loading ? 'orange' : 'green'} />
+                    </div>
+
+                    <div className="min-w-[130px] text-left xl:text-right">
+                        <p className="text-xs font-semibold text-slate-400">Last updated</p>
+                        <p className="text-xl font-black text-slate-950">
+                            {lastRefreshed ? lastRefreshed.toLocaleTimeString('en-IN') : '-'}
                         </p>
                     </div>
+                </header>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">
-                            <span className="font-semibold text-slate-900">{onlinePartners.length} live</span>
-                            <span className="text-slate-400"> / {partners.length} total executives</span>
-                        </div>
+                <div className="grid gap-2 xl:h-[calc(100vh-164px)] xl:min-h-[620px] xl:grid-cols-[350px_minmax(0,1fr)]">
+                    <aside className={`fixed inset-x-2 bottom-2 z-30 max-h-[58vh] rounded-2xl border border-slate-200 bg-white shadow-2xl transition-transform xl:static xl:z-auto xl:max-h-none xl:translate-y-0 xl:shadow-sm ${
+                        drawerOpen ? 'translate-y-0' : 'translate-y-[calc(100%-48px)]'
+                    }`}>
                         <button
-                            onClick={() => fetchLocations(true)}
-                            className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
-                            disabled={loading}
+                            className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-3 xl:hidden"
+                            onClick={() => setDrawerOpen((open) => !open)}
                         >
-                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                            Refresh
+                            <span className="text-sm font-black text-slate-900">Active deliveries</span>
+                            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-600">{filteredExecutives.length}</span>
                         </button>
-                        <span className="text-sm text-slate-400">
-                            Last updated: {lastRefreshed.toLocaleTimeString()}
-                        </span>
-                    </div>
-                </div>
 
-                <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="mb-5 flex items-center justify-between gap-3">
-                        <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
-                                Tracking Summary
-                            </p>
-                            <p className="mt-1 text-sm text-slate-500">
-                                Quick view of who is live, offline, and currently carrying an order.
-                            </p>
-                        </div>
-                        <div className="rounded-full bg-emerald-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                            Live Sync Active
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        <SummaryCard
-                            icon={Bike}
-                            label="Live Executives"
-                            value={onlinePartners.length}
-                            hint="Executives sending GPS right now"
-                            tone="blue"
-                        />
-                        <SummaryCard
-                            icon={MapPin}
-                            label="Offline"
-                            value={offlinePartnersCount}
-                            hint="No signal or currently offline"
-                            tone="amber"
-                        />
-                        <SummaryCard
-                            icon={Package}
-                            label="Active Orders"
-                            value={partnersWithActiveOrders}
-                            hint="Executives currently linked to an order"
-                            tone="emerald"
-                        />
-                        <SummaryCard
-                            icon={User}
-                            label="Trackable"
-                            value={filteredPartners.length}
-                            hint="Executives matching the current filter"
-                            tone="red"
-                        />
-                    </div>
-                </section>
-
-                <section className="grid min-h-0 grid-cols-1 gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
-                    <div className="flex h-[720px] min-h-0 flex-col rounded-[28px] border border-slate-200 bg-white shadow-sm">
-                        <div className="border-b border-slate-100 p-5">
-                            <div className="flex items-start justify-between gap-4">
-                                <div>
-                                    <h2 className="text-lg font-bold text-slate-900">Trackable Executives</h2>
-                                    <p className="mt-1 text-sm text-slate-500">
-                                        Choose an executive to focus the map. Details will open in the same card.
-                                    </p>
-                                </div>
-                                <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                                    {filteredPartners.length} shown
-                                </div>
+                        <div className="flex h-full flex-col">
+                            <div className="grid grid-cols-2 border-b border-slate-100">
+                                <button
+                                    type="button"
+                                    onClick={() => setActivePanel('routes')}
+                                    className={`px-4 py-4 text-sm font-black transition ${
+                                        activePanel === 'routes'
+                                            ? 'border-b-2 border-indigo-500 text-indigo-600'
+                                            : 'text-slate-400 hover:text-slate-700'
+                                    }`}
+                                >
+                                    Current Routes
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActivePanel('activity')}
+                                    className={`px-4 py-4 text-sm font-black transition ${
+                                        activePanel === 'activity'
+                                            ? 'border-b-2 border-indigo-500 text-indigo-600'
+                                            : 'text-slate-400 hover:text-slate-700'
+                                    }`}
+                                >
+                                    Activity Feed
+                                </button>
                             </div>
 
-                            <div className="relative mt-4">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                            <div className="relative mx-4 mt-4">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                                 <input
-                                    type="text"
-                                    placeholder="Search by executive name or ID"
-                                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-50"
                                     value={searchQuery}
                                     onChange={(event) => setSearchQuery(event.target.value)}
+                                    placeholder={activePanel === 'routes' ? 'Search route, executive, order' : 'Search activity'}
+                                    className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                                 />
                             </div>
-                        </div>
 
-                        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                            {filteredPartners.length === 0 ? (
-                                <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-                                    <Search className="mb-3 text-slate-300" size={28} />
-                                    <p className="text-sm font-semibold text-slate-700">No executives match this search</p>
-                                    <p className="mt-1 text-sm text-slate-500">Try a different name or executive ID.</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {filteredPartners.map((partner) => {
-                                        const isFocused = focusedPartnerId === partner.uid;
-                                        const order = partner.orderDetails;
-
-                                        return (
-                                            <div
-                                                key={partner.uid}
-                                                className={`overflow-hidden rounded-3xl border transition ${
-                                                    isFocused
-                                                        ? 'border-red-200 bg-red-50/60 shadow-sm'
-                                                        : 'border-slate-200 bg-white'
-                                                }`}
-                                            >
-                                                <button
-                                                    onClick={() => handleFocusPartner(partner)}
-                                                    className="w-full p-4 text-left"
-                                                >
-                                                    <div className="flex items-start gap-3">
-                                                        <div
-                                                            className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
-                                                                isFocused ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-700'
-                                                            }`}
-                                                        >
-                                                            <Bike size={20} />
-                                                        </div>
-
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-start justify-between gap-3">
-                                                                <div className="min-w-0">
-                                                                    <p className="truncate text-base font-bold text-slate-900">
-                                                                        {partner.name}
-                                                                    </p>
-                                                                    <p className="mt-1 truncate text-xs text-slate-500">
-                                                                        Executive ID: {partner.uid}
-                                                                    </p>
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
-                                                                        {partner.status}
-                                                                    </div>
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            handleHidePartner(partner.uid);
-                                                                        }}
-                                                                        className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-red-100 hover:text-red-500"
-                                                                        title="Hide from list"
-                                                                    >
-                                                                        <X size={14} />
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="mt-3 flex flex-wrap gap-2">
-                                                                {partner.isActive && (
-                                                                    <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                                                                        On Duty
-                                                                    </span>
-                                                                )}
-                                                                {order && (
-                                                                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                                                                        order.deliveryStatus === 'delivered'
-                                                                            ? 'bg-violet-100 text-violet-700'
-                                                                            : 'bg-emerald-100 text-emerald-700'
-                                                                    }`}>
-                                                                        {getOrderBadgeLabel(order)}
-                                                                    </span>
-                                                                )}
-                                                                {!order && (
-                                                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                                                                        No Active Order
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </button>
-
-                                                {isFocused && (
-                                                    <div className="border-t border-red-100 bg-white/80 p-4">
-                                                        <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-3">
-                                                            <div>
-                                                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                    Current status
-                                                                </p>
-                                                                <p className="mt-1 text-sm font-semibold text-slate-900">
-                                                                    {partner.status}
-                                                                </p>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                    Last update
-                                                                </p>
-                                                                <p className="mt-1 text-sm font-semibold text-slate-900">
-                                                                    {partner.lastUpdated
-                                                                        ? new Date(partner.lastUpdated).toLocaleTimeString()
-                                                                        : 'N/A'}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-
-                                                        {order ? (
-                                                            <div className="mt-4 space-y-4">
-                                                                <div className="flex items-center justify-between gap-3">
-                                                                    <div>
-                                                                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                            Order Details
-                                                                        </p>
-                                                                        <p className="mt-1 text-base font-bold text-slate-900">
-                                                                            {order.orderId}
-                                                                        </p>
-                                                                    </div>
-                                                                    <button
-                                                                        onClick={(event) => {
-                                                                            event.stopPropagation();
-                                                                            navigate(`/orders/${order.orderId}`);
-                                                                        }}
-                                                                        className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
-                                                                    >
-                                                                        View Full Order
-                                                                    </button>
-                                                                </div>
-
-                                                                <div className="space-y-3">
-                                                                    <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3">
-                                                                        <Store size={16} className="mt-0.5 text-orange-500" />
-                                                                        <div>
-                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                                Restaurant
-                                                                            </p>
-                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                                                                                {order.restaurantName || 'Unknown restaurant'}
-                                                                            </p>
-                                                                        </div>
-                                                                    </div>
-
-                                                                    <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3">
-                                                                        <Package size={16} className="mt-0.5 text-emerald-500" />
-                                                                        <div>
-                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                                Items
-                                                                            </p>
-                                                                            <p className="mt-1 text-sm font-semibold text-slate-900">
-                                                                                {order.foodNames || 'Item details unavailable'}
-                                                                            </p>
-                                                                        </div>
-                                                                    </div>
-
-                                                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                                                        {/* Ordered At and Accepted At removed as requested */}
-                                                                    </div>
-
-                                                                {(order.totalDistance ?? order.distance_km) !== null && (order.totalDistance ?? order.distance_km) !== undefined ? (
-                                                                    <div className="rounded-2xl bg-blue-50 p-3">
-                                                                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-400">
-                                                                            Total Distance Traveled
-                                                                        </p>
-                                                                        <p className="mt-1 text-lg font-bold text-blue-600">
-                                                                            {Number(order.totalDistance ?? order.distance_km).toFixed(2)} km
-                                                                        </p>
-                                                                        <p className="mt-1 text-xs text-blue-500">
-                                                                            Executive - Restaurant - Customer
-                                                                        </p>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="rounded-2xl bg-gray-50 p-3">
-                                                                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">
-                                                                            Total Distance
-                                                                        </p>
-                                                                        <p className="mt-1 text-lg font-bold text-gray-400">-</p>
-                                                                    </div>
-                                                                )}
-
-                                                                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                                                        <div className="rounded-2xl bg-slate-50 p-3">
-                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                                Status
-                                                                            </p>
-                                                                            <p className={`mt-1 text-sm font-semibold capitalize ${
-                                                                                order.deliveryStatus === 'delivered'
-                                                                                    ? 'text-violet-700'
-                                                                                    : 'text-slate-900'
-                                                                            }`}>
-                                                                                {formatStatus(order.deliveryStatus)}
-                                                                            </p>
-                                                                        </div>
-                                                                        <div className="rounded-2xl bg-slate-50 p-3">
-                                                                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                                                                {order.deliveryStatus === 'delivered' ? 'Delivered At' : 'Picked Up At'}
-                                                                            </p>
-                                                                            {order.deliveryStatus === 'delivered' ? (
-                                                                                <>
-                                                                                    <p className="mt-1 text-sm font-semibold text-slate-900">
-                                                                                        {getDeliveredLocationText(order)}
-                                                                                    </p>
-                                                                                    <p className="mt-2 text-xs text-slate-500">
-                                                                                        {formatDateTime(order.deliveredAt)}
-                                                                                    </p>
-                                                                                </>
-                                                                            ) : (
-                                                                                <p className="mt-1 text-sm font-semibold text-slate-900">
-                                                                                    {formatDateTime(order.pickedUpAt)}
-                                                                                </p>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                                                                This executive does not have an active order right now.
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-
-                        {hiddenPartners.length > 0 && (
-                            <div className="mt-4 border-t border-slate-100 pt-4">
-                                <div className="mb-3 flex items-center justify-between">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                                        Hidden ({hiddenPartners.length})
+                            <div className="flex items-center justify-between px-4 pb-2 pt-5">
+                                <div>
+                                    <p className="text-lg font-black text-slate-950">
+                                        {activePanel === 'routes' ? 'Current Routes' : 'Live Activity Feed'}
                                     </p>
+                                    <p className="text-sm font-semibold text-slate-400">
+                                        {activePanel === 'routes'
+                                            ? 'Online GPS + active order'
+                                            : 'Offline, GPS stale, and non-active signals'}
+                                    </p>
+                                </div>
+                                {activePanel === 'routes' ? (
                                     <button
-                                        onClick={handleClearHiddenPartners}
-                                        className="text-xs font-semibold text-red-500 hover:text-red-600"
+                                        onClick={() => fetchLocations(true)}
+                                        className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm hover:bg-slate-800"
+                                        title="Refresh tracking"
                                     >
-                                        Show all
+                                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                                     </button>
-                                </div>
-                                <div className="space-y-2">
-                                    {hiddenPartners.map((partner) => (
-                                        <div
-                                            key={partner.uid}
-                                            className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2"
-                                        >
-                                            <div className="min-w-0">
-                                                <p className="truncate text-sm font-semibold text-slate-700">
-                                                    {partner.name}
-                                                </p>
-                                                <p className="truncate text-xs text-slate-500">
-                                                    {partner.uid}
-                                                </p>
-                                            </div>
-                                            <button
-                                                onClick={() => handleShowHiddenPartner(partner.uid)}
-                                                className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-100"
-                                            >
-                                                <Search size={12} />
-                                                Show
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="relative h-[720px] min-h-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-                        {loading && partners.length === 0 && (
-                            <div className="absolute inset-0 z-[1100] flex items-center justify-center bg-white/85 backdrop-blur-sm">
-                                <div className="text-center">
-                                    <RefreshCw className="mx-auto animate-spin text-red-500" size={30} />
-                                    <p className="mt-3 text-sm font-semibold text-slate-700">Loading live map...</p>
-                                </div>
-                            </div>
-                        )}
-
-                        <MapContainer center={mapCenter} zoom={zoom} style={{ height: '100%', width: '100%' }} zoomControl={false}>
-                            <TileLayer
-                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            />
-                            {partnersWithMapLocation.map((partner) => (
-                                <PartnerMarker
-                                    key={partner.uid}
-                                    partner={partner}
-                                    isFocused={focusedPartnerId === partner.uid}
-                                    onFocus={handleFocusPartner}
-                                />
-                            ))}
-                            {focusedPartner?.orderDetails && (
-                                <>
-                                    <DeliveryLocationMarker
-                                        order={focusedPartner.orderDetails}
-                                        isFocused={true}
-                                    />
-                                    <RestaurantMarker
-                                        order={focusedPartner.orderDetails}
-                                        isFocused={true}
-                                    />
-                                </>
-                            )}
-                            <ChangeView center={mapCenter} zoom={zoom} />
-                        </MapContainer>
-
-                        <div className="pointer-events-none absolute inset-x-4 top-4 z-[1000] flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                            <div className="pointer-events-auto max-w-md rounded-3xl border border-white/80 bg-white/95 p-4 shadow-lg backdrop-blur">
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                                    Current Executive Location
-                                </p>
-                                <p className="mt-2 text-xl font-bold text-slate-900">
-                                    {focusedPartner?.name || 'Select an executive'}
-                                </p>
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    {focusedPartner ? (
-                                        <>
-                                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                                                {focusedPartner.status}
-                                            </span>
-                                            {focusedPartner.locationSource && focusedPartner.locationSource !== 'none' && (
-                                                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                                                    Location: {focusedPartner.locationSource}
-                                                </span>
-                                            )}
-                                            {focusedPartner.isActive && (
-                                                <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
-                                                    On Duty
-                                                </span>
-                                            )}
-                                            {focusedPartner.orderDetails && (
-                                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                                                    focusedPartner.orderDetails.deliveryStatus === 'delivered'
-                                                        ? 'bg-violet-100 text-violet-700'
-                                                        : 'bg-emerald-100 text-emerald-700'
-                                                }`}>
-                                                    {focusedPartner.orderDetails.deliveryStatus === 'delivered'
-                                                        ? 'Order Delivered'
-                                                        : 'Order Attached'}
-                                                </span>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <p className="text-sm text-slate-500">
-                                            Choose an executive from the left panel to center the map.
-                                        </p>
-                                    )}
-                                </div>
-                                {focusedPartner &&
-                                    (() => {
-                                        const lat = normalizeCoordinate(focusedPartner.lat);
-                                        const lng = normalizeCoordinate(focusedPartner.lng);
-                                        return (lat === null || lng === null || (lat === 0 && lng === 0));
-                                    })() && (
-                                    <p className="mt-3 text-sm text-amber-600">
-                                        Current location is not available for this executive yet.
+                                ) : (
+                                    <p className="text-xs font-semibold text-slate-400">
+                                        Sync {lastRefreshed ? lastRefreshed.toLocaleTimeString('en-IN') : '-'}
                                     </p>
                                 )}
                             </div>
 
-                            <button
-                                onClick={handleResetMap}
-                                className="pointer-events-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-lg transition hover:bg-slate-50"
-                                title="Recenter map"
-                            >
-                                <LocateFixed size={18} />
-                            </button>
+                            <div className="operations-scroll flex-1 space-y-3 overflow-y-auto px-4 pb-4">
+                                {activePanel === 'routes' ? (
+                                    <>
+                                        {loading && executives.length === 0 ? (
+                                            Array.from({ length: 5 }).map((_, index) => (
+                                                <div key={index} className="h-[92px] animate-pulse rounded-2xl bg-slate-100" />
+                                            ))
+                                        ) : filteredExecutives.length === 0 ? (
+                                            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
+                                                <p className="text-sm font-black text-slate-700">No active deliveries right now</p>
+                                                <p className="mt-1 text-xs font-semibold text-slate-500">Check Activity Feed for offline or stale GPS executives.</p>
+                                            </div>
+                                        ) : (
+                                            filteredExecutives.map((executive) => (
+                                                <ExecutiveCard
+                                                    key={executive.uid}
+                                                    executive={executive}
+                                                    selected={selectedExecutive?.uid === executive.uid}
+                                                    expanded={expandedId === executive.uid}
+                                                    onSelect={focusExecutive}
+                                                    onOpenOrder={(orderId) => navigate(`/orders/${orderId}`)}
+                                                    onOpenExecutive={openExecutiveHistory}
+                                                />
+                                            ))
+                                        )}
+
+                                        {filteredActivityExecutives.length > 0 && (
+                                            <div className="pt-3">
+                                                <p className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-slate-400">
+                                                    Offline ({filteredActivityExecutives.length})
+                                                </p>
+                                                <div className="space-y-2">
+                                                    {filteredActivityExecutives.slice(0, 6).map((executive) => (
+                                                        <ActivityCard
+                                                            key={executive.uid}
+                                                            executive={executive}
+                                                            onOpenExecutive={openExecutiveHistory}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        {filteredActivityExecutives.length === 0 ? (
+                                            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
+                                                <p className="text-sm font-black text-slate-700">No activity signals found</p>
+                                                <p className="mt-1 text-xs font-semibold text-slate-500">Try another search or refresh tracking.</p>
+                                            </div>
+                                        ) : (
+                                            filteredActivityExecutives.map((executive) => (
+                                                <ActivityCard
+                                                    key={executive.uid}
+                                                    executive={executive}
+                                                    onOpenExecutive={openExecutiveHistory}
+                                                />
+                                            ))
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                </section>
+                    </aside>
+
+                    <main className="flex min-w-0 flex-col">
+                        <section className="relative h-full min-h-[620px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                            {!GOOGLE_MAPS_API_KEY && (
+                                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 p-6 text-center backdrop-blur-sm">
+                                    <div className="max-w-md rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                                        <p className="text-base font-black text-amber-900">Google Maps key missing</p>
+                                        <p className="mt-2 text-sm font-semibold text-amber-700">
+                                            Add VITE_GOOGLE_MAPS_API_KEY or VITE_GOOGLE_API_KEY in the admin environment.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {(loadError || !isLoaded) && GOOGLE_MAPS_API_KEY && (
+                                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+                                    <div className="text-center">
+                                        <RefreshCw className="mx-auto animate-spin text-red-500" size={28} />
+                                        <p className="mt-3 text-sm font-black text-slate-700">
+                                            {loadError ? 'Unable to load Google Maps' : 'Loading live map'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {isLoaded && GOOGLE_MAPS_API_KEY && (
+                                <GoogleMap
+                                    mapContainerClassName="h-full w-full"
+                                    center={mapCenter}
+                                    zoom={mapZoom}
+                                    options={mapOptions}
+                                    onLoad={(map) => {
+                                        mapRef.current = map;
+                                    }}
+                                >
+                                    {directions && (
+                                        <DirectionsRenderer
+                                            directions={directions}
+                                            options={{
+                                                suppressMarkers: true,
+                                                preserveViewport: true,
+                                                polylineOptions: {
+                                                    strokeColor: '#2563eb',
+                                                    strokeOpacity: 0.9,
+                                                    strokeWeight: 5,
+                                                },
+                                            }}
+                                        />
+                                    )}
+
+                                    {!directions && fallbackRoutePath.length > 1 && (
+                                        <PolylineF
+                                            path={fallbackRoutePath}
+                                            options={{
+                                                strokeColor: '#2563eb',
+                                                strokeOpacity: 0.75,
+                                                strokeWeight: 4,
+                                                icons: [{
+                                                    icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
+                                                    offset: '0',
+                                                    repeat: '18px',
+                                                }],
+                                            }}
+                                        />
+                                    )}
+
+                                    {selectedTrail.length > 1 && (
+                                        <PolylineF
+                                            path={selectedTrail}
+                                            options={{
+                                                strokeColor: '#10b981',
+                                                strokeOpacity: 0.55,
+                                                strokeWeight: 3,
+                                            }}
+                                        />
+                                    )}
+
+                                    {operationalExecutives.map((executive) => {
+                                        const point = getExecutivePoint(executive);
+                                        if (!point) return null;
+                                        const tone = getStatusTone(executive);
+                                        return (
+                                            <PulseMarker
+                                                key={executive.uid}
+                                                point={point}
+                                                color={markerColors[tone]}
+                                                label={getInitials(executive.name)}
+                                                active={selectedExecutive?.uid === executive.uid}
+                                            />
+                                        );
+                                    })}
+
+                                    {routePoints.restaurant && (
+                                        <MarkerF
+                                            position={routePoints.restaurant}
+                                            icon={{
+                                                path: window.google.maps.SymbolPath.CIRCLE,
+                                                scale: 9,
+                                                fillColor: '#f97316',
+                                                fillOpacity: 1,
+                                                strokeColor: '#ffffff',
+                                                strokeWeight: 4,
+                                            }}
+                                            title="Restaurant"
+                                        />
+                                    )}
+                                    {routePoints.customer && (
+                                        <MarkerF
+                                            position={routePoints.customer}
+                                            icon={{
+                                                path: window.google.maps.SymbolPath.CIRCLE,
+                                                scale: 9,
+                                                fillColor: '#2563eb',
+                                                fillOpacity: 1,
+                                                strokeColor: '#ffffff',
+                                                strokeWeight: 4,
+                                            }}
+                                            title="Customer"
+                                        />
+                                    )}
+                                </GoogleMap>
+                            )}
+
+                            <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-start justify-between gap-2">
+                                <div className="pointer-events-auto max-w-[520px] rounded-xl border border-white/80 bg-white/95 px-3 py-2 shadow-lg backdrop-blur">
+                                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-black">
+                                        <span className={`rounded-full border px-2 py-0.5 ${toneClasses[selectedTone]}`}>
+                                            {selectedExecutive ? formatStatus(selectedExecutive.status) : 'No active route'}
+                                        </span>
+                                        <span className="text-slate-500">
+                                            Executive - Restaurant - Customer
+                                        </span>
+                                        <span className="text-slate-300">|</span>
+                                        <span className="text-slate-900">{formatEta(route?.totalEtaMinutes)}</span>
+                                        <span className="text-slate-500">{formatKm(route?.totalDistanceKm)}</span>
+                                    </div>
+                                </div>
+
+                                <div className="pointer-events-auto flex gap-2">
+                                    <button
+                                        onClick={recenterSelected}
+                                        disabled={!getExecutivePoint(selectedExecutive)}
+                                        className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-lg hover:bg-slate-50 disabled:opacity-50"
+                                        title="Locate selected executive"
+                                    >
+                                        <LocateFixed size={17} />
+                                    </button>
+                                    <button
+                                        onClick={() => fetchLocations(true)}
+                                        className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-lg hover:bg-slate-50"
+                                        title="Refresh GPS"
+                                    >
+                                        <RefreshCw size={17} className={loading ? 'animate-spin' : ''} />
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+
+                    </main>
+                </div>
             </div>
         </div>
     );

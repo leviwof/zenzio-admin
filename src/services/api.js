@@ -196,6 +196,9 @@ export const downloadAttendanceReport = (partnerId, params) =>
   api.get('/attendance/admin/range-summary', { params: { fleet_uid: partnerId, ...params } });
 
 export const getLivePartnerLocations = () => api.get('/fleets/live-tracking/all');
+export const getLiveExecutives = () => api.get('/live-tracking/executives');
+export const getLiveExecutiveById = (id) => api.get(`/live-tracking/executives/${id}`);
+export const postLiveLocationUpdate = (data) => api.post('/live-tracking/location-update', data);
 
 
 
