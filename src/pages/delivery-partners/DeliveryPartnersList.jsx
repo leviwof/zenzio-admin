@@ -1,9 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Download, Star, Edit, AlertCircle, Trash2, Clock } from 'lucide-react';
-import { getAllDeliveryPartners, updatePartnerStatus, permanentlyDeletePartner } from '../../services/api';
+import { Search, Download, Star, AlertCircle, Trash2, Clock, MapPin, Wifi } from 'lucide-react';
+import { getAllDeliveryPartners, updatePartnerStatus, permanentlyDeletePartner, getLiveExecutives } from '../../services/api';
 import { saveAs } from 'file-saver';
 import ReferralManagement from './ReferralManagement';
+
+const STALE_GPS_MINUTES = 15;
+
+const normalizeCoordinate = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed !== 0 ? parsed : null;
+};
+
+const minutesSince = (value) => {
+  if (!value) return Number.POSITIVE_INFINITY;
+  return (Date.now() - new Date(value).getTime()) / 60000;
+};
+
+const formatAgo = (value) => {
+  if (!value) return 'No GPS';
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 10) return 'Just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+};
 
 const DeliveryPartnersList = () => {
   const navigate = useNavigate();
@@ -59,17 +83,41 @@ const DeliveryPartnersList = () => {
       const backendData = response?.data?.data || [];
       const paginationData = response?.data?.pagination;
 
-      const transformedPartners = backendData.map((p) => ({
-        id: p.id,
-        fleetUid: p.uid,
-        name: p.profile ? `${p.profile.first_name || ''} ${p.profile.last_name || ''}`.trim() : '-',
-        email: p.contact?.contactEmail || p.contact?.encryptedEmail || '-',
-        phone: p.contact?.contactPhone || p.contact?.encryptedPhone || '-',
-        vehicleType: p.documents?.length > 0 ? p.documents[0].vehicle_type || 'N/A' : 'N/A',
-        registrationDate: new Date(p.createdAt).toLocaleDateString('en-GB'),
-        rating: p.rating_avg ? parseFloat(p.rating_avg).toFixed(1) : 'No Rating',
-        status: p.status ? (p.isActive ? 'on-duty' : 'active') : (p.status_flag === 'Blocked' ? 'blocked' : 'inactive'),
-      }));
+      let liveMap = new Map();
+      try {
+        const liveResponse = await getLiveExecutives();
+        const liveExecutives = liveResponse?.data?.data || [];
+        liveMap = new Map(
+          liveExecutives.map((executive) => [
+            executive.uid || executive.executiveId,
+            executive,
+          ]),
+        );
+      } catch (liveError) {
+        console.warn('Live GPS status unavailable for executive management:', liveError?.message || liveError);
+      }
+
+      const transformedPartners = backendData.map((p) => {
+        const live = liveMap.get(p.uid) || {};
+        const lat = normalizeCoordinate(live.latitude ?? live.lat);
+        const lng = normalizeCoordinate(live.longitude ?? live.lng);
+        const gpsFresh = Boolean(live.gpsActive && lat && lng && minutesSince(live.lastUpdated) <= STALE_GPS_MINUTES);
+
+        return {
+          id: p.id,
+          fleetUid: p.uid,
+          name: p.profile ? `${p.profile.first_name || ''} ${p.profile.last_name || ''}`.trim() : '-',
+          email: p.contact?.contactEmail || p.contact?.encryptedEmail || '-',
+          phone: p.contact?.contactPhone || p.contact?.encryptedPhone || '-',
+          vehicleType: p.documents?.length > 0 ? p.documents[0].vehicle_type || 'N/A' : 'N/A',
+          registrationDate: new Date(p.createdAt).toLocaleDateString('en-GB'),
+          rating: p.rating_avg ? parseFloat(p.rating_avg).toFixed(1) : 'No Rating',
+          status: p.status ? (p.isActive ? 'on-duty' : 'active') : (p.status_flag === 'Blocked' ? 'blocked' : 'inactive'),
+          gpsActive: gpsFresh,
+          gpsLastUpdated: live.lastUpdated || null,
+          currentLocation: lat !== null && lng !== null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 'Location unavailable',
+        };
+      });
 
       setPartners(transformedPartners);
       setPagination(paginationData);
@@ -139,13 +187,14 @@ const DeliveryPartnersList = () => {
       showAlert('error', 'No data to export');
       return;
     }
-    const headers = ['Name', 'Email', 'Phone', 'Vehicle', 'Status', 'Rating', 'Registration Date'];
+    const headers = ['Name', 'Email', 'Phone', 'Vehicle', 'Status', 'GPS', 'Rating', 'Registration Date'];
     const rows = partners.map((p) => [
       p.name,
       p.email,
       p.phone,
       p.vehicleType,
       p.status,
+      p.gpsActive ? `GPS On (${p.currentLocation})` : 'GPS Off',
       p.rating,
       p.registrationDate
     ]);
@@ -192,6 +241,27 @@ const DeliveryPartnersList = () => {
     const info = statusMap[status?.toLowerCase()] || statusMap.inactive;
     return (
       <span className={`px-3 py-1 rounded text-xs font-medium ${info.color}`}>{info.label}</span>
+    );
+  };
+
+  const getGpsBadge = (partner) => {
+    const isOnline = Boolean(partner.gpsActive);
+    const title = `${partner.name}: ${isOnline ? 'Online with GPS on' : 'Offline or GPS off'} | ${partner.currentLocation} | Last update: ${formatAgo(partner.gpsLastUpdated)}`;
+
+    return (
+      <div
+        title={title}
+        className={`inline-flex min-w-[142px] items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
+          isOnline
+            ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+            : 'border-red-100 bg-red-50 text-red-700'
+        }`}
+      >
+        <span className={`h-2.5 w-2.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-red-500'}`} />
+        <Wifi size={13} />
+        <span>{isOnline ? 'GPS On' : 'GPS Off'}</span>
+        <span className="text-[10px] font-medium opacity-70">{formatAgo(partner.gpsLastUpdated)}</span>
+      </div>
     );
   };
 
@@ -377,13 +447,20 @@ const DeliveryPartnersList = () => {
                           Status
                         </th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">
+                          Location / GPS
+                        </th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">
                           Actions
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {partners.map((p) => (
-                        <tr key={p.id} className="hover:bg-gray-50 transition">
+                        <tr
+                          key={p.id}
+                          className="hover:bg-gray-50 transition"
+                          title={`${p.name}: ${p.gpsActive ? 'Online with GPS on' : 'Offline or GPS off'} | ${p.currentLocation}`}
+                        >
                           <td className="px-4 py-4 font-medium text-gray-900">{p.name}</td>
                           <td className="px-4 py-4 text-sm text-gray-600">
                             <div>{p.email}</div>
@@ -405,6 +482,15 @@ const DeliveryPartnersList = () => {
                             )}
                           </td>
                           <td className="px-4 py-4">{getStatusBadge(p.status)}</td>
+                          <td className="px-4 py-4">
+                            <div className="space-y-1">
+                              {getGpsBadge(p)}
+                              <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                                <MapPin size={12} />
+                                <span className="max-w-[150px] truncate">{p.currentLocation}</span>
+                              </div>
+                            </div>
+                          </td>
                           <td className="px-4 py-4">
                             <div className="flex items-center space-x-2">
                               <button
