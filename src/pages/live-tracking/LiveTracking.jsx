@@ -194,19 +194,44 @@ const MetricPill = ({ icon: Icon, label, value, tone = 'green' }) => (
     </div>
 );
 
-const PulseMarker = ({ point, color, label, active }) => {
+const PhotoMapMarker = ({ point, color, name, imageUrl, icon: Icon, active, label }) => {
+    const [imageFailed, setImageFailed] = useState(false);
+
+    useEffect(() => {
+        setImageFailed(false);
+    }, [imageUrl]);
+
     if (!point) return null;
 
     return (
         <OverlayView position={point} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
             <div className="relative -translate-x-1/2 -translate-y-1/2">
-                {active && <span className="absolute inset-0 h-10 w-10 animate-ping rounded-full opacity-20" style={{ backgroundColor: color }} />}
+                {active && <span className="absolute inset-0 h-12 w-12 animate-ping rounded-full opacity-20" style={{ backgroundColor: color }} />}
                 <div
-                    className="relative flex h-10 w-10 items-center justify-center rounded-full border-[3px] border-white text-[11px] font-black text-white shadow-xl"
-                    style={{ backgroundColor: color }}
+                    className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-[3px] border-white bg-slate-900 text-[11px] font-black text-white shadow-xl"
+                    style={{ boxShadow: `0 0 0 4px ${color}24, 0 12px 24px rgba(15,23,42,0.2)` }}
+                    title={name || label}
                 >
-                    {label}
+                    {imageUrl && !imageFailed ? (
+                        <img
+                            src={imageUrl}
+                            alt={name || label || 'Map marker'}
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                            onError={() => setImageFailed(true)}
+                        />
+                    ) : Icon ? (
+                        <Icon size={18} />
+                    ) : (
+                        getInitials(name || label)
+                    )}
+                    <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white" style={{ backgroundColor: color }} />
                 </div>
+                {label && (
+                    <div className="absolute left-1/2 top-[48px] -translate-x-1/2 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-700 shadow">
+                        {label}
+                    </div>
+                )}
             </div>
         </OverlayView>
     );
@@ -834,42 +859,36 @@ const LiveTracking = () => {
                                         if (!point) return null;
                                         const tone = getStatusTone(executive);
                                         return (
-                                            <PulseMarker
+                                            <PhotoMapMarker
                                                 key={executive.uid}
                                                 point={point}
                                                 color={markerColors[tone]}
-                                                label={getInitials(executive.name)}
+                                                name={executive.name}
+                                                imageUrl={executive.imageUrl}
+                                                label="Executive"
                                                 active={selectedExecutive?.uid === executive.uid}
                                             />
                                         );
                                     })}
 
                                     {routePoints.restaurant && (
-                                        <MarkerF
-                                            position={routePoints.restaurant}
-                                            icon={{
-                                                path: window.google.maps.SymbolPath.CIRCLE,
-                                                scale: 9,
-                                                fillColor: '#f97316',
-                                                fillOpacity: 1,
-                                                strokeColor: '#ffffff',
-                                                strokeWeight: 4,
-                                            }}
-                                            title="Restaurant"
+                                        <PhotoMapMarker
+                                            point={routePoints.restaurant}
+                                            color="#f97316"
+                                            name={selectedExecutive?.orderDetails?.restaurantName}
+                                            imageUrl={selectedExecutive?.orderDetails?.restaurantImageUrl}
+                                            icon={Store}
+                                            label="Restaurant"
                                         />
                                     )}
                                     {routePoints.customer && (
-                                        <MarkerF
-                                            position={routePoints.customer}
-                                            icon={{
-                                                path: window.google.maps.SymbolPath.CIRCLE,
-                                                scale: 9,
-                                                fillColor: '#2563eb',
-                                                fillOpacity: 1,
-                                                strokeColor: '#ffffff',
-                                                strokeWeight: 4,
-                                            }}
-                                            title="Customer"
+                                        <PhotoMapMarker
+                                            point={routePoints.customer}
+                                            color="#2563eb"
+                                            name={selectedExecutive?.orderDetails?.customerName}
+                                            imageUrl={selectedExecutive?.orderDetails?.customerImageUrl}
+                                            icon={User}
+                                            label="Customer"
                                         />
                                     )}
                                 </GoogleMap>
