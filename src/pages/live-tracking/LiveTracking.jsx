@@ -135,6 +135,19 @@ const getStatusTone = (executive) => {
     return 'green';
 };
 
+const getGpsPresence = (executive) => {
+    const point = getExecutivePoint(executive);
+    const online = isFreshGps(executive);
+    const location = point ? `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}` : 'Location unavailable';
+
+    return {
+        online,
+        location,
+        label: online ? 'Online - GPS on' : 'Offline - GPS off',
+        title: `${executive?.name || 'Delivery Executive'}: ${online ? 'Online with GPS on' : 'Offline or GPS off'} | ${location} | Last update: ${formatAgo(executive?.lastUpdated)}`,
+    };
+};
+
 const toneClasses = {
     green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     orange: 'bg-orange-50 text-orange-700 border-orange-100',
@@ -241,19 +254,23 @@ const ExecutiveCard = ({ executive, selected, expanded, onSelect, onOpenOrder, o
     const order = executive.orderDetails;
     const route = order?.route;
     const tone = getStatusTone(executive);
+    const presence = getGpsPresence(executive);
 
     return (
         <motion.button
             layout
             onClick={() => onSelect(executive)}
-            className={`w-full rounded-xl border bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-red-200 hover:shadow-md ${
-                selected ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200'
+            title={presence.title}
+            className={`w-full rounded-xl border px-3 py-2.5 text-left shadow-sm transition hover:border-red-200 hover:shadow-md ${
+                presence.online ? 'bg-emerald-50/60' : 'bg-red-50/60'
+            } ${
+                selected ? 'border-red-300 ring-2 ring-red-100' : presence.online ? 'border-emerald-100' : 'border-red-100'
             }`}
         >
             <div className="flex items-center gap-3">
                 <div className="relative">
                     <Avatar name={executive.name} imageUrl={executive.imageUrl} size="lg" />
-                    <span className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 animate-pulse rounded-full border-2 border-white bg-emerald-500" />
+                    <span className={`absolute -right-0.5 -top-0.5 h-3.5 w-3.5 animate-pulse rounded-full border-2 border-white ${presence.online ? 'bg-emerald-500' : 'bg-red-500'}`} />
                 </div>
 
                 <div className="min-w-0 flex-1">
@@ -271,8 +288,8 @@ const ExecutiveCard = ({ executive, selected, expanded, onSelect, onOpenOrder, o
                     </div>
 
                     <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                        <span>Active order</span>
+                        <span className={`h-1.5 w-1.5 animate-pulse rounded-full ${presence.online ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                        <span>{presence.label}</span>
                         <span className="text-slate-300">|</span>
                         <span>{formatStatus(order?.deliveryStatus)}</span>
                         <span className="text-slate-300">|</span>
@@ -362,6 +379,7 @@ const ExecutiveCard = ({ executive, selected, expanded, onSelect, onOpenOrder, o
 const ActivityCard = ({ executive, onOpenExecutive }) => {
     const gpsMissing = !isFreshGps(executive);
     const order = executive.orderDetails;
+    const presence = getGpsPresence(executive);
     const message = gpsMissing
         ? 'GPS missing or stale'
         : order
@@ -372,7 +390,12 @@ const ActivityCard = ({ executive, onOpenExecutive }) => {
         <button
             type="button"
             onClick={() => onOpenExecutive(executive)}
-            className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition hover:border-red-200 hover:bg-red-50/30"
+            title={presence.title}
+            className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left shadow-sm transition hover:border-red-200 ${
+                gpsMissing
+                    ? 'border-red-100 bg-red-50/70 hover:bg-red-50'
+                    : 'border-emerald-100 bg-emerald-50/70 hover:bg-emerald-50'
+            }`}
         >
             <Avatar name={executive.name} imageUrl={executive.imageUrl} size="sm" />
             <div className="min-w-0 flex-1">
@@ -381,7 +404,6 @@ const ActivityCard = ({ executive, onOpenExecutive }) => {
                     {message} - {formatAgo(executive.lastUpdated)}
                 </p>
             </div>
-            <span className="shrink-0 text-[10px] font-black text-red-500">Open</span>
             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${gpsMissing ? 'bg-red-400' : 'bg-emerald-500'}`} />
         </button>
     );
