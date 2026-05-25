@@ -41,7 +41,11 @@ const MenuDetails = () => {
       const response = await getMenuByUid(menuUid);
       console.log('📦 Full Response:', response);
       
-      const menuData = response?.data?.data?.restaurant_menu;
+      const menuData =
+        response?.data?.data?.restaurant_menu ||
+        response?.data?.restaurant_menu ||
+        response?.data?.data ||
+        response?.data;
       
       if (!menuData) {
         console.error('❌ Menu data not found');
