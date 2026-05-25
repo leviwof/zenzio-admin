@@ -207,7 +207,7 @@ const MetricPill = ({ icon: Icon, label, value, tone = 'green' }) => (
     </div>
 );
 
-const PhotoMapMarker = ({ point, color, name, imageUrl, icon: Icon, active, label }) => {
+const PhotoMapMarker = ({ point, color, name, imageUrl, icon: Icon, active, label, title }) => {
     const [imageFailed, setImageFailed] = useState(false);
 
     useEffect(() => {
@@ -223,7 +223,7 @@ const PhotoMapMarker = ({ point, color, name, imageUrl, icon: Icon, active, labe
                 <div
                     className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-[3px] border-white bg-slate-900 text-[11px] font-black text-white shadow-xl"
                     style={{ boxShadow: `0 0 0 4px ${color}24, 0 12px 24px rgba(15,23,42,0.2)` }}
-                    title={name || label}
+                    title={title || name || label}
                 >
                     {imageUrl && !imageFailed ? (
                         <img
@@ -495,6 +495,11 @@ const LiveTracking = () => {
 
     const activityExecutives = useMemo(
         () => executives.filter((executive) => !isOperationalExecutive(executive)),
+        [executives],
+    );
+
+    const mapExecutives = useMemo(
+        () => executives.filter((executive) => Boolean(getExecutivePoint(executive))),
         [executives],
     );
 
@@ -876,18 +881,20 @@ const LiveTracking = () => {
                                         />
                                     )}
 
-                                    {operationalExecutives.map((executive) => {
+                                    {mapExecutives.map((executive) => {
                                         const point = getExecutivePoint(executive);
                                         if (!point) return null;
-                                        const tone = getStatusTone(executive);
+                                        const presence = getGpsPresence(executive);
+                                        const color = presence.online ? markerColors.green : markerColors.red;
                                         return (
                                             <PhotoMapMarker
                                                 key={executive.uid}
                                                 point={point}
-                                                color={markerColors[tone]}
+                                                color={color}
                                                 name={executive.name}
                                                 imageUrl={executive.imageUrl}
-                                                label="Executive"
+                                                label={presence.online ? 'Online' : 'Offline'}
+                                                title={presence.title}
                                                 active={selectedExecutive?.uid === executive.uid}
                                             />
                                         );
