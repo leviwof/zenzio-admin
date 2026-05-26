@@ -211,6 +211,8 @@ const RestaurantDetails = () => {
   const [lastSaved, setLastSaved] = useState(null)
   const [mealErrors, setMealErrors] = useState({})
   const [showDocs, setShowDocs] = useState(false)
+  const [showModerationConfirm, setShowModerationConfirm] = useState(false)
+  const [moderationLoading, setModerationLoading] = useState(false)
   const savedMealPayloadRef = useRef('')
 
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false)
@@ -271,10 +273,13 @@ const RestaurantDetails = () => {
   const handleToggleActive = async () => {
     if (!restaurant.uid) return
     try {
+      setModerationLoading(true)
       await toggleRestaurantActive(restaurant.uid)
       toast.success(restaurant.isActive ? 'Restaurant blocked' : 'Restaurant unblocked')
+      setShowModerationConfirm(false)
       fetchRestaurantDetails()
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to update') }
+    finally { setModerationLoading(false) }
   }
 
   const handleToggleOpen = async () => {
@@ -560,7 +565,6 @@ const RestaurantDetails = () => {
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <Power size={12} className="text-indigo-400" />
                       <span className="font-medium text-gray-700">{restaurant.isActive ? 'Active' : 'Inactive'}</span>
-                      {!restaurantAdmin && <Toggle enabled={restaurant.isActive} onChange={handleToggleActive} size="sm" />}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <Clock size={12} className="text-indigo-400" />
@@ -990,22 +994,64 @@ const RestaurantDetails = () => {
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">
                     <FileText size={15} /> Manage Menu
                   </motion.button>
-                  <div className="border-t border-gray-100 pt-1.5 mt-1.5">
-                    <motion.button whileHover={{ x: 2 }} onClick={restaurantAdmin ? handleToggleOpen : handleToggleActive}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                        restaurantAdmin
-                          ? restaurant.isOpen === false ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'text-gray-600 bg-gray-50 hover:bg-gray-100'
-                          : restaurant.isActive ? 'text-red-700 bg-red-50 hover:bg-red-100' : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
-                      }`}>
-                      {restaurantAdmin
-                        ? restaurant.isOpen === false ? <><Power size={15} /> Open Restaurant</> : <><Power size={15} /> Close Restaurant</>
-                        : restaurant.isActive ? <><XCircle size={15} /> Block Restaurant</> : <><CheckCircle size={15} /> Unblock Restaurant</>
-                      }
-                    </motion.button>
-                  </div>
+                  {restaurantAdmin && (
+                    <div className="border-t border-gray-100 pt-1.5 mt-1.5">
+                      <motion.button whileHover={{ x: 2 }} onClick={handleToggleOpen}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                          restaurant.isOpen === false
+                            ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                            : 'text-gray-600 bg-gray-50 hover:bg-gray-100'
+                        }`}>
+                        {restaurant.isOpen === false ? <><Power size={15} /> Open Restaurant</> : <><Power size={15} /> Close Restaurant</>}
+                      </motion.button>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
+
+            {!restaurantAdmin && (
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                      restaurant.isActive ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
+                    }`}>
+                      <AlertTriangle size={18} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Platform Moderation</h4>
+                      <p className="mt-1 text-sm font-semibold text-gray-900">
+                        {restaurant.isActive ? 'Block restaurant account' : 'Unblock restaurant account'}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-gray-500">
+                        {restaurant.isActive
+                          ? 'Blocking prevents this restaurant from operating on Zenzio until an admin unblocks it. Use this only for policy, verification, or safety issues.'
+                          : 'Unblocking restores platform access for this restaurant. Confirm that verification and policy checks are complete before continuing.'}
+                      </p>
+                      <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${
+                        restaurant.isActive
+                          ? 'border-red-100 bg-red-50 text-red-700'
+                          : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                      }`}>
+                        Current account status: <span className="font-bold">{restaurant.isActive ? 'Active' : 'Blocked'}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowModerationConfirm(true)}
+                        className={`mt-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
+                          restaurant.isActive
+                            ? 'bg-red-600 text-white hover:bg-red-700'
+                            : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                        }`}
+                      >
+                        {restaurant.isActive ? 'Block Restaurant' : 'Unblock Restaurant'}
+                      </button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardContent className="p-4">
@@ -1059,6 +1105,64 @@ const RestaurantDetails = () => {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showModerationConfirm && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/45 px-4 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              transition={{ duration: 0.18 }}
+            >
+              <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl ${
+                restaurant.isActive ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
+              }`}>
+                <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-950">
+                {restaurant.isActive ? 'Block this restaurant?' : 'Unblock this restaurant?'}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-gray-500">
+                {restaurant.isActive
+                  ? 'This will immediately remove the restaurant from active platform operations and can stop restaurant admin activity until it is unblocked.'
+                  : 'This will restore platform access for the restaurant. Make sure all verification and moderation checks are complete.'}
+              </p>
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                Warning: this is a platform moderation action. It is different from opening or closing restaurant operations for the day.
+              </div>
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowModerationConfirm(false)}
+                  disabled={moderationLoading}
+                  className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleToggleActive}
+                  disabled={moderationLoading}
+                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-70 ${
+                    restaurant.isActive ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  {moderationLoading
+                    ? 'Updating...'
+                    : restaurant.isActive ? 'Yes, Block Restaurant' : 'Yes, Unblock Restaurant'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
