@@ -1004,42 +1004,56 @@ const OrdersList = () => {
       )}
 
       {showCancelModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
-                <AlertTriangle className="text-red-500" size={20} />
-                Cancel Order
-              </h3>
+        <div className="fixed inset-0 bg-slate-100/85 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto px-4 py-8">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-2xl w-full">
+            <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-200 bg-gradient-to-r from-red-50 to-white rounded-t-xl">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="text-red-600" size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-xl text-slate-900">Cancel Order</h3>
+                    <span className="text-xs font-semibold text-red-700 bg-red-100 border border-red-200 px-2 py-1 rounded-full">
+                      Admin action
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Review the order, choose a clear reason, then confirm cancellation. All connected parties will be notified.
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => {
                   setShowCancelModal(false);
                   setSelectedOrderForCancel(null);
                   setCancelReason("");
+                  setOtherReason("");
                 }}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-slate-500 hover:text-slate-800 p-1 rounded-full hover:bg-white"
+                aria-label="Close cancellation dialog"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-4 space-y-4">
-              <div className="bg-gray-50 p-3 rounded-lg">
+            <div className="p-5 space-y-5">
+              <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg space-y-1">
                 <p className="text-sm text-gray-600">Order ID: <span className="font-semibold text-gray-900">#{selectedOrderForCancel?.orderId}</span></p>
                 <p className="text-sm text-gray-600">Customer: <span className="font-semibold text-gray-900">{selectedOrderForCancel?.customer_name || 'Guest'}</span></p>
                 <p className="text-sm text-gray-600">Amount: <span className="font-semibold text-gray-900">₹{selectedOrderForCancel?.price}</span></p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
                   Select Cancellation Reason <span className="text-red-500">*</span>
                 </label>
                 <select
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
                 >
-                  <option value="">-- Select Reason --</option>
+                  <option value="">Select a reason</option>
                   {CANCEL_REASONS.map((reason) => (
                     <option key={reason} value={reason}>
                       {reason}
@@ -1050,27 +1064,28 @@ const OrdersList = () => {
 
               {cancelReason === "Other" && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
                     Please specify reason
                   </label>
                   <textarea
                     value={otherReason}
                     onChange={(e) => setOtherReason(e.target.value)}
-                    placeholder="Enter reason..."
-                    rows={2}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="Write the reason that should be visible in the cancellation record..."
+                    rows={3}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   />
                 </div>
               )}
 
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-                <p className="text-sm text-yellow-800">
-                  <strong>Warning:</strong> This action will cancel the order and notify all parties (Customer, Restaurant, Delivery Executive).
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <p className="text-sm text-amber-900 font-semibold">Before confirming</p>
+                <p className="text-sm text-amber-800 mt-1">
+                  The order status will move to admin cancelled and notifications will be sent to the customer, restaurant, and delivery executive.
                 </p>
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 rounded-b-lg">
+            <div className="flex flex-col sm:flex-row sm:justify-end gap-3 p-5 border-t border-slate-200 bg-slate-50 rounded-b-xl">
               <button
                 onClick={() => {
                   setShowCancelModal(false);
@@ -1078,7 +1093,7 @@ const OrdersList = () => {
                   setCancelReason("");
                   setOtherReason("");
                 }}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100"
+                className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-white font-semibold"
                 disabled={isCancelling}
               >
                 Close
@@ -1086,7 +1101,7 @@ const OrdersList = () => {
               <button
                 onClick={handleCancelOrder}
                 disabled={!cancelReason.trim() || isCancelling}
-                className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
               >
                 {isCancelling ? "Cancelling..." : "Confirm Cancellation"}
               </button>
