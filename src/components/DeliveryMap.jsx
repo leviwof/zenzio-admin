@@ -1,28 +1,28 @@
-import React, { useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { GoogleMap, MarkerF, PolylineF, useJsApiLoader } from '@react-google-maps/api';
 
-// ===== Fix Leaftet default icon issue in Webpack/React =====
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+const GOOGLE_MAPS_API_KEY =
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
+  import.meta.env.VITE_GOOGLE_API_KEY ||
+  import.meta.env.GOOGLE_MAPS_API_KEY ||
+  import.meta.env.GOOGLE_API_KEY;
+const GOOGLE_LIBRARIES = ['places'];
 
-// ===== Custom Icons =====
-const createIcon = (color) =>
-  new L.DivIcon({
-    html: `<div style="background-color:${color}; width:24px; height:24px; border-radius:50%; border:3px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`,
-    className: 'custom-div-icon',
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-  });
+const mapStyle = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#eef2f7' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#cbd5e1' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#dbeafe' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#f8fafc' }] },
+  { featureType: 'administrative', elementType: 'labels.text.fill', stylers: [{ color: '#64748b' }] },
+];
 
-const PARTNER_ICON = createIcon('#3b82f6');    // blue
-const RESTAURANT_ICON = createIcon('#f97316'); // orange
-const CUSTOMER_ICON = createIcon('#22c55e');  // green
+const markerColors = {
+  partner: '#2563eb',
+  restaurant: '#f97316',
+  customer: '#16a34a',
+};
 
 const parseCoordinatePair = (point) => {
   if (point?.lat == null || point?.lng == null) return null;
@@ -45,42 +45,72 @@ const parseCoordinatePair = (point) => {
     return null;
   }
 
-  return [lat, lng];
+  return { lat, lng };
 };
 
-// ===== Auto-fit bounds to all markers =====
-const FitBounds = ({ points }) => {
-  const map = useMap();
+const createMarkerIcon = (color) => {
+  if (!window.google?.maps) return undefined;
 
-  useEffect(() => {
-    if (points && points.length >= 2) {
-      const bounds = L.latLngBounds(points);
-      map.fitBounds(bounds, { padding: [50, 50] });
-    }
-  }, [map, points]);
-
-  return null;
+  return {
+    path: window.google.maps.SymbolPath.CIRCLE,
+    fillColor: color,
+    fillOpacity: 1,
+    strokeColor: '#ffffff',
+    strokeWeight: 3,
+    scale: 9,
+  };
 };
 
-const DeliveryMap = ({ partner, restaurant, customer, totalDistance }) => {
+const DeliveryMap = ({ partner, restaurant, customer, totalDistance, height = '400px', className = '' }) => {
   const mapRef = useRef(null);
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY || '',
+    libraries: GOOGLE_LIBRARIES,
+  });
 
   const partnerCoord = parseCoordinatePair(partner);
   const restaurantCoord = parseCoordinatePair(restaurant);
   const customerCoord = parseCoordinatePair(customer);
 
-  // ===== Build route polyline points =====
-  const routePoints = [];
-  if (partnerCoord) routePoints.push(partnerCoord);
-  if (restaurantCoord) routePoints.push(restaurantCoord);
-  if (customerCoord) routePoints.push(customerCoord);
+  const routePoints = useMemo(() => {
+    const points = [];
+    if (partnerCoord) points.push(partnerCoord);
+    if (restaurantCoord) points.push(restaurantCoord);
+    if (customerCoord) points.push(customerCoord);
+    return points;
+  }, [partnerCoord, restaurantCoord, customerCoord]);
 
-  // ===== Check if we have at least 2 points to render a map =====
   const hasValidData = routePoints.length >= 2;
+  const center = routePoints[0] || { lat: 11.9416, lng: 79.8083 };
+
+  useEffect(() => {
+    if (!isLoaded || !mapRef.current || routePoints.length < 2) return;
+
+    const bounds = new window.google.maps.LatLngBounds();
+    routePoints.forEach((point) => bounds.extend(point));
+    mapRef.current.fitBounds(bounds, 56);
+  }, [isLoaded, routePoints]);
+
+  if (!GOOGLE_MAPS_API_KEY) {
+    return (
+      <div className={`w-full rounded-lg border border-amber-200 bg-amber-50 p-6 text-center ${className}`} style={{ height }}>
+        <p className="text-amber-800 font-semibold">Google Maps key missing</p>
+        <p className="mt-2 text-sm text-amber-700">Add VITE_GOOGLE_MAPS_API_KEY or VITE_GOOGLE_API_KEY in the admin environment.</p>
+      </div>
+    );
+  }
+
+  if (loadError || !isLoaded) {
+    return (
+      <div className={`w-full rounded-lg border border-slate-200 bg-slate-50 p-6 text-center ${className}`} style={{ height }}>
+        <p className="text-slate-700 font-semibold">{loadError ? 'Unable to load Google Maps' : 'Loading route map...'}</p>
+      </div>
+    );
+  }
 
   if (!hasValidData) {
     return (
-      <div className="w-full rounded-lg border border-yellow-200 bg-yellow-50 p-6 text-center" style={{ height: '400px' }}>
+      <div className={`w-full rounded-lg border border-yellow-200 bg-yellow-50 p-6 text-center ${className}`} style={{ height }}>
         <p className="text-yellow-700 font-semibold">Location data unavailable</p>
         <p className="mt-2 text-sm text-yellow-600">
           {totalDistance !== null && totalDistance !== undefined
@@ -91,75 +121,62 @@ const DeliveryMap = ({ partner, restaurant, customer, totalDistance }) => {
     );
   }
 
-  // ===== Center map on first point =====
-  const center = routePoints[0];
-
   return (
-    <div className="relative w-full rounded-lg overflow-hidden border border-gray-200" style={{ height: '400px' }}>
-      <MapContainer
+    <div className={`relative w-full rounded-lg overflow-hidden border border-gray-200 ${className}`} style={{ height }}>
+      <GoogleMap
+        mapContainerClassName="h-full w-full"
         center={center}
         zoom={13}
-        style={{ height: '100%', width: '100%' }}
-        ref={mapRef}
-        zoomControl={false}
+        onLoad={(map) => {
+          mapRef.current = map;
+        }}
+        options={{
+          styles: mapStyle,
+          disableDefaultUI: false,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          clickableIcons: false,
+        }}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-
-        {/* Partner Marker */}
         {partnerCoord && (
-          <Marker position={partnerCoord} icon={PARTNER_ICON}>
-            <Popup>
-              <div className="text-sm">
-                <p className="font-bold text-blue-600">{partner?.label || 'Delivery Executive'}</p>
-                <p className="text-gray-500">{partnerCoord[0].toFixed(4)}, {partnerCoord[1].toFixed(4)}</p>
-              </div>
-            </Popup>
-          </Marker>
+          <MarkerF
+            position={partnerCoord}
+            icon={createMarkerIcon(markerColors.partner)}
+            label={{ text: 'DE', color: '#ffffff', fontSize: '10px', fontWeight: '700' }}
+            title={partner?.label || 'Delivery Executive'}
+          />
         )}
 
-        {/* Restaurant Marker */}
         {restaurantCoord && (
-          <Marker position={restaurantCoord} icon={RESTAURANT_ICON}>
-            <Popup>
-              <div className="text-sm">
-                <p className="font-bold text-orange-600">{restaurant?.label || 'Restaurant'}</p>
-                <p className="text-gray-500">{restaurantCoord[0].toFixed(4)}, {restaurantCoord[1].toFixed(4)}</p>
-              </div>
-            </Popup>
-          </Marker>
+          <MarkerF
+            position={restaurantCoord}
+            icon={createMarkerIcon(markerColors.restaurant)}
+            label={{ text: 'R', color: '#ffffff', fontSize: '11px', fontWeight: '700' }}
+            title={restaurant?.label || 'Restaurant'}
+          />
         )}
 
-        {/* Customer Marker */}
         {customerCoord && (
-          <Marker position={customerCoord} icon={CUSTOMER_ICON}>
-            <Popup>
-              <div className="text-sm">
-                <p className="font-bold text-green-600">{customer?.label || 'Customer'}</p>
-                <p className="text-gray-500">{customerCoord[0].toFixed(4)}, {customerCoord[1].toFixed(4)}</p>
-              </div>
-            </Popup>
-          </Marker>
+          <MarkerF
+            position={customerCoord}
+            icon={createMarkerIcon(markerColors.customer)}
+            label={{ text: 'C', color: '#ffffff', fontSize: '11px', fontWeight: '700' }}
+            title={customer?.label || 'Customer'}
+          />
         )}
 
-        {/* Route Polyline */}
-        <Polyline
-          positions={routePoints}
-          pathOptions={{
-            color: '#4f46e5',
-            weight: 4,
-            opacity: 0.8,
+        <PolylineF
+          path={routePoints}
+          options={{
+            strokeColor: '#4f46e5',
+            strokeOpacity: 0.86,
+            strokeWeight: 5,
           }}
         />
+      </GoogleMap>
 
-        {/* Auto-fit bounds */}
-        <FitBounds points={routePoints} />
-      </MapContainer>
-
-      {/* Distance overlay */}
-      <div className="absolute bottom-4 left-4 right-4 z-[1000] pointer-events-none">
+      <div className="absolute bottom-4 left-4 right-4 z-10 pointer-events-none">
         <div className="mx-auto w-fit rounded-full bg-white/95 px-4 py-2 shadow-lg backdrop-blur-sm border border-indigo-100">
           <p className="text-sm font-bold text-indigo-700">
             Total Route Distance: {totalDistance != null

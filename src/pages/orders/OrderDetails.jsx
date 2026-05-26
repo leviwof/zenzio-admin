@@ -2,9 +2,9 @@
 
 
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Mail, Phone, MapPin, CheckCircle, Circle, Printer, AlertTriangle, X, Navigation } from 'lucide-react';
+import { ChevronLeft, Mail, Phone, MapPin, CheckCircle, Circle, Printer, AlertTriangle, X, Navigation, Store, User, Bike } from 'lucide-react';
 import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder } from '../../services/api';
 import DeliveryMap from '../../components/DeliveryMap';
 import { isRestaurantAdmin } from '../../utils/auth';
@@ -73,6 +73,15 @@ const OrderDetails = () => {
   const [selectedExecutive, setSelectedExecutive] = useState('');
   const [reassignReason, setReassignReason] = useState('');
   const [loadingExecutives, setLoadingExecutives] = useState(false);
+  const reassignPanelRef = useRef(null);
+
+  useEffect(() => {
+    if (showReassignModal && reassignPanelRef.current) {
+      setTimeout(() => {
+        reassignPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 100);
+    }
+  }, [showReassignModal]);
 
   
   const DELIVERY_STATUSES = [
@@ -467,22 +476,23 @@ const OrderDetails = () => {
 
       {}
       {hasDeliveryPartner && !restaurantAdmin && (
-        <div className="bg-white rounded-lg shadow mb-6 p-6 border-l-4 border-red-500">
-          <div className="flex items-center justify-between mb-4">
+        <div className="grid grid-cols-1 xl:grid-cols-[420px_minmax(0,1fr)] gap-6 mb-6 items-stretch">
+          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-red-500">
+          <div className="mb-5">
             <div>
               <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2">
                 <AlertTriangle size={20} className="text-red-500" />
                 Delivery Executive Control
               </h3>
               <p className="text-sm text-gray-500 mt-1">
-                Admin can cancel or change the delivery status. Changes will be reflected across User, Restaurant, and Delivery Executive apps.
+                Reassign the order or update delivery status from the top operations view.
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 mt-4">
               {order.status?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'DELIVERED' && order.status?.toUpperCase() !== 'CANCELLED' && (
                 <button
                   onClick={() => { setShowReassignModal(true); fetchAvailableExecutives(); }}
-                  className="px-4 py-2 border border-blue-500 text-blue-500 rounded-md hover:bg-blue-50 transition-colors font-medium"
+                  className="w-full px-4 py-2.5 border border-blue-500 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-semibold"
                 >
                   Reassign Executive
                 </button>
@@ -490,7 +500,7 @@ const OrderDetails = () => {
               {order.status?.toUpperCase() !== 'COMPLETED' && order.status?.toUpperCase() !== 'DELIVERED' && order.status?.toUpperCase() !== 'CANCELLED' && (
                 <button
                   onClick={() => setShowStatusModal(true)}
-                  className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors font-medium"
+                  className="w-full px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold"
                 >
                   Change Delivery Status
                 </button>
@@ -517,6 +527,28 @@ const OrderDetails = () => {
               </p>
             </div>
           </div>
+        </div>
+
+          {order.partner && order.restaurant && order.customer && (
+            <div className="bg-white rounded-lg shadow p-5 min-h-[340px]">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                <div>
+                  <h3 className="font-bold text-lg text-gray-800">Delivery Route Map</h3>
+                  <p className="text-sm text-gray-500">Delivery Executive to Restaurant to Customer</p>
+                </div>
+                <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-full w-fit">
+                  {hasJourneyPricing ? 'Final journey pricing' : 'Route view'}
+                </span>
+              </div>
+              <DeliveryMap
+                partner={order.partner}
+                restaurant={order.restaurant}
+                customer={order.customer}
+                totalDistance={totalJourneyKm ?? order.totalDistance}
+                height="280px"
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -558,9 +590,14 @@ const OrderDetails = () => {
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="font-bold text-lg mb-4 text-gray-800">Restaurant Information</h3>
           <div className="space-y-3 text-sm">
-            <div>
-              <p className="font-semibold text-gray-900">{order.restaurant_name}</p>
-              <p className="text-xs text-gray-500">Restaurant ID: RES-{order.orderId.substring(0, 5)}</p>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
+                <Store size={22} className="text-orange-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900">{order.restaurant_name}</p>
+                <p className="text-xs text-gray-500">Restaurant ID: RES-{order.orderId.substring(0, 5)}</p>
+              </div>
             </div>
             <div className="flex items-start space-x-2">
               <Mail size={16} className="text-red-500 mt-1" />
@@ -581,15 +618,90 @@ const OrderDetails = () => {
         </div>
 
         {}
-        {order.partner && order.restaurant && order.customer && (
-          <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <h3 className="font-bold text-lg mb-4 text-gray-800">Delivery Route Map</h3>
-            <DeliveryMap
-              partner={order.partner}
-              restaurant={order.restaurant}
-              customer={order.customer}
-              totalDistance={order.totalDistance}
-            />
+        {(restaurantAdmin || !hasDeliveryPartner) && order.partner && order.restaurant && order.customer && (
+          <div className="bg-white rounded-lg shadow p-5 lg:col-span-2 xl:col-span-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+              <div>
+                <h3 className="font-bold text-lg text-gray-800">Delivery Route Map</h3>
+                <p className="text-sm text-gray-500">Delivery Executive to Restaurant to Customer</p>
+              </div>
+              <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-full w-fit">
+                {hasJourneyPricing ? 'Final journey pricing' : 'Route view'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-5 items-stretch">
+              <div className="min-w-0">
+                <DeliveryMap
+                  partner={order.partner}
+                  restaurant={order.restaurant}
+                  customer={order.customer}
+                  totalDistance={totalJourneyKm ?? order.totalDistance}
+                />
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+                    DE
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery Executive</p>
+                    <p className="font-semibold text-slate-900 truncate">
+                      {order.deliveryPartnerInformation?.name || order.partner?.label || 'Assigned executive'}
+                    </p>
+                    <p className="text-xs text-slate-500">Pickup journey starts here</p>
+                  </div>
+                </div>
+
+                <div className="h-px bg-slate-200" />
+
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center font-bold text-xs shrink-0">
+                    R
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Restaurant</p>
+                    <p className="font-semibold text-slate-900 truncate">{order.restaurant_name || order.restaurant?.label || 'Restaurant'}</p>
+                    <p className="text-xs text-slate-500 line-clamp-2">{order.restaurantInformation?.address || 'Address not available'}</p>
+                  </div>
+                </div>
+
+                <div className="h-px bg-slate-200" />
+
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold text-xs shrink-0">
+                    C
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Customer</p>
+                    <p className="font-semibold text-slate-900 truncate">{order.customerInformation?.name || order.customer?.label || 'Customer'}</p>
+                    <p className="text-xs text-slate-500 line-clamp-2">{order.customerInformation?.deliveryAddress || 'Address not available'}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-white border border-slate-200 p-3 space-y-2">
+                  {restaurantToCustomerKm !== null && restaurantToCustomerKm !== undefined && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Restaurant to Customer</span>
+                      <span className="font-bold text-green-700">{Number(restaurantToCustomerKm).toFixed(2)} km</span>
+                    </div>
+                  )}
+                  {(totalJourneyKm !== null && totalJourneyKm !== undefined) || order.totalDistance !== null ? (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Total Journey</span>
+                      <span className="font-bold text-indigo-700">
+                        {Number(totalJourneyKm ?? order.totalDistance).toFixed(2)} km
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-100">
+                    <span className="text-slate-500">Delivery charge</span>
+                    <span className="font-bold text-slate-900">₹{chargedDeliveryFee}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -740,9 +852,14 @@ const OrderDetails = () => {
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="font-bold text-lg mb-4 text-gray-800">Customer Information</h3>
           <div className="space-y-3 text-sm">
-            <div>
-              <p className="font-semibold text-gray-900">{order.customerInformation.name}</p>
-              <p className="text-xs text-gray-500">Customer ID: {order.customerInformation.customerId.substring(0, 12)}</p>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <User size={22} className="text-blue-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900">{order.customerInformation.name}</p>
+                <p className="text-xs text-gray-500">Customer ID: {order.customerInformation.customerId.substring(0, 12)}</p>
+              </div>
             </div>
             <div className="flex items-start space-x-2">
               <Mail size={16} className="text-red-500 mt-1" />
@@ -767,9 +884,14 @@ const OrderDetails = () => {
           <h3 className="font-bold text-lg mb-4 text-gray-800">Delivery Executive Information</h3>
           {order.deliveryPartnerInformation ? (
             <div className="space-y-3 text-sm">
-              <div>
-                <p className="font-semibold text-gray-900">{order.deliveryPartnerInformation.name}</p>
-                <p className="text-xs text-gray-500">Executive ID: {order.deliveryPartnerInformation.partnerId.substring(0, 12)}</p>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <Bike size={22} className="text-emerald-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">{order.deliveryPartnerInformation.name}</p>
+                  <p className="text-xs text-gray-500">Executive ID: {order.deliveryPartnerInformation.partnerId.substring(0, 12)}</p>
+                </div>
               </div>
               <div className="flex items-start space-x-2">
                 <Phone size={16} className="text-red-500 mt-1" />
@@ -932,33 +1054,46 @@ const OrderDetails = () => {
       {}
       {
         showStatusModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-              <div className="flex items-center justify-between p-4 border-b">
-                <h3 className="font-bold text-lg text-gray-800">Change Delivery Status</h3>
+          <div className="fixed inset-0 bg-slate-100/85 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto px-4 py-8">
+            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-2xl w-full">
+              <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white rounded-t-xl">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-xl text-slate-900">Change Delivery Status</h3>
+                    {(selectedStatus === 'cancelled' || selectedStatus === 'admin_cancelled') && (
+                      <span className="text-xs font-semibold text-red-700 bg-red-100 border border-red-200 px-2 py-1 rounded-full">
+                        Cancellation flow
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Update the order state with a clear admin note so the next action is easy to understand.
+                  </p>
+                </div>
                 <button
                   onClick={() => {
                     setShowStatusModal(false);
                     setSelectedStatus('');
                     setCancelReason('');
                   }}
-                  className="text-gray-500 hover:text-gray-700"
+                  className="text-slate-500 hover:text-slate-800 p-1 rounded-full hover:bg-slate-100"
+                  aria-label="Close status dialog"
                 >
                   <X size={20} />
                 </button>
               </div>
 
-              <div className="p-4 space-y-4">
+              <div className="p-5 space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
                     Select New Status
                   </label>
                   <select
                     value={selectedStatus}
                     onChange={(e) => setSelectedStatus(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
                   >
-                    <option value="">-- Select Status --</option>
+                    <option value="">Select status</option>
                     {DELIVERY_STATUSES.map((status) => (
                       <option key={status.value} value={status.value}>
                         {status.label}
@@ -968,25 +1103,34 @@ const OrderDetails = () => {
                 </div>
 
                 {(selectedStatus === 'cancelled' || selectedStatus === 'admin_cancelled') && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3 mb-3">
+                      <AlertTriangle className="text-red-600 shrink-0 mt-0.5" size={18} />
+                      <div>
+                        <p className="text-sm font-semibold text-red-900">Cancellation needs a reason</p>
+                        <p className="text-sm text-red-700 mt-1">
+                          This note is saved with the order and helps support teams explain why the order was cancelled.
+                        </p>
+                      </div>
+                    </div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
                       Cancellation Reason <span className="text-red-500">*</span>
                     </label>
                     <textarea
                       value={cancelReason}
                       onChange={(e) => setCancelReason(e.target.value)}
-                      placeholder="Enter reason for cancellation..."
+                      placeholder="Enter the reason for cancellation..."
                       rows={3}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full border border-red-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
                     />
                   </div>
                 )}
 
-                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-                  <p className="text-sm text-yellow-800">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <p className="text-sm text-amber-900 font-semibold">
                     <strong>Note:</strong> Changing the delivery status will notify:
                   </p>
-                  <ul className="text-sm text-yellow-700 list-disc list-inside mt-1">
+                  <ul className="text-sm text-amber-800 list-disc list-inside mt-1">
                     <li>Customer (via push notification)</li>
                     <li>Restaurant (via push notification)</li>
                     <li>Delivery Executive (via push notification)</li>
@@ -994,14 +1138,14 @@ const OrderDetails = () => {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 rounded-b-lg">
+              <div className="flex flex-col sm:flex-row sm:justify-end gap-3 p-5 border-t border-slate-200 bg-slate-50 rounded-b-xl">
                 <button
                   onClick={() => {
                     setShowStatusModal(false);
                     setSelectedStatus('');
                     setCancelReason('');
                   }}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100"
+                  className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-white font-semibold"
                   disabled={isUpdating}
                 >
                   Cancel
@@ -1009,9 +1153,9 @@ const OrderDetails = () => {
                 <button
                   onClick={handleStatusChange}
                   disabled={!selectedStatus || isUpdating}
-                  className={`px-4 py-2 rounded-md text-white font-medium ${selectedStatus === 'cancelled' || selectedStatus === 'admin_cancelled'
-                    ? 'bg-red-500 hover:bg-red-600'
-                    : 'bg-blue-500 hover:bg-blue-600'
+                  className={`px-4 py-2.5 rounded-lg text-white font-semibold shadow-sm ${selectedStatus === 'cancelled' || selectedStatus === 'admin_cancelled'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {isUpdating ? 'Updating...' : 'Confirm Change'}
@@ -1084,84 +1228,153 @@ const OrderDetails = () => {
 
       {}
       {showReassignModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="font-bold text-lg text-gray-800">Reassign Order</h3>
+        <div className="fixed inset-1 bg-slate-100/85 backdrop-blur-sm z-50 px-6 py-8">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-6xl w-full h-[calc(100vh-3rem)] flex flex-col overflow-hidden">
+            <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-white rounded-t-xl">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+                    <User className="text-indigo-600" size={20} />
+                  </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-xl text-slate-900">Reassign Order</h3>
+                    <span className="text-xs font-semibold text-blue-700 bg-blue-100 border border-blue-200 px-2 py-1 rounded-full">
+                      Delivery executive change
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Select the new delivery executive and add a reason so operations can track why the assignment changed.
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => {
                   setShowReassignModal(false);
                   setSelectedExecutive('');
                   setReassignReason('');
                 }}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-slate-500 hover:text-slate-800 p-1 rounded-full hover:bg-white"
+                aria-label="Close reassignment dialog"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select New Executive
-                </label>
-                {loadingExecutives ? (
-                  <div className="text-sm text-gray-500">Loading executives...</div>
-                ) : (
-                  <select
-                    value={selectedExecutive}
-                    onChange={(e) => setSelectedExecutive(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">-- Select Executive --</option>
-                    {availableExecutives.map((partner) => (
-                      <option key={partner.uid} value={partner.uid}>
-                        {partner.profile?.first_name} {partner.profile?.last_name} ({partner.isActive ? 'Online' : 'Offline'})
-                      </option>
-                    ))}
-                  </select>
-                )}
+            <div className="grid grid-cols-1 lg:grid-cols-[420px_minmax(0,1fr)] flex-1 min-h-0">
+              <div className="flex flex-col min-h-0 border-r border-slate-200">
+                <div ref={reassignPanelRef} className="p-5 space-y-5 overflow-y-auto">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold">Order</p>
+                    <p className="font-bold text-slate-900 mt-1">#{order.orderId}</p>
+                    <p className="text-sm text-slate-600 mt-1 truncate">{order.customerInformation?.name || 'Customer'}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-orange-200 bg-orange-50/50 p-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                          <Store size={18} className="text-orange-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] text-orange-600 font-semibold uppercase tracking-wide">Restaurant</p>
+                          <p className="text-sm font-bold text-slate-900 truncate">{order.restaurant_name}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                          <Bike size={18} className="text-emerald-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wide">Current Executive</p>
+                          <p className="text-sm font-bold text-slate-900 truncate">
+                            {order.deliveryPartnerInformation?.name || 'Not assigned'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Select New Executive
+                    </label>
+                    {loadingExecutives ? (
+                      <div className="border border-slate-200 rounded-lg px-3 py-3 bg-slate-50 text-sm text-slate-500">
+                        Loading available delivery executives...
+                      </div>
+                    ) : (
+                      <select
+                        value={selectedExecutive}
+                        onChange={(e) => setSelectedExecutive(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="">Select delivery executive</option>
+                        {availableExecutives.map((partner) => (
+                          <option key={partner.uid} value={partner.uid}>
+                            {partner.profile?.first_name} {partner.profile?.last_name} ({partner.isActive ? 'Online' : 'Offline'})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Reason for Reassignment (Optional)
+                    </label>
+                    <textarea
+                      value={reassignReason}
+                      onChange={(e) => setReassignReason(e.target.value)}
+                      placeholder="Example: executive unavailable, order delayed, manual operations change..."
+                      rows={3}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm text-blue-900 font-semibold">What happens next</p>
+                    <p className="text-sm text-blue-800 mt-1">
+                      The previous executive will be notified about the reassignment, and the selected executive will receive the new assignment notification.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        setShowReassignModal(false);
+                        setSelectedExecutive('');
+                        setReassignReason('');
+                      }}
+                      className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-white font-semibold flex-1"
+                      disabled={isUpdating}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleReassign}
+                      disabled={!selectedExecutive || isUpdating}
+                      className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex-1"
+                    >
+                      {isUpdating ? 'Reassigning...' : 'Confirm Reassign'}
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Reason for Reassignment (Optional)
-                </label>
-                <textarea
-                  value={reassignReason}
-                  onChange={(e) => setReassignReason(e.target.value)}
-                  placeholder="Enter reason..."
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+              <div className="min-h-0 bg-slate-100 p-4">
+                <div className="h-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <DeliveryMap
+                    partner={order.partner}
+                    restaurant={order.restaurant}
+                    customer={order.customer}
+                    totalDistance={totalJourneyKm ?? order.totalDistance}
+                    height="100%"
+                    className="h-full min-h-[360px]"
+                  />
+                </div>
               </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> Previous executive will be cancelled and notified. New executive will receive assignment notification.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 rounded-b-lg">
-              <button
-                onClick={() => {
-                  setShowReassignModal(false);
-                  setSelectedExecutive('');
-                  setReassignReason('');
-                }}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100"
-                disabled={isUpdating}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReassign}
-                disabled={!selectedExecutive || isUpdating}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isUpdating ? 'Reassigning...' : 'Confirm Reassign'}
-              </button>
             </div>
           </div>
         </div>
