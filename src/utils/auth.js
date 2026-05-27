@@ -40,8 +40,20 @@ export const persistAuthUser = (user = {}) => {
   if (user.role !== undefined && user.role !== null) {
     localStorage.setItem('adminRole', String(user.role));
   }
-  const uid = extractRestaurantUid(user);
-  if (uid) persistRestaurantUid(uid);
+  const hasExplicitRestaurantId = Boolean(
+    user.restaurant_uid ||
+    user.restaurantUid ||
+    user.restaurantId ||
+    user.restaurant_id ||
+    user.restaurant?.uid ||
+    user.restaurant?.id ||
+    user.profile?.restaurant_uid ||
+    user.profile?.restaurantUid
+  );
+  if (hasExplicitRestaurantId) {
+    const uid = extractRestaurantUid(user);
+    if (uid) persistRestaurantUid(uid);
+  }
 };
 
 export const getAuthUser = () => {
@@ -67,21 +79,22 @@ export const getCurrentRestaurantUid = () => (
   localStorage.getItem('restaurant_uid') ||
   localStorage.getItem('restaurantId') ||
   localStorage.getItem('restaurant_id') ||
-  (isRestaurantAdmin() ? getAuthUser()?.uid : '')
-);
-
-export const extractRestaurantUid = (user = {}) => (
-  user.uid ||
-  user.restaurant_uid ||
-  user.restaurantUid ||
-  user.restaurantId ||
-  user.restaurant_id ||
-  user.restaurant?.uid ||
-  user.restaurant?.id ||
-  user.profile?.restaurant_uid ||
-  user.profile?.restaurantUid ||
   ''
 );
+
+export const extractRestaurantUid = (user = {}) => {
+  const explicit =
+    user.restaurant_uid ||
+    user.restaurantUid ||
+    user.restaurantId ||
+    user.restaurant_id ||
+    user.restaurant?.uid ||
+    user.restaurant?.id ||
+    user.profile?.restaurant_uid ||
+    user.profile?.restaurantUid;
+  if (explicit) return explicit;
+  return user.uid || '';
+};
 
 export const persistRestaurantUid = (uid) => {
   if (!uid) return;
