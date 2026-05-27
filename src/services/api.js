@@ -520,6 +520,18 @@ export const uploadRestaurantDocumentFileAdmin = (uid, docType, files) => {
   });
 };
 
+export const uploadRestaurantSingleDocument = (uid, documentType, file) => {
+  const formData = new FormData();
+  formData.append('documentType', documentType);
+  formData.append('file', file);
+  return api.patch(`/restaurants/${uid}/documents`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const deleteRestaurantDocumentsByType = (uid, documentType) =>
+  api.delete(`/restaurants/${uid}/documents/${documentType}`);
+
 export const getGlobalSettings = () => api.get('/global-settings');
 export const updateGlobalSettings = (data) => api.patch('/global-settings', data);
 
