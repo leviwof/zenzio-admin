@@ -442,28 +442,6 @@ const Header = ({ onLogout }) => {
             transition={{ delay: 0.25 }}
             className="hidden lg:flex items-center gap-2"
           >
-            <StatWidget
-              icon={ShoppingBag}
-              label="Active Orders"
-              value={stats.activeOrders ?? '—'}
-              color="bg-emerald-50 text-emerald-600"
-              loading={statsLoading}
-            />
-            <StatWidget
-              icon={Users}
-              label="Riders Online"
-              value={stats.ridersOnline ?? '—'}
-              color="bg-blue-50 text-blue-600"
-              loading={statsLoading}
-            />
-            <StatWidget
-              icon={Store}
-              label="Restaurants Live"
-              value={stats.restaurantsOnline ?? '—'}
-              color="bg-violet-50 text-violet-600"
-              loading={statsLoading}
-            />
-            <SystemStatusBadge status={systemStatus} />
           </motion.div>
 
           {/* Mobile date fallback */}
@@ -477,7 +455,7 @@ const Header = ({ onLogout }) => {
         {/* ── Right: Actions ── */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Search */}
-          <AnimatePresence>
+          {/* <AnimatePresence>
             {showSearch ? (
               <motion.div
                 initial={{ width: 0, opacity: 0 }}
@@ -511,7 +489,7 @@ const Header = ({ onLogout }) => {
                 <kbd className="text-[9px] text-gray-400 bg-white border border-gray-200 rounded px-1 py-0.5 font-medium">⌘K</kbd>
               </motion.button>
             )}
-          </AnimatePresence>
+          </AnimatePresence> */}
 
           {/* Order badge */}
           {unreadOrderCount > 0 && (
