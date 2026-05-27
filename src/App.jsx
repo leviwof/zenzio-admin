@@ -4,6 +4,7 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
+import { useEffect, useState } from "react";
 import Layout from "./components/layout/Layout";
 import { Toaster } from "react-hot-toast";
 import { OrderNotificationProvider } from "./context/OrderNotificationContext";
@@ -49,15 +50,56 @@ import AddEvent from "./pages/events/AddEvent";
 import BannerManagement from "./pages/banners/BannerManagement";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import { ROLES } from "./utils/auth";
+import { clearAuthStorage, getStoredAccessToken, logout as logoutApi, refreshAccessToken } from "./services/api";
 
 import ActivityLog from "./pages/activity/ActivityLog";
 
 function App() {
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreSession = async () => {
+      if (getStoredAccessToken()) {
+        if (!cancelled) setAuthReady(true);
+        return;
+      }
+
+      try {
+        await refreshAccessToken();
+        if (window.location.pathname === "/login") {
+          window.location.href = "/dashboard";
+          return;
+        }
+      } catch {
+        if (!["/login", "/register"].includes(window.location.pathname)) {
+          window.location.href = "/login";
+          return;
+        }
+      }
+
+      if (!cancelled) setAuthReady(true);
+    };
+
+    restoreSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleLogout = async () => {
-    await fetch("/auth/logout", { credentials: "include" });
-    localStorage.clear();
+    try {
+      await logoutApi();
+    } finally {
+      clearAuthStorage();
+    }
     window.location.href = "/login";
   };
+
+  if (!authReady) {
+    return null;
+  }
 
 
   return (

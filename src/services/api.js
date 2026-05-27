@@ -20,16 +20,60 @@ const api = axios.create({
   },
 });
 
+const ACCESS_TOKEN_KEYS = ['access_token', 'accessToken', 'authToken', 'token'];
+const AUTH_STORAGE_KEYS = [
+  ...ACCESS_TOKEN_KEYS,
+  'refresh_token',
+  'adminId',
+  'adminEmail',
+  'adminRole',
+  'loginRole',
+  'restaurantUid',
+  'restaurant_uid',
+  'restaurantId',
+  'restaurant_id',
+  'authUser',
+];
+
+export const getStoredAccessToken = () =>
+  ACCESS_TOKEN_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
+
+export const saveAccessToken = (accessToken) => {
+  if (!accessToken) return;
+  localStorage.setItem('access_token', accessToken);
+  localStorage.setItem('accessToken', accessToken);
+};
+
+export const clearAuthStorage = () => {
+  AUTH_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+  localStorage.clear();
+};
+
+export const refreshAccessToken = async () => {
+  const response = await axios.post('/auth/refresh', {}, {
+    baseURL: normalizedApiBaseUrl,
+    withCredentials: true,
+    headers: {
+      'Content-Type': 'application/json',
+      'clientId': CLIENT_ID,
+    },
+  });
+
+  const accessToken = response.data?.data?.accessToken || response.data?.accessToken;
+  if (!accessToken) {
+    throw new Error('Refresh response missing access token');
+  }
+
+  saveAccessToken(accessToken);
+  return accessToken;
+};
+
 
 
 
 api.interceptors.request.use(
   (config) => {
-    const token =
-      localStorage.getItem('access_token') || 
-      localStorage.getItem('authToken') ||
-      localStorage.getItem('token') ||
-      localStorage.getItem('accessToken');
+    const token = getStoredAccessToken();
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -47,10 +91,46 @@ api.interceptors.request.use(
 
 
 
+let refreshPromise = null;
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    const isRefreshRequest = originalRequest?.url?.includes('/auth/refresh');
+
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isRefreshRequest) {
+      originalRequest._retry = true;
+
+      try {
+        refreshPromise = refreshPromise || refreshAccessToken();
+        const accessToken = await refreshPromise;
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        clearAuthStorage();
+
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login?session_expired=true';
+        }
+
+        return Promise.reject(refreshError);
+      } finally {
+        refreshPromise = null;
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (false && error.response?.status === 401) {
       console.error('🚫 Unauthorized - Token invalid or expired');
 
       // Clear all auth data
@@ -94,6 +174,7 @@ export const getAdminProfile = () => api.get('/super-admin/profile');
 export const updateAdminProfile = (id, data) => api.patch(`/super-admin/${id}`, data);
 export const changePassword = (data) => api.patch('/auth/change-password', data);
 export const changeAdminPassword = (data) => api.patch('/super-admin/auth/change-password-local', data);
+export const logout = () => api.post('/auth/logout');
 export const requestOtpChangePassword = () => api.post('/super-admin/auth/request-otp');
 export const verifyOtpChangePassword = (otp) => api.post('/super-admin/auth/verify-otp', { otp });
 export const confirmChangePasswordOtp = (otp, newPassword) => api.patch('/super-admin/auth/reset-password-otp', { otp, newPassword });
