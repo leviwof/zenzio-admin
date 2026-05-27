@@ -263,7 +263,7 @@ const Dashboard = () => {
             Welcome back! Here's what's happening today.
           </p>
         </div>
-        <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
+        {/* <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
           <div className="bg-red-50 p-2 rounded-xl">
             <Calendar className="text-red-500" size={20} />
           </div>
@@ -273,7 +273,7 @@ const Dashboard = () => {
               {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
             </p>
           </div>
-        </div>
+        </div> */}
       </div>
 
       {/* Stats Grid */}
