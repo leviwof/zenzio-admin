@@ -63,6 +63,11 @@ const Sidebar = ({ isOpen }) => {
   const visibleMenuItems = menuItems.filter(item => {
     if (restaurantAdmin && item.adminOnly) return false;
     return true;
+  }).map(item => {
+    if (restaurantAdmin && item.id === 'restaurants') {
+      return { ...item, label: 'Manage Restaurant' };
+    }
+    return item;
   });
 
   const visibleQuickAdd = restaurantAdmin

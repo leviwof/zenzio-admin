@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Building2, Download, IndianRupee,
-  ShoppingBag, Calendar, Tag, Copy, Check, ChevronDown, ChevronUp,
+  ShoppingBag, Calendar, Tag, Copy, Check,
   Clock, MapPin, Sun, Coffee, UtensilsCrossed, Moon,
   Upload, FileText, X, AlertTriangle, ExternalLink,
   Activity, Power, Save,
@@ -13,10 +13,10 @@ import {
   getRestaurantById, toggleRestaurantActive, toggleRestaurantOff,
   getRestaurantAdminStats, updateRestaurantProfileAdmin,
   updateRestaurantAddressAdmin, uploadRestaurantLogoAdmin,
-  uploadRestaurantDocumentFileAdmin,
-  deleteRestaurantDocumentAdmin, deleteRestaurantDocumentFileAdmin,
+  uploadRestaurantSingleDocument, deleteRestaurantDocumentsByType,
   updateRestaurantOperationalHours
 } from '../../services/api'
+import DocumentUploadCard from '../../components/ui/DocumentUploadCard'
 import { getRestaurantImageUrl, getRestaurantLogoUrl } from '../../utils/imageUtils'
 import { saveAs } from 'file-saver'
 import toast from 'react-hot-toast'
@@ -210,7 +210,6 @@ const RestaurantDetails = () => {
   const [savingMeals, setSavingMeals] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
   const [mealErrors, setMealErrors] = useState({})
-  const [showDocs, setShowDocs] = useState(false)
   const [showModerationConfirm, setShowModerationConfirm] = useState(false)
   const [moderationLoading, setModerationLoading] = useState(false)
   const savedMealPayloadRef = useRef('')
@@ -221,6 +220,7 @@ const RestaurantDetails = () => {
   const [editingSection, setEditingSection] = useState(null)
   const [profileFormData, setProfileFormData] = useState({})
   const [addressFormData, setAddressFormData] = useState({})
+  const [uploadingDoc, setUploadingDoc] = useState(null)
 
   const displayEmail = restaurant?.profile?.contact_email || restaurant?.contact?.encryptedEmail || restaurant?.contact?.email || restaurant?.contact?.encryptedUsername || 'Not provided'
   const displayPhone = restaurant?.profile?.contact_number || restaurant?.contact?.encryptedPhone || restaurant?.contact?.phone || '-'
@@ -412,32 +412,32 @@ const RestaurantDetails = () => {
     }
   }
 
-  const handleDocFileUpload = async (event, docType) => {
-    const files = event.target.files
-    if (!files || files.length === 0) return
+  const handleDocUpload = async (file, documentType) => {
+    setUploadingDoc(documentType)
     try {
-      await uploadRestaurantDocumentFileAdmin(uid, docType, files)
-      toast.success(`${docType.toUpperCase()} uploaded`)
+      const res = await uploadRestaurantSingleDocument(uid, documentType, file)
+      toast.success('Document uploaded successfully')
       fetchRestaurantDetails()
-    } catch (err) { toast.error(err.response?.data?.message || 'Upload failed') }
+      return res
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Upload failed'
+      toast.error(msg)
+      throw err
+    } finally {
+      setUploadingDoc(null)
+    }
   }
 
-  const handleDeleteDoc = async (docType, label) => {
-    if (!window.confirm(`Remove all ${label} documents?`)) return
+  const handleDocRemove = async (documentType) => {
     try {
-      await deleteRestaurantDocumentAdmin(uid, docType)
-      toast.success(`${label} removed`)
+      await deleteRestaurantDocumentsByType(uid, documentType)
+      toast.success('Document removed successfully')
       fetchRestaurantDetails()
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to remove') }
-  }
-
-  const handleDeleteDocFile = async (docType, filename) => {
-    if (!window.confirm('Remove this file?')) return
-    try {
-      await deleteRestaurantDocumentFileAdmin(uid, docType, filename)
-      toast.success('File removed')
-      fetchRestaurantDetails()
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to remove file') }
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Remove failed'
+      toast.error(msg)
+      throw err
+    }
   }
 
   const statusInfo = restaurant ? getStatusDisplay(restaurant) : { label: 'Unknown', className: '', dot: '' }
@@ -446,24 +446,12 @@ const RestaurantDetails = () => {
 
   const doc = restaurant?.documents?.[0]
 
-  const renderDocumentPreview = (file, index, label) => {
-    const url = getRestaurantImageUrl(file)
-    const ext = file.split('.').pop().toLowerCase()
-    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)
-    if (isImage) {
-      return (
-        <a href={url} target="_blank" rel="noopener noreferrer" key={index} className="relative group block">
-          <img src={url} alt={`${label} ${index + 1}`} className="w-full h-28 object-cover rounded-xl border border-gray-200 group-hover:opacity-90 transition-opacity" />
-        </a>
-      )
-    }
-    return (
-      <a href={url} target="_blank" rel="noopener noreferrer" key={index} className="w-full h-28 flex flex-col items-center justify-center bg-gray-50 rounded-xl border border-gray-200 hover:bg-gray-100 transition-colors group">
-        <FileText size={24} className="text-indigo-500 mb-1 group-hover:scale-110 transition-transform" />
-        <span className="text-[10px] text-gray-500 font-medium">{ext.toUpperCase()}</span>
-      </a>
-    )
-  }
+  const DOCUMENT_CONFIG = [
+    { key: 'file_fssai', label: 'FSSAI License', icon: FileText, files: doc?.file_fssai },
+    { key: 'file_gst', label: 'GST Certificate', icon: FileText, files: doc?.file_gst },
+    { key: 'file_trade_license', label: 'Trade License', icon: FileText, files: doc?.file_trade_license },
+    { key: 'file_other_doc', label: 'Other Document', icon: FileText, files: doc?.file_other_doc },
+  ]
 
   if (loading) {
     return (
@@ -871,72 +859,34 @@ const RestaurantDetails = () => {
             </CardContent>
           </Card>
 
-          {doc && (
-            <Card>
-              <CardHeader className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <FileText size={16} className="text-indigo-500" />
-                  Documents
-                </h3>
-                <button onClick={() => setShowDocs(!showDocs)} className="p-1 rounded-lg hover:bg-gray-100 transition-colors">
-                  {showDocs ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-                </button>
-              </CardHeader>
-              <AnimatePresence>
-                {showDocs && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <CardContent className="space-y-4">
-                      {[
-                        { key: 'fssai', label: 'FSSAI License', number: doc.fssai_number, files: doc.file_fssai },
-                        { key: 'gst', label: 'GST Certificate', number: doc.gst_number, files: doc.file_gst },
-                        { key: 'trade', label: 'Trade License', number: doc.trade_license_number, files: doc.file_trade_license },
-                      ].filter(d => d.number).map((docType) => (
-                        <div key={docType.key} className="p-3 rounded-xl bg-gray-50/50 border border-gray-100">
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <p className="text-xs font-semibold text-gray-700">{docType.label}</p>
-                              <p className="text-[11px] text-gray-500 font-mono">{docType.number}</p>
-                            </div>
-                            {!restaurantAdmin && (
-                              <div className="flex items-center gap-1.5">
-                                <label className="px-2 py-1 text-[10px] text-indigo-600 hover:text-indigo-800 cursor-pointer border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
-                                  <Upload size={12} className="inline mr-1" />Upload
-                                  <input type="file" multiple className="hidden" onChange={(e) => handleDocFileUpload(e, docType.key)} />
-                                </label>
-                                <button onClick={() => handleDeleteDoc(docType.key, docType.label)} className="px-2 py-1 text-[10px] text-red-500 hover:text-red-700 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
-                                  Remove
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          {docType.files && docType.files.length > 0 && (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                              {docType.files.map((file, idx) => (
-                                <div key={idx} className="relative group">
-                                  {renderDocumentPreview(file, idx, docType.label)}
-                                  {!restaurantAdmin && (
-                                    <button onClick={() => handleDeleteDocFile(docType.key, file)}
-                                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <X size={10} />
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </CardContent>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </Card>
-          )}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <FileText size={16} className="text-indigo-500" />
+                Restaurant Documents
+              </h3>
+              {doc && (
+                <span className="text-[11px] text-gray-400">
+                  Last updated {doc.updated_at ? new Date(doc.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {DOCUMENT_CONFIG.map((cfg) => (
+                <DocumentUploadCard
+                  key={cfg.key}
+                  label={cfg.label}
+                  icon={cfg.icon}
+                  documentType={cfg.key}
+                  files={cfg.files}
+                  onUpload={handleDocUpload}
+                  onRemove={handleDocRemove}
+                  uploading={uploadingDoc === cfg.key}
+                  getFileUrl={getRestaurantImageUrl}
+                />
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="space-y-4">
