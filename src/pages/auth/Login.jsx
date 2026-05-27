@@ -3,7 +3,7 @@
 // =============================================
 import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { adminLogin, restaurantLogin } from "../../services/api";
+import { adminLogin, restaurantLogin, saveAccessToken } from "../../services/api";
 import logo from "../../assets/logoadmin.png";
 import { extractRestaurantUid, persistAuthUser, persistRestaurantUid, ROLES } from "../../utils/auth";
 
@@ -41,7 +41,7 @@ const handleSubmit = async (e) => {
     }
 
     // 🔑 SAVE TOKENS (THIS FIXES EVERYTHING)
-    localStorage.setItem("access_token", data.accessToken);
+    saveAccessToken(data.accessToken);
     localStorage.setItem("refresh_token", data.refreshToken); // optional
 
     // 👤 SAVE USER INFO
