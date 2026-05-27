@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, FileText, Image, X, Download, Trash2, CheckCircle, AlertCircle, Loader2, Eye, ArrowUpFromLine, Replace } from 'lucide-react'
 
@@ -32,55 +32,6 @@ const isImageFile = (filename) => {
   return ['jpg', 'jpeg', 'png'].includes(getFileExtension(filename))
 }
 
-const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message }) => {
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            transition={{ type: 'spring', duration: 0.3 }}
-            className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-6 w-full max-w-sm mx-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
-                <AlertCircle size={20} className="text-red-500" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">{title || 'Confirm'}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">{message || 'Are you sure?'}</p>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={onConfirm}
-                className="px-4 py-2 text-xs font-medium text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors"
-              >
-                Remove
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
-}
-
 const UploadProgress = ({ progress }) => {
   return (
     <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
@@ -108,7 +59,9 @@ const DocumentUploadCard = ({
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [removing, setRemoving] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const removeBtnRef = useRef(null)
   const fileInputRef = useRef(null)
   const dropRef = useRef(null)
 
@@ -178,11 +131,14 @@ const DocumentUploadCard = ({
   }
 
   const handleConfirmRemove = async () => {
-    setShowConfirm(false)
+    setRemoving(true)
     try {
       await onRemove(documentType)
+      setShowConfirm(false)
     } catch (err) {
       setError(err?.response?.data?.message || err?.message || 'Remove failed')
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -292,13 +248,52 @@ const DocumentUploadCard = ({
                     <Replace size={14} />
                     Replace
                   </button>
-                  <button
-                    onClick={handleRemoveClick}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
-                  >
-                    <Trash2 size={14} />
-                    Remove
-                  </button>
+                  <div className="relative flex-1">
+                    <button
+                      ref={removeBtnRef}
+                      onClick={() => setShowConfirm(true)}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
+                    >
+                      {removing ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={14} />
+                      )}
+                      {removing ? 'Removing...' : 'Remove'}
+                    </button>
+                    <AnimatePresence>
+                      {showConfirm && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute bottom-full left-0 right-0 mb-2 z-50"
+                        >
+                          <div className="bg-white rounded-xl shadow-xl border border-gray-200 p-3">
+                            <p className="text-xs font-medium text-gray-700 mb-2.5">
+                              Remove {label}?
+                            </p>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => setShowConfirm(false)}
+                                className="flex-1 px-2.5 py-1.5 text-[11px] font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={handleConfirmRemove}
+                                disabled={removing}
+                                className="flex-1 px-2.5 py-1.5 text-[11px] font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 rounded-lg transition-colors"
+                              >
+                                {removing ? 'Removing...' : 'Remove'}
+                              </button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -396,13 +391,6 @@ const DocumentUploadCard = ({
         </div>
       </motion.div>
 
-      <ConfirmModal
-        isOpen={showConfirm}
-        onClose={() => setShowConfirm(false)}
-        onConfirm={handleConfirmRemove}
-        title="Remove Document"
-        message={`Are you sure you want to remove the ${label}? This action cannot be undone.`}
-      />
     </>
   )
 }
