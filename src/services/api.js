@@ -195,6 +195,16 @@ export const getCustomerById = (id) => api.get(`/users/${id}`);
 export const updateCustomerStatus = (uid, payload) =>
   api.patch(`/users/${uid}/status/admin`, payload);
 export const deleteCustomer = (uid) => api.delete(`/users/${uid}`);
+export const getCustomerCities = () => api.get('/users/cities');
+export const getCustomerStates = () => api.get('/users/states');
+export const exportCustomers = (params) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/users/export', { params });
+export const bulkUpdateCustomerStatus = (uids, status) =>
+  api.post('/users/bulk/status', { uids, status });
+export const bulkDeleteCustomers = (uids) =>
+  api.post('/users/bulk/delete', { uids });
+export const activateAllCustomers = () =>
+  api.patch('/users/bulk/activate-all');
 
 
 
@@ -292,6 +302,10 @@ export const getAllOrders = (params = {}) =>
         ? { restaurant_uid: getCurrentRestaurantUid() }
         : {}),
     },
+  });
+export const getCustomerOrders = (customerUid, params = {}) =>
+  api.get('/orders/admin/all', {
+    params: { customer: customerUid, limit: 10, ...params },
   });
 export const getOrderStats = () => api.get('/orders/stats');
 export const getOrderMonitoringStats = () => api.get('/orders/monitoring-stats');
