@@ -390,7 +390,7 @@ export const getAllMenus = (params = {}) => {
 };
 
 export const getMenusByRestaurant = (restaurantUid, params) =>
-  api.get(`/restaurant-menu/by-restaurant`, { params: { restaurant_uid: restaurantUid, includeInactive: 'true', ...params } });
+  api.get(`/restaurant-menu`, { params: { restaurant: restaurantUid, includeInactive: 'true', ...params } });
 
 export const getMenuByUid = (menuUid) => api.get(`/restaurant-menu/admin/${menuUid}`);
 export const getPublicMenuByUid = (menuUid) => api.get(`/restaurant-menu/${menuUid}`);
@@ -416,6 +416,9 @@ export const bulkUpdateMenuStatus = (menuUids, newStatus) =>
 
 export const bulkDeleteMenu = (menuUids) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.delete('/restaurant-menu/bulk-soft', { data: { ids: menuUids } });
+
+export const exportMenus = (params) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/restaurant-menu/export', { params });
 
 
 
