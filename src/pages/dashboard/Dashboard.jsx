@@ -574,7 +574,7 @@ const Dashboard = () => {
                 onClick={() => setFilters((prev) => ({ ...prev, preset: preset.id, customStart: "", customEnd: "" }))}
                 className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                   mergedFilters.preset === preset.id && !mergedFilters.customStart && !mergedFilters.customEnd
-                    ? "bg-red-500 text-white shadow-sm"
+                    ? "bg-indigo-500 text-white shadow-sm shadow-indigo-200"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
