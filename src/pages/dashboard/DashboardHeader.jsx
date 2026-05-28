@@ -108,29 +108,62 @@ const DateRangeDropdown = () => {
   )
 }
 
-const QuickAnalyticsToggle = () => {
-  const { quickAnalytics, setQuickAnalytics } = useDashboard()
-  const options = [
-    { key: 'day', label: 'Day' },
-    { key: 'week', label: 'Week' },
-    { key: 'month', label: 'Month' },
-    { key: 'year', label: 'Year' },
-  ]
+const DateRangeInline = () => {
+  const { customDateRange, setCustomDateRange, setDateRange } = useDashboard()
+  const [from, setFrom] = useState(customDateRange?.start || '')
+  const [to, setTo] = useState(customDateRange?.end || '')
+
+  const handleApply = () => {
+    setCustomDateRange({ start: from, end: to })
+    setDateRange('custom')
+  }
+
+  const handleClear = () => {
+    setFrom('')
+    setTo('')
+    setCustomDateRange(null)
+    setDateRange('last7days')
+  }
+
+  const hasValue = from || to
+
   return (
-    <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
-      {options.map(opt => (
+    <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all ${
+      hasValue ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200'
+    }`}>
+      <Calendar size={14} className={hasValue ? 'text-indigo-500' : 'text-slate-400'} />
+      <input
+        type="date"
+        value={from}
+        onChange={(e) => setFrom(e.target.value)}
+        className="w-[110px] text-xs bg-transparent border-none outline-none p-0 text-slate-700 [color-scheme:light] [&::-webkit-calendar-picker-indicator]:opacity-40 [&::-webkit-calendar-picker-indicator]:hover:opacity-70"
+        placeholder="From"
+      />
+      <span className="text-slate-300 text-xs">—</span>
+      <input
+        type="date"
+        value={to}
+        onChange={(e) => setTo(e.target.value)}
+        className="w-[110px] text-xs bg-transparent border-none outline-none p-0 text-slate-700 [color-scheme:light] [&::-webkit-calendar-picker-indicator]:opacity-40 [&::-webkit-calendar-picker-indicator]:hover:opacity-70"
+        placeholder="To"
+      />
+      {hasValue ? (
         <button
-          key={opt.key}
-          onClick={() => setQuickAnalytics(opt.key)}
-          className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-            quickAnalytics === opt.key
-              ? 'bg-white text-slate-800 shadow-sm border border-slate-200'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
+          onClick={handleClear}
+          className="p-0.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+          title="Clear date range"
         >
-          {opt.label}
+          <FilterX size={12} />
         </button>
-      ))}
+      ) : (
+        <button
+          onClick={handleApply}
+          disabled={!from || !to}
+          className="px-2 py-0.5 text-[10px] font-semibold text-indigo-600 bg-indigo-50 rounded-md hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          Apply
+        </button>
+      )}
     </div>
   )
 }
@@ -206,7 +239,7 @@ const DashboardHeader = ({ userName = 'Admin' }) => {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* <HeaderClock /> */}
-          <QuickAnalyticsToggle />
+          <DateRangeInline />
         </div>
       </div>
 
