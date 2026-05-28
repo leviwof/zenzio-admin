@@ -252,7 +252,11 @@ const MenuManagement = () => {
   const [sortBy, setSortBy] = useState('updatedAt');
   const [sortOrder, setSortOrder] = useState('DESC');
 
-  const [restaurantFilter, setRestaurantFilter] = useState('all');
+  const restaurantFromUrl = new URLSearchParams(location.search).get('restaurant');
+  const restaurantFromState = location.state?.selectedRestaurant;
+  const [restaurantFilter, setRestaurantFilter] = useState(
+    restaurantAdmin ? 'all' : (restaurantFromState || restaurantFromUrl || 'all')
+  );
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [cuisineFilter, setCuisineFilter] = useState('all');
   const [foodTypeFilter, setFoodTypeFilter] = useState('all');
@@ -587,6 +591,15 @@ const MenuManagement = () => {
     }
   };
 
+  const handleRestaurantChange = (uid) => {
+    setRestaurantFilter(uid);
+    setCurrentPage(1);
+    setSelectedIds(new Set());
+    setRestaurantDropdownOpen(false);
+    setRestaurantSearch('');
+    navigate(uid === 'all' ? '/menu' : `/menu?restaurant=${uid}`, { replace: true });
+  };
+
   const resetFilters = () => {
     setSearchTerm('');
     setDebouncedSearch('');
@@ -605,6 +618,7 @@ const MenuManagement = () => {
     setCurrentPage(1);
     setSortBy('updatedAt');
     setSortOrder('DESC');
+    navigate('/menu', { replace: true });
     if (searchInputRef.current) searchInputRef.current.value = '';
   };
 
@@ -784,7 +798,7 @@ const MenuManagement = () => {
                       </div>
                       <div className="max-h-[280px] overflow-y-auto">
                         <button
-                          onClick={() => { setRestaurantFilter('all'); setRestaurantDropdownOpen(false); setRestaurantSearch(''); setCurrentPage(1); }}
+                          onClick={() => handleRestaurantChange('all')}
                           className={`w-full text-left px-3.5 py-2 text-xs font-medium transition-colors ${
                             restaurantFilter === 'all' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'
                           }`}
@@ -797,7 +811,7 @@ const MenuManagement = () => {
                           filteredRestaurants.map(r => (
                             <button
                               key={r.uid}
-                              onClick={() => { setRestaurantFilter(r.uid); setRestaurantDropdownOpen(false); setRestaurantSearch(''); setCurrentPage(1); }}
+                              onClick={() => handleRestaurantChange(r.uid)}
                               className={`w-full text-left px-3.5 py-2 text-xs font-medium transition-colors border-t border-gray-50 ${
                                 restaurantFilter === r.uid ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'
                               }`}
