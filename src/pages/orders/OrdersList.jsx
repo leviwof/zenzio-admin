@@ -468,7 +468,6 @@ const OrdersList = () => {
       const newStatusOrders = fetched.filter(o => shouldNotifyByStatus(o));
       newStatusOrders.forEach(order => {
         notifiedOrderIds.current.add(order.orderId || order.id);
-        addNewOrderNotification(order);
       });
 
       knownOrderIds.current = new Set(fetched.map(o => o.orderId || o.id));
