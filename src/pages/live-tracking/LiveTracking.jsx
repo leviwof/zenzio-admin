@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    DirectionsRenderer,
     GoogleMap,
     MarkerF,
     OverlayView,
@@ -40,7 +39,7 @@ const GOOGLE_MAPS_API_KEY =
     import.meta.env.VITE_GOOGLE_API_KEY ||
     import.meta.env.GOOGLE_MAPS_API_KEY ||
     import.meta.env.GOOGLE_API_KEY;
-const GOOGLE_LIBRARIES = ['places'];
+const GOOGLE_LIBRARIES = ['places', 'geometry'];
 
 const mapStyle = [
     { featureType: 'poi', stylers: [{ visibility: 'off' }] },
@@ -417,7 +416,7 @@ const LiveTracking = () => {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [lastRefreshed, setLastRefreshed] = useState(null);
-    const [directions, setDirections] = useState(null);
+    const [routePath, setRoutePath] = useState([]);
     const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
     const [mapZoom, setMapZoom] = useState(13);
     const [trailByExecutive, setTrailByExecutive] = useState({});
@@ -554,27 +553,72 @@ const LiveTracking = () => {
 
     useEffect(() => {
         if (!isLoaded || !window.google || !routePoints.executive || !routePoints.restaurant || !routePoints.customer) {
-            setDirections(null);
+            setRoutePath([]);
             return;
         }
 
-        const service = new window.google.maps.DirectionsService();
-        service.route(
-            {
-                origin: routePoints.executive,
-                destination: routePoints.customer,
-                waypoints: [{ location: routePoints.restaurant, stopover: true }],
-                travelMode: window.google.maps.TravelMode.DRIVING,
-                drivingOptions: {
-                    departureTime: new Date(),
-                    trafficModel: window.google.maps.TrafficModel.BEST_GUESS,
+        const fallbackDirectionsService = () => {
+            try {
+                const service = new window.google.maps.DirectionsService();
+                service.route(
+                    {
+                        origin: routePoints.executive,
+                        destination: routePoints.customer,
+                        waypoints: [{ location: routePoints.restaurant, stopover: true }],
+                        travelMode: window.google.maps.TravelMode.DRIVING,
+                    },
+                    (result, status) => {
+                        if (status === 'OK' && result?.routes?.[0]?.overview_path) {
+                            setRoutePath(result.routes[0].overview_path.map((p) => ({ lat: p.lat(), lng: p.lng() })));
+                        } else {
+                            setRoutePath([]);
+                        }
+                    },
+                );
+            } catch {
+                setRoutePath([]);
+            }
+        };
+
+        if (window.google.maps.routes?.Route?.computeRoutes) {
+            window.google.maps.routes.Route.computeRoutes({
+                origin: {
+                    location: {
+                        latLng: { latitude: routePoints.executive.lat, longitude: routePoints.executive.lng },
+                    },
                 },
-                optimizeWaypoints: false,
-            },
-            (result, status) => {
-                setDirections(status === 'OK' ? result : null);
-            },
-        );
+                destination: {
+                    location: {
+                        latLng: { latitude: routePoints.customer.lat, longitude: routePoints.customer.lng },
+                    },
+                },
+                intermediates: [
+                    {
+                        location: {
+                            latLng: { latitude: routePoints.restaurant.lat, longitude: routePoints.restaurant.lng },
+                        },
+                    },
+                ],
+                    travelMode: 'DRIVE',
+                    routingPreference: 'TRAFFIC_AWARE',
+                    departureTime: new Date().toISOString(),
+                    units: 'METRIC',
+                    fields: ['routes.polyline.encodedPolyline'],
+            })
+                .then(({ routes }) => {
+                    if (routes?.length > 0 && routes[0].polyline?.encodedPolyline) {
+                        const decodedPath = window.google.maps.geometry.encoding.decodePath(
+                            routes[0].polyline.encodedPolyline,
+                        );
+                        setRoutePath(decodedPath.map((p) => ({ lat: p.lat(), lng: p.lng() })));
+                    }
+                })
+                .catch(() => {
+                    fallbackDirectionsService();
+                });
+        } else {
+            fallbackDirectionsService();
+        }
     }, [isLoaded, routePoints]);
 
     const focusExecutive = useCallback((executive) => {
@@ -839,22 +883,18 @@ const LiveTracking = () => {
                                         mapRef.current = map;
                                     }}
                                 >
-                                    {directions && (
-                                        <DirectionsRenderer
-                                            directions={directions}
+                                    {routePath.length > 1 && (
+                                        <PolylineF
+                                            path={routePath}
                                             options={{
-                                                suppressMarkers: true,
-                                                preserveViewport: true,
-                                                polylineOptions: {
-                                                    strokeColor: '#2563eb',
-                                                    strokeOpacity: 0.9,
-                                                    strokeWeight: 5,
-                                                },
+                                                strokeColor: '#2563eb',
+                                                strokeOpacity: 0.9,
+                                                strokeWeight: 5,
                                             }}
                                         />
                                     )}
 
-                                    {!directions && fallbackRoutePath.length > 1 && (
+                                    {routePath.length <= 1 && fallbackRoutePath.length > 1 && (
                                         <PolylineF
                                             path={fallbackRoutePath}
                                             options={{
