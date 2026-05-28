@@ -5,7 +5,7 @@ import {
   Search, Download, Edit3, MoreVertical, Trash2,
   Store, Star, MapPin, Calendar, RotateCcw,
   CheckSquare, Square, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Filter, ArrowUpDown, Clock, Power, UserCheck, BadgeCheck,
+  Filter, ArrowUpDown, Clock, Power, UserCheck, BadgeCheck, X,
   Loader2, UtensilsCrossed, RefreshCw, ChevronDown,
 } from "lucide-react";
 import {
@@ -331,7 +331,8 @@ const RestaurantsList = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [cityFilter, setCityFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [sortBy, setSortBy] = useState("name");
 
   // Selection
@@ -452,16 +453,14 @@ const RestaurantsList = () => {
       filtered = filtered.filter((r) => (restaurantDetails[r.uid]?.rating || 0) >= minRating);
     }
 
-    // Date filter
-    if (dateFilter !== "all") {
-      const now = Date.now();
-      const ranges = {
-        week: 7 * 86400000,
-        month: 30 * 86400000,
-        year: 365 * 86400000,
-      };
-      const cutoff = now - (ranges[dateFilter] || 0);
-      filtered = filtered.filter((r) => r.createdAt && new Date(r.createdAt).getTime() >= cutoff);
+    // Date range filter
+    if (dateFrom) {
+      const from = new Date(dateFrom).setHours(0, 0, 0, 0);
+      filtered = filtered.filter((r) => r.createdAt && new Date(r.createdAt).getTime() >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo).setHours(23, 59, 59, 999);
+      filtered = filtered.filter((r) => r.createdAt && new Date(r.createdAt).getTime() <= to);
     }
 
     // Search
@@ -495,7 +494,7 @@ const RestaurantsList = () => {
     });
 
     return filtered;
-  }, [restaurants, statusFilter, cityFilter, ratingFilter, dateFilter, debouncedSearch, sortBy, restaurantDetails]);
+  }, [restaurants, statusFilter, cityFilter, ratingFilter, dateFrom, dateTo, debouncedSearch, sortBy, restaurantDetails]);
 
   const filtered = useMemo(() => getFilteredAndSorted(), [getFilteredAndSorted]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
@@ -627,14 +626,15 @@ const RestaurantsList = () => {
     setStatusFilter("all");
     setCityFilter("all");
     setRatingFilter("all");
-    setDateFilter("all");
+    setDateFrom("");
+    setDateTo("");
     setSearchTerm("");
     setDebouncedSearch("");
     setCurrentPage(1);
     if (searchInputRef.current) searchInputRef.current.value = "";
   };
 
-  const hasActiveFilters = statusFilter !== "all" || cityFilter !== "all" || ratingFilter !== "all" || dateFilter !== "all" || debouncedSearch;
+  const hasActiveFilters = statusFilter !== "all" || cityFilter !== "all" || ratingFilter !== "all" || dateFrom || dateTo || debouncedSearch;
 
   // ── Redirect for Restaurant Admins ──
   if (restaurantAdmin) {
@@ -805,19 +805,32 @@ const RestaurantsList = () => {
               onClear={() => setRatingFilter("all")}
             />
 
-            <FilterDropdown
-              label="Registered"
-              icon={Calendar}
-              value={dateFilter}
-              options={[
-                { label: "All Time", value: "all" },
-                { label: "This Week", value: "week" },
-                { label: "This Month", value: "month" },
-                { label: "This Year", value: "year" },
-              ]}
-              onChange={(v) => { setDateFilter(v); setCurrentPage(1); }}
-              onClear={() => setDateFilter("all")}
-            />
+            <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-all duration-150 ${dateFrom || dateTo ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-gray-200 bg-white text-gray-600"}`}>
+              <Calendar size={14} className="shrink-0" />
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }}
+                className="text-xs bg-transparent border-none outline-none w-[110px] p-0 text-gray-700 [color-scheme:light] [&::-webkit-calendar-picker-indicator]:opacity-40 [&::-webkit-calendar-picker-indicator]:hover:opacity-70"
+                placeholder="From"
+              />
+              <span className="text-gray-300 text-xs">—</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }}
+                className="text-xs bg-transparent border-none outline-none w-[110px] p-0 text-gray-700 [color-scheme:light] [&::-webkit-calendar-picker-indicator]:opacity-40 [&::-webkit-calendar-picker-indicator]:hover:opacity-70"
+                placeholder="To"
+              />
+              {(dateFrom || dateTo) && (
+                <button
+                  onClick={() => { setDateFrom(""); setDateTo(""); setCurrentPage(1); }}
+                  className="p-0.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
 
             {filtered.length < restaurants.length && (
               <span className="text-xs text-gray-400 ml-1">
