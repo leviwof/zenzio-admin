@@ -283,6 +283,17 @@ const MenuManagement = () => {
   }, []);
 
   useEffect(() => {
+    if (restaurantAdmin) return;
+    const params = new URLSearchParams(location.search);
+    const fromUrl = params.get('restaurant');
+    const fromState = location.state?.selectedRestaurant;
+    const target = fromState || fromUrl || 'all';
+    if (target !== restaurantFilter) {
+      setRestaurantFilter(target);
+    }
+  }, [location.search, location.state?.selectedRestaurant]);
+
+  useEffect(() => {
     const t = setTimeout(() => {
       setDebouncedSearch(searchTerm);
       setCurrentPage(1);
