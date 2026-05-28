@@ -552,7 +552,18 @@ export const deleteRestaurantDocumentsByType = (uid, documentType) =>
 export const getGlobalSettings = () => api.get('/global-settings');
 export const updateGlobalSettings = (data) => api.patch('/global-settings', data);
 
-
-
+// Dashboard Analytics APIs
+export const getDashboardOverview = (params) =>
+  api.get('/dashboard/overview', { params });
+export const getDashboardRevenue = (params) =>
+  api.get('/dashboard/revenue', { params });
+export const getDashboardOrders = (params) =>
+  api.get('/dashboard/orders', { params });
+export const getDashboardCustomers = (params) =>
+  api.get('/dashboard/customers', { params });
+export const getDashboardRestaurants = (params) =>
+  api.get('/dashboard/restaurants', { params });
+export const getDashboardInsights = (params) =>
+  api.get('/dashboard/insights', { params });
 
 export default api;

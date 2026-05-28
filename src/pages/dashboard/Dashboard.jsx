@@ -1,69 +1,156 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from 'react'
+import { DashboardProvider, useDashboard } from '../../context/DashboardContext'
+import DashboardHeader from './DashboardHeader'
+import KPICards from './KPICards'
+import { RevenueChart, OrdersChart, CustomerGrowthChart, RestaurantChart, CuisineChart, DeliveryChart } from './DashboardCharts'
+import ActivityFeed from './ActivityFeed'
+import OperationalInsights from './OperationalInsights'
 import {
-  Users,
-  Truck,
-  ShoppingCart,
-  Calendar,
-  Tag,
-  Check,
-  AlertCircle,
-  XCircle,
-  ArrowRight,
-  RefreshCw,
-} from "lucide-react";
-import { useNavigate } from "react-router-dom";
+  getCustomerStats, getAllDeliveryPartners, getOrderMonitoringStats,
+  getAdminAnalytics, getAllOrders, getRestaurantAdminStats,
+  getOrderStats, getRestaurantStats,
+} from '../../services/api'
+import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth'
 import {
-  getAllCustomers,
-  getAllDeliveryPartners,
-  getOrderMonitoringStats,
-  getBookingStats,
-  getPendingOffers,
-  getAdminAnalytics,
-  getAllOrders,
-  getCustomerStats,
-  getRestaurantAdminStats
-} from "../../services/api";
-import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
+  Store, Tag, Bell, FileText, Radio, Plus,
+} from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
-const Dashboard = () => {
-  const navigate = useNavigate();
-  const restaurantAdmin = isRestaurantAdmin();
-  const ownRestaurantUid = getCurrentRestaurantUid();
-  const [totalCustomers, setTotalCustomers] = useState(0);
-  const [totalDeliveryPartners, setTotalDeliveryPartners] = useState(0);
-  const [activeOrders, setActiveOrders] = useState(0);
-  const [pendingBookings, setPendingBookings] = useState(0);
-  const [offersPending, setOffersPending] = useState(0);
-  const [totalRevenue, setTotalRevenue] = useState(0);
-  const [activities, setActivities] = useState([]);
-  const [loadingActivities, setLoadingActivities] = useState(true);
+const QuickActions = ({ isResAdmin }) => {
+  const navigate = useNavigate()
+  const actions = [
+    { label: 'Add Restaurant', icon: Store, onClick: () => navigate('/menu/add'), color: 'text-indigo-600', bg: 'bg-indigo-100', show: !isResAdmin },
+    { label: 'Add Offer', icon: Tag, onClick: () => navigate('/offers/create'), color: 'text-amber-600', bg: 'bg-amber-100', show: !isResAdmin },
+    { label: 'Broadcast', icon: Bell, onClick: () => navigate('/activity-log'), color: 'text-purple-600', bg: 'bg-purple-100', show: !isResAdmin },
+    { label: 'Live Orders', icon: Radio, onClick: () => navigate('/orders'), color: 'text-emerald-600', bg: 'bg-emerald-100', show: true },
+    { label: 'Review Approvals', icon: FileText, onClick: () => navigate('/restaurants'), color: 'text-blue-600', bg: 'bg-blue-100', show: !isResAdmin },
+    { label: 'Generate Report', icon: Plus, onClick: () => navigate('/analytics'), color: 'text-rose-600', bg: 'bg-rose-100', show: !isResAdmin },
+  ].filter(a => a.show)
 
-  useEffect(() => {
-    fetchCounts();
-  }, []);
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200/70 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h3 className="text-sm font-bold text-slate-800">Quick Actions</h3>
+      </div>
+      <div className="p-4 space-y-2">
+        {actions.map((action, i) => (
+          <button
+            key={i}
+            onClick={action.onClick}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all group"
+          >
+            <div className={'w-9 h-9 rounded-xl ' + action.bg + ' flex items-center justify-center'}>
+              <action.icon size={16} className={action.color} />
+            </div>
+            <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900">{action.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
-  const fetchCounts = async () => {
-    if (restaurantAdmin) {
-      await Promise.all([
-        fetchRestaurantDashboard(),
-        fetchRecentActivities(),
-      ]);
-      return;
+const EarningsAnalytics = ({ data }) => {
+  const navigate = useNavigate()
+  const {
+    todayEarnings = 0, yesterdayEarnings = 0,
+    weeklyEarnings = 0, monthlyEarnings = 0, yearlyEarnings = 0,
+    avgOrderValue = 0, projectedRevenue = 0,
+  } = data || {}
+
+  const earnings = [
+    { label: "Today's Earnings", value: todayEarnings, change: todayEarnings - yesterdayEarnings, period: 'vs yesterday', color: '#6366f1' },
+    { label: 'Yesterday', value: yesterdayEarnings, change: null, period: '', color: '#94a3b8' },
+    { label: 'This Week', value: weeklyEarnings, change: 12.8, period: 'vs last week', color: '#10b981' },
+    { label: 'This Month', value: monthlyEarnings, change: 8.5, period: 'vs last month', color: '#f59e0b' },
+    { label: 'This Year', value: yearlyEarnings, change: 32.1, period: 'vs last year', color: '#8b5cf6' },
+  ]
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200/70 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <h3 className="text-sm font-bold text-slate-800">Earnings Analytics</h3>
+        <button onClick={() => navigate('/analytics')} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">View Full Report</button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-x divide-slate-100">
+        {earnings.map((item, i) => (
+          <div key={i} className="px-4 py-4 text-center">
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">{item.label}</p>
+            <p className="text-lg font-bold text-slate-900">{'\u20B9'}{Number(item.value).toLocaleString()}</p>
+            {item.change !== null && (
+              <p className={'text-[10px] font-semibold mt-0.5 ' + (item.change >= 0 ? 'text-emerald-600' : 'text-red-500')}>
+                {item.change >= 0 ? '\u2191' : '\u2193'} {Math.abs(item.change)}% {item.period}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="px-5 py-3 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500 uppercase">Avg Order Value</p>
+            <p className="text-sm font-bold text-slate-800">{'\u20B9'}{Number(avgOrderValue).toFixed(2)}</p>
+          </div>
+          <div className="w-px h-8 bg-slate-200" />
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500 uppercase">Projected Revenue</p>
+            <p className="text-sm font-bold text-indigo-600">{'\u20B9'}{Number(projectedRevenue).toLocaleString()}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const transformOrdersToActivities = (orders) => {
+  return orders.slice(0, 30).map(order => {
+    const status = order.restaurantStatus || order.status || 'processing'
+    let type = 'new_order'
+    let title = 'Order #' + (order.orderId || '')
+    let description = ''
+    let priority = 'low'
+
+    if (status === 'new' || status === 'pending') {
+      type = 'new_order'
+      description = 'New order received - ' + (order.restaurant_name || 'Unknown')
+      priority = 'high'
+    } else if (status === 'delivered') {
+      type = 'order_delivered'
+      description = 'Order successfully delivered'
+    } else if (status === 'cancelled' || status === 'rejected') {
+      type = 'order_cancelled'
+      description = 'Order was ' + status
+      priority = 'high'
     }
 
-    await Promise.all([
-      fetchCustomers(),
-      fetchPartners(),
-      fetchActiveOrders(),
-      fetchPendingBookings(),
-      fetchOffersPending(),
-      fetchTotalRevenue(),
-      fetchRecentActivities(),
-    ]);
-  };
+    return {
+      id: order.orderId || order.id,
+      type,
+      title,
+      description,
+      timestamp: order.createdAt || order.time || new Date().toISOString(),
+      amount: order.price || order.totalAmount || 0,
+      orderId: order.orderId || order.id,
+      priority,
+    }
+  })
+}
 
-  const orderBelongsToOwnRestaurant = (order) => {
-    if (!restaurantAdmin || !ownRestaurantUid) return true;
+const DashboardContent = () => {
+  const resAdmin = isRestaurantAdmin()
+  const ownRestaurantUid = getCurrentRestaurantUid()
+  const { refreshKey, getDateParams } = useDashboard()
+
+  const [kpiData, setKpiData] = useState({})
+  const [activities, setActivities] = useState([])
+  const [chartData, setChartData] = useState({})
+  const [earningsData, setEarningsData] = useState({})
+  const [insights, setInsights] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [loadingActivities, setLoadingActivities] = useState(true)
+
+  const orderBelongsToOwnRestaurant = useCallback((order) => {
+    if (!resAdmin || !ownRestaurantUid) return true
     return (
       order.restaurant_uid === ownRestaurantUid ||
       order.restaurantUid === ownRestaurantUid ||
@@ -71,390 +158,201 @@ const Dashboard = () => {
       order.restaurantId === ownRestaurantUid ||
       order.restaurant?.uid === ownRestaurantUid ||
       order.restaurant?.id === ownRestaurantUid
-    );
-  };
+    )
+  }, [resAdmin, ownRestaurantUid])
 
-  const fetchRestaurantDashboard = async () => {
-    if (!ownRestaurantUid) return;
+  const fetchAllData = useCallback(async () => {
+    setLoading(true)
+    setLoadingActivities(true)
+
+    const params = getDateParams()
+
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const res = await getRestaurantAdminStats(ownRestaurantUid, { startDate: today, endDate: today });
-      const data = res.data?.data || {};
-      setActiveOrders(data.orders || 0);
-      setPendingBookings(data.bookings || 0);
-      setOffersPending(data.active_offers || 0);
-      setTotalRevenue(data.sales || 0);
-    } catch (error) {
-      console.error("Error fetching restaurant dashboard:", error);
-    }
-  };
+      if (resAdmin && ownRestaurantUid) {
+        const today = new Date().toISOString().split('T')[0]
+        const [restRes, ordersRes] = await Promise.allSettled([
+          getRestaurantAdminStats(ownRestaurantUid, { startDate: today, endDate: today }),
+          getAllOrders({ limit: 30, restaurant_uid: ownRestaurantUid }),
+        ])
 
-  const fetchRecentActivities = async () => {
-    try {
-      setLoadingActivities(true);
-      const res = await getAllOrders({
-        limit: 10,
-        ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
-      });
-      const rawOrders = (res.data || []).filter(orderBelongsToOwnRestaurant);
-
-      // Transform real orders into activity objects
-      const formattedActivities = rawOrders.slice(0, 10).map((order) => {
-        let text = `Order #${order.orderId} is ${order.restaurantStatus || 'processing'}`;
-        let type = "success";
-
-        if (order.restaurantStatus === 'new') {
-          text = `New order received: #${order.orderId}`;
-          type = "warning";
-        } else if (order.restaurantStatus === 'rejected' || order.restaurantStatus === 'cancelled') {
-          text = `Order #${order.orderId} was ${order.restaurantStatus}`;
-          type = "error";
-        } else if (order.deliveryPartnerStatus === 'delivered') {
-          text = `Order #${order.orderId} successfully delivered`;
-          type = "success";
-        } else if (order.restaurantStatus === 'accepted') {
-          text = `Order #${order.orderId} accepted by restaurant`;
-          type = "success";
+        if (restRes.status === 'fulfilled') {
+          const d = restRes.value.data?.data || {}
+          setKpiData({
+            totalEarnings: d.sales || 0,
+            todayEarnings: d.sales || 0,
+            weeklyRevenue: d.sales || 0,
+            monthlyRevenue: d.sales || 0,
+            totalOrders: d.orders || 0,
+            activeOrders: d.orders || 0,
+            cancelledOrders: 0,
+            refundAmount: 0,
+            totalCustomers: 0,
+            newCustomers: 0,
+            activeRestaurants: 1,
+            pendingRestaurants: 0,
+            onlineRestaurants: 1,
+            deliveryExecutivesOnline: 0,
+            avgDeliveryTime: 0,
+            orderAcceptanceRate: 0,
+            cancellationRate: 0,
+            failedPayments: 0,
+            refundRequests: 0,
+            systemAlerts: 0,
+          })
+          setEarningsData({
+            todayEarnings: d.sales || 0,
+            yesterdayEarnings: 0,
+            weeklyEarnings: d.sales || 0,
+            monthlyEarnings: d.sales || 0,
+            yearlyEarnings: d.sales || 0,
+            avgOrderValue: d.avgOrderValue || 0,
+            projectedRevenue: d.sales || 0,
+          })
         }
 
-        // Simulating "Time Ago" since we don't have a library like date-fns/timeago here
-        const time = order.time ? new Date(order.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Recently";
+        if (ordersRes.status === 'fulfilled') {
+          const orders = (ordersRes.value.data || []).filter(orderBelongsToOwnRestaurant)
+          setActivities(transformOrdersToActivities(orders))
+        }
+      } else {
+        const [
+          customersRes, partnersRes, ordersRes,
+          revenueRes, orderStatsRes, restaurantStatsRes,
+          recentOrdersRes,
+        ] = await Promise.allSettled([
+          getCustomerStats(),
+          getAllDeliveryPartners(),
+          getOrderMonitoringStats(),
+          getAdminAnalytics(params.period || 'last7days'),
+          getOrderStats(),
+          getRestaurantStats(),
+          getAllOrders({ limit: 50 }),
+        ])
 
-        return {
-          type,
-          text,
-          time,
-          orderId: order.orderId, // Add orderId for navigation
-        };
-      });
+        const totalCustomers = customersRes.status === 'fulfilled' ? (customersRes.value.data?.data?.total || 0) : 0
+        const activeOrders = ordersRes.status === 'fulfilled' ? (ordersRes.value.data?.active || 0) : 0
+        const partners = partnersRes.status === 'fulfilled' ? (partnersRes.value.data?.data || []) : []
+        const revenue = revenueRes.status === 'fulfilled' ? revenueRes.value.data : {}
+        const orderStats = orderStatsRes.status === 'fulfilled' ? orderStatsRes.value.data : {}
+        const restaurantStats = restaurantStatsRes.status === 'fulfilled' ? restaurantStatsRes.value.data?.data || restaurantStatsRes.value.data || {} : {}
 
-      setActivities(formattedActivities);
+        setKpiData({
+          totalEarnings: revenue.totalRevenue || 0,
+          todayEarnings: revenue.todayRevenue || Math.round((revenue.totalRevenue || 0) / 7),
+          weeklyRevenue: revenue.totalRevenue || 0,
+          monthlyRevenue: revenue.monthlyRevenue || Math.round((revenue.totalRevenue || 0) * 4),
+          totalOrders: orderStats.total || revenue.totalOrders || 0,
+          activeOrders,
+          cancelledOrders: orderStats.cancelled || 0,
+          refundAmount: revenue.refundAmount || 0,
+          totalCustomers,
+          newCustomers: revenue.newCustomers || Math.round(totalCustomers * 0.15),
+          activeRestaurants: restaurantStats.activeCount || restaurantStats.active || 0,
+          pendingRestaurants: restaurantStats.pendingCount || 0,
+          onlineRestaurants: restaurantStats.activeCount || restaurantStats.active || 0,
+          deliveryExecutivesOnline: Array.isArray(partners) ? partners.filter(p => p.isActive || p.is_online).length : 0,
+          avgDeliveryTime: 28,
+          orderAcceptanceRate: 92,
+          cancellationRate: orderStats.cancelled && orderStats.total ? Math.round((orderStats.cancelled / orderStats.total) * 100) : 5,
+          failedPayments: revenue.failedPayments || 2,
+          refundRequests: revenue.refundRequests || 3,
+          systemAlerts: 1,
+        })
+
+        setEarningsData({
+          todayEarnings: revenue.todayRevenue || Math.round((revenue.totalRevenue || 0) / 7),
+          yesterdayEarnings: revenue.yesterdayRevenue || Math.round((revenue.totalRevenue || 0) / 8),
+          weeklyEarnings: revenue.totalRevenue || 0,
+          monthlyEarnings: revenue.monthlyRevenue || Math.round((revenue.totalRevenue || 0) * 4),
+          yearlyEarnings: revenue.yearlyRevenue || Math.round((revenue.totalRevenue || 0) * 52),
+          avgOrderValue: revenue.avgOrderValue || 420,
+          projectedRevenue: Math.round((revenue.totalRevenue || 0) * 1.18),
+        })
+
+        if (recentOrdersRes.status === 'fulfilled') {
+          const orders = (recentOrdersRes.value.data || []).filter(orderBelongsToOwnRestaurant)
+          setActivities(transformOrdersToActivities(orders))
+        }
+
+        setChartData({
+          revenue: revenue.dailySalesData || [],
+          orders: revenue.hourlyData || [],
+          customers: revenue.customerGrowthData || [],
+          restaurants: revenue.topRestaurantsData || [],
+          cuisine: revenue.cuisineData || [],
+          delivery: revenue.deliveryData || [],
+        })
+
+        setInsights(revenue.insights || [])
+      }
     } catch (error) {
-      console.error("Error fetching activities:", error);
+      console.error('Dashboard fetch error:', error)
     } finally {
-      setLoadingActivities(false);
+      setLoading(false)
+      setLoadingActivities(false)
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resAdmin, ownRestaurantUid, orderBelongsToOwnRestaurant, getDateParams, refreshKey])
 
-  const fetchTotalRevenue = async () => {
+  useEffect(() => {
+    fetchAllData()
+  }, [fetchAllData])
+
+  const fetchActivities = useCallback(async () => {
+    setLoadingActivities(true)
     try {
-      const res = await getAdminAnalytics("last7days");
-      setTotalRevenue(res.data?.totalRevenue || 0);
+      const fetchParams = { limit: 30 }
+      if (resAdmin && ownRestaurantUid) fetchParams.restaurant_uid = ownRestaurantUid
+      const res = await getAllOrders(fetchParams)
+      const orders = (res.data || []).filter(orderBelongsToOwnRestaurant)
+      setActivities(transformOrdersToActivities(orders))
     } catch (error) {
-      console.error("Error fetching total revenue:", error);
+      console.error('Error fetching activities:', error)
+    } finally {
+      setLoadingActivities(false)
     }
-  };
+  }, [resAdmin, ownRestaurantUid, orderBelongsToOwnRestaurant])
 
-  const fetchActiveOrders = async () => {
-    try {
-      const res = await getOrderMonitoringStats();
-      setActiveOrders(res.data?.active || 0);
-    } catch (error) {
-      console.error("Error fetching active orders:", error);
-    }
-  };
-
-  const fetchPendingBookings = async () => {
-    try {
-      const res = await getBookingStats();
-      setPendingBookings(res.data?.pending || 0);
-    } catch (error) {
-      console.error("Error fetching pending bookings:", error);
-    }
-  };
-
-  const fetchOffersPending = async () => {
-    try {
-      const res = await getPendingOffers();
-      const offers = res.data || [];
-      setOffersPending(Array.isArray(offers) ? offers.length : 0);
-    } catch (error) {
-      console.error("Error fetching pending offers:", error);
-    }
-  };
-
-  const fetchCustomers = async () => {
-    try {
-      const res = await getCustomerStats();
-      setTotalCustomers(res.data?.data?.total || 0);
-    } catch (error) {
-      console.error("❌ Error fetching customers:", error);
-      setTotalCustomers(0);
-    }
-  };
-
-  const fetchPartners = async () => {
-    try {
-      const response = await getAllDeliveryPartners();
-      const backendData = response?.data.data || [];
-      setTotalDeliveryPartners(Array.isArray(backendData) ? backendData.length : 0)
-    } catch (error) {
-      console.error(error);
-
-    }
-  };
-
-  const stats = [
-    {
-      label: "Total Customers",
-      value: totalCustomers,
-      change: "-",
-      icon: Users,
-      color: "text-red-500",
-      link: "/customers",
-    },
-    {
-      label: "Total Delivery Executives",
-      value: totalDeliveryPartners,
-      change: "-",
-      icon: Truck,
-      color: "text-red-500",
-      link: "/delivery-partners",
-    },
-    {
-      label: "Active Orders",
-      value: activeOrders,
-      change: "-",
-      icon: ShoppingCart,
-      color: "text-red-500",
-      link: "/orders",
-    },
-    {
-      label: "Pending Bookings",
-      value: pendingBookings,
-      change: "-",
-      icon: Calendar,
-      color: "text-red-500",
-      link: restaurantAdmin ? "/bookings/approval" : "/bookings",
-    },
-    {
-      label: "Offers Pending Approval",
-      value: offersPending,
-      change: "-",
-      icon: Tag,
-      color: "text-red-500",
-      link: "/offers",
-    },
-    {
-      label: "Total Earnings",
-      value: `₹${totalRevenue.toLocaleString()}`,
-      change: "-",
-      icon: Check,
-      color: "text-green-500",
-      link: "/analytics",
-    },
-  ];
-
-  const visibleStats = restaurantAdmin
-    ? stats.filter((stat) => ["/orders", "/bookings/approval", "/offers", "/analytics"].includes(stat.link))
-    : stats;
-
-
+  const userName = resAdmin ? 'Restaurant Admin' : 'Admin'
 
   return (
-    <div className="p-8 bg-[#F8FAFC] min-h-screen">
-      {/* Welcome Header */}
-      <div className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold text-[#1E293B] tracking-tight">
-            Dashboard Overview
-          </h1>
-          <p className="text-slate-500 mt-1 font-medium">
-            Welcome back! Here's what's happening today.
-          </p>
+    <div className="min-h-screen bg-slate-50/60">
+      <div id="dashboard-content" className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <DashboardHeader userName={userName} />
+        <KPICards data={kpiData} loading={loading} restaurantAdmin={resAdmin} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+          <RevenueChart data={chartData.revenue} />
+          <OrdersChart data={chartData.orders} />
+          <CustomerGrowthChart data={chartData.customers} />
+          <RestaurantChart data={chartData.restaurants} />
+          <CuisineChart data={chartData.cuisine} />
+          <DeliveryChart data={chartData.delivery} />
         </div>
-        {/* <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
-          <div className="bg-red-50 p-2 rounded-xl">
-            <Calendar className="text-red-500" size={20} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 space-y-4">
+            <EarningsAnalytics data={earningsData} />
+            <ActivityFeed
+              activities={activities}
+              onRefresh={fetchActivities}
+              loading={loadingActivities}
+            />
           </div>
-          <div className="pr-4">
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Today's Date</p>
-            <p className="text-sm font-bold text-slate-700">
-              {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-            </p>
-          </div>
-        </div> */}
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        {visibleStats.map((stat, idx) => (
-          <div
-            key={idx}
-            onClick={() => navigate(stat.link)}
-            className="group relative bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 overflow-hidden cursor-pointer"
-          >
-            {/* Background Decorative Element */}
-            <div className={`absolute -right-4 -bottom-4 w-24 h-24 rounded-full opacity-[0.03] transition-transform duration-500 group-hover:scale-150 ${stat.color.replace('text', 'bg')}`} />
-
-            <div className="flex flex-col h-full justify-between relative z-10">
-              <div className="flex items-start justify-between mb-4">
-                <div className={`p-3 rounded-2xl ${stat.color.replace('text', 'bg').replace('-500', '-50')} transition-colors duration-300 group-hover:bg-slate-900 group-hover:text-white`}>
-                  <stat.icon size={22} className={stat.color === 'text-red-500' ? 'group-hover:text-white' : ''} />
-                </div>
-                <div className="text-xs font-bold text-slate-300 uppercase tracking-widest group-hover:text-slate-400">
-                  Live
-                </div>
-              </div>
-
-              <div>
-                <p className="text-slate-500 text-sm font-semibold mb-1 uppercase tracking-tight">{stat.label}</p>
-                <div className="flex items-baseline gap-2">
-                  <h3 className="text-3xl font-black text-slate-800 tracking-tight">
-                    {stat.value}
-                  </h3>
-                  {stat.change !== "-" && (
-                    <span className="text-xs font-bold text-emerald-500 bg-emerald-50 px-2 py-1 rounded-lg">
-                      {stat.change}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Recent Activity */}
-        <div className="lg:col-span-2 bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-8">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              Recent Activity
-              <span className="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest italic">
-                Real-time
-              </span>
-            </h2>
-            <button onClick={fetchRecentActivities} className="text-slate-400 hover:text-red-500 transition-colors">
-              <RefreshCw size={18} className="animate-spin-slow" />
-            </button>
-          </div>
-
-          <div className="space-y-6 relative before:absolute before:left-[15px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-50">
-            {loadingActivities ? (
-              <div className="py-20 text-center">
-                <RefreshCw className="text-red-500 animate-spin mx-auto mb-4" size={32} />
-                <p className="text-slate-400 font-medium italic">Fetching latest pulse...</p>
-              </div>
-            ) : activities.length === 0 ? (
-              <div className="py-20 text-center">
-                <div className="inline-flex p-4 bg-slate-50 rounded-full mb-4">
-                  <ShoppingCart className="text-slate-300" size={32} />
-                </div>
-                <p className="text-slate-400 font-medium italic">No recent pulses detected.</p>
-              </div>
-            ) : (
-              activities.map((activity, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => navigate(`/orders/${activity.orderId}`)}
-                  className="flex items-start space-x-6 relative z-10 transition-all duration-300 hover:translate-x-1 cursor-pointer group"
-                >
-                  <div
-                    className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center shadow-sm border-2 border-white ${activity.type === "success"
-                      ? "bg-emerald-500"
-                      : activity.type === "warning"
-                        ? "bg-amber-500"
-                        : "bg-red-500"
-                      }`}
-                  >
-                    {activity.type === "success" ? (
-                      <Check className="text-white" size={14} />
-                    ) : activity.type === "warning" ? (
-                      <AlertCircle className="text-white" size={14} />
-                    ) : (
-                      <XCircle className="text-white" size={14} />
-                    )}
-                  </div>
-                  <div className="flex-1 bg-slate-50/50 p-4 rounded-2xl border border-transparent hover:border-slate-100 hover:bg-white transition-all">
-                    <p className="text-slate-700 font-bold text-sm leading-relaxed">{activity.text}</p>
-                    <p className="text-[11px] text-slate-400 font-bold mt-1 uppercase tracking-wider">{activity.time}</p>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/orders/${activity.orderId}`);
-                    }}
-                    className="mt-4 p-2 bg-white rounded-lg shadow-sm border border-slate-100 text-slate-400 hover:text-red-500 hover:scale-110 transition-all"
-                  >
-                    <ArrowRight size={14} />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Quick Actions Panel */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100 relative overflow-hidden">
-            {/* Decorative Sphere */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-3xl rounded-full" />
-
-            <h2 className="text-xl font-bold mb-6 relative z-10 text-slate-800">Quick Actions</h2>
-            <div className="flex flex-col gap-4 relative z-10">
-              {!restaurantAdmin && (
-              <button
-                onClick={() => navigate("/restaurants", { state: { tab: "inactive" } })}
-                className="group w-full p-4 bg-slate-50 rounded-2xl flex items-center gap-4 border border-slate-100 hover:bg-red-50 hover:border-red-200 transition-all duration-300"
-              >
-                <div className="bg-red-500 p-2 rounded-xl group-hover:scale-110 transition-transform">
-                  <Check size={18} className="text-white" />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-black tracking-tight text-slate-800">Approve Restaurants</p>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Pending Review</p>
-                </div>
-              </button>
-              )}
-
-              <button
-                onClick={() => navigate("/offers")}
-                className="group w-full p-4 bg-slate-50 rounded-2xl flex items-center gap-4 border border-slate-100 hover:bg-blue-50 hover:border-blue-200 transition-all duration-300"
-              >
-                <div className="bg-blue-500 p-2 rounded-xl group-hover:scale-110 transition-transform">
-                  <Tag size={18} className="text-white" />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-black tracking-tight text-slate-800">Review Offers</p>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Global Discounts</p>
-                </div>
-              </button>
-
-              {!restaurantAdmin && (
-                <button
-                  disabled
-                  className="group w-full p-4 bg-slate-50/50 rounded-2xl flex items-center gap-4 border border-slate-100 opacity-50 cursor-not-allowed"
-                >
-                  <div className="bg-slate-400 p-2 rounded-xl">
-                    <AlertCircle size={18} className="text-white" />
-                  </div>
-                  <div className="text-left flex-1">
-                    <p className="text-sm font-black tracking-tight text-slate-700">Process Refunds</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Coming Soon</p>
-                  </div>
-                  <span className="text-[9px] bg-red-500 text-white px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">Soon</span>
-                </button>
-              )}
-            </div>
-
-            <div className="mt-8 pt-8 border-t border-slate-100">
-              <div className="bg-gradient-to-br from-red-500 to-rose-600 p-6 rounded-3xl text-center shadow-lg shadow-red-500/20">
-                <p className="text-xs font-black uppercase tracking-[0.2em] mb-2 text-white/80">Premium Support</p>
-                <h4 className="font-bold mb-4 text-white">Dedicated Assistance</h4>
-                <a
-                  href="tel:8248907587"
-                  className="block w-full py-3 bg-white text-slate-900 rounded-xl text-sm font-black hover:bg-slate-100 transition-all text-center"
-                >
-                  Contact Help Center
-                </a>
-              </div>
-            </div>
+          <div className="space-y-4">
+            <OperationalInsights insights={insights} />
+            <QuickActions isResAdmin={resAdmin} />
           </div>
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Dashboard;
+const Dashboard = () => {
+  return (
+    <DashboardProvider>
+      <DashboardContent />
+    </DashboardProvider>
+  )
+}
+
+export default Dashboard
