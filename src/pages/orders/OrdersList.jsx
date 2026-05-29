@@ -24,6 +24,18 @@ const HIGHLIGHT_DURATION = 20000;
 const EXIT_ANIMATION_DURATION = 350;
 const LOUD_SOUND_DELAY = 10000;
 
+const CANCEL_REASONS = [
+  { label: "Delivery executive unavailable", value: "delivery_executive_unavailable" },
+  { label: "Order cannot be fulfilled", value: "order_cannot_be_fulfilled" },
+  { label: "Cancelled by admin", value: "cancelled_by_admin" },
+  { label: "Customer requested cancellation", value: "customer_requested_cancellation" },
+  { label: "Restaurant closed/unavailable", value: "restaurant_closed" },
+  { label: "Payment failed", value: "payment_failed" },
+  { label: "Suspected fraud", value: "suspected_fraud" },
+  { label: "Duplicate order", value: "duplicate_order" },
+  { label: "Other", value: "other" },
+];
+
 const formatDate = (d) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-";
 
@@ -390,12 +402,6 @@ const OrdersList = () => {
   const hasInteracted = useRef(false);
 
   const { resetUnreadOrders, addNewOrders, addNewOrderNotification } = useOrderNotifications();
-
-  const CANCEL_REASONS = [
-    "Customer requested cancellation", "Restaurant closed/unavailable",
-    "Delivery executive unavailable", "Order cannot be fulfilled",
-    "Payment failed", "Suspected fraud", "Duplicate order", "Other"
-  ];
 
   const orderBelongsToOwnRestaurant = useCallback((order) => {
     if (!restaurantAdmin || !ownRestaurantUid) return true;
@@ -764,11 +770,12 @@ const OrdersList = () => {
   };
 
   const handleCancelOrder = async () => {
-    const finalReason = cancelReason === "Other" ? otherReason : cancelReason;
+    const finalStatus = cancelReason || "cancelled_by_admin";
+    const finalReason = finalStatus === "other" && otherReason.trim() ? otherReason.trim() : CANCEL_REASONS.find(r => r.value === finalStatus)?.label || finalStatus;
     if (!finalReason.trim()) { toast.error("Please select or enter a reason"); return; }
     setIsCancelling(true);
     try {
-      await updateDeliveryStatusByAdmin(selectedOrderForCancel.orderId, "admin_cancelled", finalReason);
+      await updateDeliveryStatusByAdmin(selectedOrderForCancel.orderId, finalStatus, finalReason);
       toast.success("Order cancelled successfully");
       setShowCancelModal(false);
       setSelectedOrderForCancel(null);
@@ -1017,10 +1024,10 @@ const OrdersList = () => {
                     className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white"
                   >
                     <option value="">Select a reason</option>
-                    {CANCEL_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                    {CANCEL_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
-                {cancelReason === "Other" && (
+                {cancelReason === "other" && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Specify reason</label>
                     <textarea value={otherReason} onChange={(e) => setOtherReason(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30" placeholder="Enter cancellation reason..." />
