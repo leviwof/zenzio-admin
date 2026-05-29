@@ -206,7 +206,15 @@ const OrderDetails = () => {
     const matchedStatus = candidates
       .map(normalizeStatus)
       .find((s) => ORDER_TIMELINE_STEPS.some((step) => step.status === s) || TERMINAL_STATUSES.has(s));
-    return matchedStatus || 'PLACED';
+    if (matchedStatus) return matchedStatus;
+
+    const timeline = Array.isArray(orderData?.orderTimeline) ? orderData.orderTimeline : [];
+    for (const entry of timeline) {
+      const s = normalizeStatus(entry.status);
+      if (TERMINAL_STATUSES.has(s)) return s;
+    }
+
+    return 'PLACED';
   };
 
   const isActiveOrder = (orderData) => {
