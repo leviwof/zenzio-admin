@@ -318,6 +318,9 @@ export const getAdminAnalytics = (period) =>
 export const updateDeliveryStatusByAdmin = (orderId, status, reason = '') =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.put(`/orders/${orderId}/admin/delivery-status`, { status, reason });
 
+export const exportOrders = (params) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/orders/export', { params });
+
 export const reassignOrder = (orderId, newPartnerUid, reason = '') =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.put(`/orders/${orderId}/admin/reassign`, { newPartnerUid, reason });
 
