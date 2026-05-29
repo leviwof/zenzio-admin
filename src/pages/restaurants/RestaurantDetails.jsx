@@ -501,7 +501,14 @@ const RestaurantDetails = () => {
           </button>
           <div>
             <h1 className="text-lg font-bold text-gray-900">{profile?.restaurant_name || 'Restaurant'}</h1>
-            <p className="text-xs text-gray-500">ID: {restaurant.uid?.slice(0, 12)}...</p>
+            <div className="flex items-center gap-3 mt-0.5">
+              <p className="text-xs text-gray-500">ID: {restaurant.uid?.slice(0, 12)}...</p>
+              <span className="text-xs text-gray-300">|</span>
+              <span className="text-xs text-gray-500">
+                Rating: {restaurant.displayRating !== undefined ? Number(restaurant.displayRating).toFixed(1) : (restaurant.rating_avg ? Number(restaurant.rating_avg).toFixed(1) : '4.0')}
+                {' '}({restaurant.rating_count || 0} reviews)
+              </span>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
