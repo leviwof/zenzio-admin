@@ -5,7 +5,7 @@ import {
   ArrowLeft, Mail, Phone, MapPin, CheckCircle, Circle, Printer,
   AlertTriangle, X, Navigation, Store, User, Bike, ChevronDown,
   IndianRupee, Clock, RefreshCw, Download, Ban, RotateCcw,
-  Copy, Check, CreditCard, ShoppingBag, FileText, Eye,
+  Copy, Check, CreditCard, ShoppingBag, FileText, Eye, Loader2,
 } from 'lucide-react';
 import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder } from '../../services/api';
 import DeliveryMap from '../../components/DeliveryMap';
@@ -56,8 +56,18 @@ const DELIVERY_STATUSES = [
   { value: 'out_for_delivery', label: 'Out for Delivery', color: 'bg-purple-100 text-purple-700' },
   { value: 'on_the_way_to_customer', label: 'On Way to Customer', color: 'bg-purple-100 text-purple-700' },
   { value: 'delivered', label: 'Delivered', color: 'bg-green-100 text-green-700' },
-  { value: 'cancelled', label: 'Cancel Delivery', color: 'bg-red-100 text-red-700' },
-  { value: 'admin_cancelled', label: 'Admin Cancelled', color: 'bg-red-100 text-red-700' },
+];
+
+const CANCEL_REASONS = [
+  { label: "Delivery executive unavailable", value: "delivery_executive_unavailable" },
+  { label: "Order cannot be fulfilled", value: "order_cannot_be_fulfilled" },
+  { label: "Cancelled by admin", value: "cancelled_by_admin" },
+  { label: "Customer requested cancellation", value: "customer_requested_cancellation" },
+  { label: "Restaurant closed/unavailable", value: "restaurant_closed" },
+  { label: "Payment failed", value: "payment_failed" },
+  { label: "Suspected fraud", value: "suspected_fraud" },
+  { label: "Duplicate order", value: "duplicate_order" },
+  { label: "Other", value: "other" },
 ];
 
 const formatDateTime = (date) => {
@@ -160,8 +170,11 @@ const OrderDetails = () => {
 
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState('');
-  const [cancelReason, setCancelReason] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelStatus, setCancelStatus] = useState('');
+  const [customCancelReason, setCustomCancelReason] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
   const [partnerLocation, setPartnerLocation] = useState(null);
@@ -275,18 +288,34 @@ const OrderDetails = () => {
 
   const handleStatusChange = async () => {
     if (!selectedStatus) return;
-    const isCancellation = selectedStatus === 'cancelled' || selectedStatus === 'admin_cancelled';
-    if (isCancellation && !cancelReason.trim()) { toast.error('Please provide a reason for cancellation'); return; }
     setIsUpdating(true);
     try {
-      await updateDeliveryStatusByAdmin(orderId, selectedStatus, cancelReason);
+      await updateDeliveryStatusByAdmin(orderId, selectedStatus, '');
       await fetchOrderDetails();
       setShowStatusModal(false);
       setSelectedStatus('');
-      setCancelReason('');
       toast.success('Delivery status updated successfully!');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update delivery status');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    const finalStatus = cancelStatus || 'cancelled_by_admin';
+    const finalReason = finalStatus === 'other' && customCancelReason.trim() ? customCancelReason.trim() : CANCEL_REASONS.find(r => r.value === finalStatus)?.label || finalStatus;
+    if (!finalReason.trim()) { toast.error('Please select or enter a reason'); return; }
+    setIsUpdating(true);
+    try {
+      await updateDeliveryStatusByAdmin(orderId, finalStatus, finalReason);
+      await fetchOrderDetails();
+      setShowCancelModal(false);
+      setCancelStatus('');
+      setCustomCancelReason('');
+      toast.success('Order cancelled successfully');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to cancel order');
     } finally {
       setIsUpdating(false);
     }
@@ -593,7 +622,7 @@ const OrderDetails = () => {
                   </>
                 )}
                 {!restaurantAdmin && (
-                  <motion.button whileHover={{ x: 2 }} onClick={() => setShowStatusModal(true)}
+                  <motion.button whileHover={{ x: 2 }} onClick={() => setShowCancelModal(true)}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors">
                     <Ban size={15} /> Cancel Order
                   </motion.button>
@@ -1080,10 +1109,71 @@ const OrderDetails = () => {
         </div>
       )}
 
+      {/* ── Cancel Order Modal ── */}
+      <AnimatePresence>
+        {showCancelModal && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto px-4 py-8" onClick={() => { setShowCancelModal(false); setCancelStatus(''); setCustomCancelReason(''); }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.92 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-lg w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 p-5 border-b border-gray-100">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="text-red-600" size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-900">Cancel Order</h3>
+                    <p className="text-sm text-gray-500 mt-1">This will notify all connected parties.</p>
+                  </div>
+                </div>
+                <button onClick={() => { setShowCancelModal(false); setCancelStatus(''); setCustomCancelReason(''); }} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-1">
+                  <p className="text-sm text-gray-600">Order ID: <span className="font-semibold text-gray-900">#{order?.orderId}</span></p>
+                  <p className="text-sm text-gray-600">Customer: <span className="font-semibold text-gray-900">{order?.customer_name || 'Guest'}</span></p>
+                  <p className="text-sm text-gray-600">Amount: <span className="font-semibold text-gray-900">₹{order?.priceSummary?.total ?? order?.price ?? 0}</span></p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Cancellation Reason <span className="text-red-500">*</span></label>
+                  <select
+                    value={cancelStatus}
+                    onChange={(e) => setCancelStatus(e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white"
+                  >
+                    <option value="">Select a reason</option>
+                    {CANCEL_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                </div>
+                {cancelStatus === 'other' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Specify reason</label>
+                    <textarea value={customCancelReason} onChange={(e) => setCustomCancelReason(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30" placeholder="Enter cancellation reason..." />
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 p-5 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl">
+                <button onClick={() => { setShowCancelModal(false); setCancelStatus(''); setCustomCancelReason(''); }} className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50" disabled={isUpdating}>Close</button>
+                <button onClick={handleCancelOrder} disabled={!cancelStatus.trim() || isUpdating} className="px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2">
+                  {isUpdating && <Loader2 size={14} className="animate-spin" />}
+                  Confirm Cancellation
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ── Change Status Modal ── */}
       <AnimatePresence>
         {showStatusModal && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto px-4 py-8" onClick={() => { setShowStatusModal(false); setSelectedStatus(''); setCancelReason(''); }}>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto px-4 py-8" onClick={() => { setShowStatusModal(false); setSelectedStatus(''); }}>
             <motion.div
               initial={{ opacity: 0, scale: 0.92 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1101,7 +1191,7 @@ const OrderDetails = () => {
                     <p className="text-sm text-gray-500 mt-1">Update the order state with a clear admin note.</p>
                   </div>
                 </div>
-                <button onClick={() => { setShowStatusModal(false); setSelectedStatus(''); setCancelReason(''); }} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
+                <button onClick={() => { setShowStatusModal(false); setSelectedStatus(''); }} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
                   <X size={20} />
                 </button>
               </div>
@@ -1116,13 +1206,7 @@ const OrderDetails = () => {
                     ))}
                   </select>
                 </div>
-                {(selectedStatus === 'cancelled' || selectedStatus === 'admin_cancelled') && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Cancellation Reason <span className="text-red-500">*</span></label>
-                    <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={3} placeholder="Enter reason for cancellation..."
-                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/30" />
-                  </div>
-                )}
+
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
                   <p className="text-xs text-amber-800 font-semibold flex items-center gap-1.5">
                     <AlertTriangle size={14} />
@@ -1131,9 +1215,9 @@ const OrderDetails = () => {
                 </div>
               </div>
               <div className="flex justify-end gap-3 p-5 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl">
-                <button onClick={() => { setShowStatusModal(false); setSelectedStatus(''); setCancelReason(''); }} className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50" disabled={isUpdating}>Cancel</button>
+                <button onClick={() => { setShowStatusModal(false); setSelectedStatus(''); }} className="px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50" disabled={isUpdating}>Cancel</button>
                 <button onClick={handleStatusChange} disabled={!selectedStatus || isUpdating}
-                  className={`px-4 py-2.5 text-sm font-medium text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 ${selectedStatus === 'cancelled' || selectedStatus === 'admin_cancelled' ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                  className="px-4 py-2.5 text-sm font-medium text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700">
                   {isUpdating ? 'Updating...' : 'Confirm Change'}
                 </button>
               </div>
