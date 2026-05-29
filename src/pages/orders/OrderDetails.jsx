@@ -621,7 +621,7 @@ const OrderDetails = () => {
                     </motion.button>
                   </>
                 )}
-                {!restaurantAdmin && (
+                {!isTerminal && !restaurantAdmin && (
                   <motion.button whileHover={{ x: 2 }} onClick={() => setShowCancelModal(true)}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors">
                     <Ban size={15} /> Cancel Order
