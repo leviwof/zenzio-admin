@@ -19,6 +19,9 @@ import Card, { CardContent, CardHeader } from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Toggle from "../../components/ui/Toggle";
 
+const MIN_RATING_THRESHOLD = 50;
+const DEFAULT_RATING = 4.0;
+
 // ─── Helpers ──────────────────────────────────────────
 const formatDate = (d) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-";
@@ -403,14 +406,16 @@ const RestaurantsList = () => {
           else if (d?.contact?.encryptedPhone) phone = d.contact.encryptedPhone;
           else if (d?.contact?.phone) phone = d.contact.phone;
           if (d?.address?.city) city = d.address.city;
+          const ratingCount = d?.rating_count || 0;
+          const displayRating = ratingCount >= MIN_RATING_THRESHOLD ? (d?.rating_avg || 0) : DEFAULT_RATING;
           setRestaurantDetails((prev) => ({
             ...prev,
-            [restaurant.uid]: { email, phone, city, rating: d?.rating_avg || 0, cuisines: d?.cuisines || [] },
+            [restaurant.uid]: { email, phone, city, rating: displayRating, ratingCount, cuisines: d?.cuisines || [] },
           }));
         } catch {
           setRestaurantDetails((prev) => ({
             ...prev,
-            [restaurant.uid]: { email: "-", phone: "-", city: "-", rating: 0, cuisines: [] },
+            [restaurant.uid]: { email: "-", phone: "-", city: "-", rating: DEFAULT_RATING, ratingCount: 0, cuisines: [] },
           }));
         } finally {
           setDetailsLoading((prev) => ({ ...prev, [restaurant.uid]: false }));
@@ -509,8 +514,8 @@ const RestaurantsList = () => {
     const active = restaurants.filter((r) => r.isOpen !== false && r.isManuallyOff !== true && r.isActive !== false).length;
     const inactive = restaurants.filter((r) => r.isOpen === false || r.isManuallyOff === true || r.isActive === false).length;
     const pending = restaurants.filter((r) => r.statusLabel === "pending").length;
-    const ratings = Object.values(restaurantDetails).map((d) => d.rating || 0).filter(Boolean);
-    const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length) : 0;
+    const qualified = Object.values(restaurantDetails).filter((d) => (d.ratingCount || 0) >= MIN_RATING_THRESHOLD);
+    const avgRating = qualified.length ? (qualified.reduce((a, b) => a + b.rating, 0) / qualified.length) : 0;
     return { total, active, inactive, pending, avgRating };
   }, [restaurants, restaurantDetails]);
 
@@ -703,7 +708,7 @@ const RestaurantsList = () => {
         <StatCard icon={UserCheck} label="Active" value={stats.active} color="bg-emerald-50 text-emerald-600" sub={`${stats.total ? Math.round((stats.active / stats.total) * 100) : 0}% of total`} />
         <StatCard icon={Power} label="Inactive" value={stats.inactive} color="bg-red-50 text-red-600" />
         <StatCard icon={Clock} label="Pending Approval" value={stats.pending} color="bg-amber-50 text-amber-600" />
-        <StatCard icon={Star} label="Avg Rating" value={stats.avgRating ? stats.avgRating.toFixed(1) : "—"} color="bg-amber-50 text-amber-600" sub={stats.avgRating ? `${restaurants.length} rated` : ""} />
+        <StatCard icon={Star} label="Avg Rating" value={stats.avgRating ? stats.avgRating.toFixed(1) : "—"} color="bg-amber-50 text-amber-600" sub={stats.avgRating ? `${Object.values(restaurantDetails).filter(d => (d.ratingCount || 0) >= MIN_RATING_THRESHOLD).length} qualified` : ""} />
       </motion.div>
 
       {/* ── Filter + Search Bar ── */}
