@@ -822,7 +822,7 @@ const Dashboard = () => {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          {/* <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="text-base font-bold text-slate-900">Platform Activity</h3>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="rounded-xl bg-slate-50 p-3">
@@ -854,7 +854,7 @@ const Dashboard = () => {
                 </>
               )}
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
