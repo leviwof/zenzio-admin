@@ -627,22 +627,20 @@ const RestaurantDetails = () => {
                 <Building2 size={16} className="text-indigo-500" />
                 Basic Information
               </h3>
-              {!restaurantAdmin && (
-                <Button variant="ghost" size="sm" icon={editingSection === 'profile' ? X : undefined}
-                  onClick={() => {
-                    if (editingSection === 'profile') { setEditingSection(null); return }
-                    setProfileFormData({
-                      restaurant_name: profile?.restaurant_name || '',
-                      contact_person: profile?.contact_person || '',
-                      contact_number: profile?.contact_number || '',
-                      contact_email: profile?.contact_email || displayEmail,
-                    })
-                    setEditingSection('profile')
-                  }}
-                >
-                  {editingSection === 'profile' ? 'Cancel' : 'Edit'}
-                </Button>
-              )}
+              <Button variant="ghost" size="sm" icon={editingSection === 'profile' ? X : undefined}
+                onClick={() => {
+                  if (editingSection === 'profile') { setEditingSection(null); return }
+                  setProfileFormData({
+                    restaurant_name: profile?.restaurant_name || '',
+                    contact_person: profile?.contact_person || '',
+                    contact_number: profile?.contact_number || '',
+                    contact_email: profile?.contact_email || displayEmail,
+                  })
+                  setEditingSection('profile')
+                }}
+              >
+                {editingSection === 'profile' ? 'Cancel' : 'Edit'}
+              </Button>
             </CardHeader>
             <CardContent>
               {editingSection === 'profile' ? (
@@ -705,24 +703,22 @@ const RestaurantDetails = () => {
                   <div className="sm:col-span-2 border-t border-gray-50 pt-3 mt-1">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs font-medium text-gray-500">Address</p>
-                      {!restaurantAdmin && (
-                        <Button variant="ghost" size="sm" icon={editingSection === 'address' ? X : undefined}
-                          onClick={() => {
-                            if (editingSection === 'address') { setEditingSection(null); return }
-                            setAddressFormData({
-                              address: address?.address || '',
-                              city: address?.city || '',
-                              state: address?.state || '',
-                              pincode: address?.pincode || '',
-                              lat: address?.lat || '',
-                              lng: address?.lng || '',
-                            })
-                            setEditingSection('address')
-                          }}
-                        >
-                          {editingSection === 'address' ? 'Cancel' : 'Edit Address'}
-                        </Button>
-                      )}
+                      <Button variant="ghost" size="sm" icon={editingSection === 'address' ? X : undefined}
+                        onClick={() => {
+                          if (editingSection === 'address') { setEditingSection(null); return }
+                          setAddressFormData({
+                            address: address?.address || '',
+                            city: address?.city || '',
+                            state: address?.state || '',
+                            pincode: address?.pincode || '',
+                            lat: address?.lat || '',
+                            lng: address?.lng || '',
+                          })
+                          setEditingSection('address')
+                        }}
+                      >
+                        {editingSection === 'address' ? 'Cancel' : 'Edit'}
+                      </Button>
                     </div>
                     {editingSection === 'address' ? (
                       <form onSubmit={submitAddressUpdate} className="space-y-3">

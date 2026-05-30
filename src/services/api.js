@@ -310,13 +310,13 @@ export const getCustomerOrders = (customerUid, params = {}) =>
 export const getOrderStats = () => api.get('/orders/stats');
 export const getOrderMonitoringStats = () => api.get('/orders/monitoring-stats');
 export const getOrderDetails = (orderId) => api.get(`/orders/${orderId}/admin-details`);
-export const updateOrderStatus = (orderId, status) => api.put(`/orders/${orderId}/status`, { status });
+export const updateOrderStatus = (orderId, status) => api.patch(`/orders/${orderId}/status`, { status });
 export const getAdminAnalytics = (period) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/orders/admin/analytics', { params: { period } });
 
 
 export const updateDeliveryStatusByAdmin = (orderId, status, reason = '') =>
-  isRestaurantAdmin() ? rejectRestrictedApi() : api.put(`/orders/${orderId}/admin/delivery-status`, { status, reason });
+  api.put(`/orders/${orderId}/admin/delivery-status`, { status, reason });
 
 export const exportOrders = (params) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/orders/export', { params });
