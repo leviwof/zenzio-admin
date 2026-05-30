@@ -613,33 +613,26 @@ const OrderDetails = () => {
             <CardContent className="p-4">
               <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Quick Actions</h4>
               <div className="space-y-1.5">
-                {!isTerminal && !restaurantAdmin && (
-                  <>
-                    <motion.button whileHover={{ x: 2 }} onClick={() => { setShowReassignModal(true); fetchAvailableExecutives(); }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors">
-                      <User size={15} /> {hasDeliveryPartner ? 'Reassign Executive' : 'Assign Executive'}
-                    </motion.button>
-                    <motion.button whileHover={{ x: 2 }} onClick={() => setShowStatusModal(true)}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors">
-                      <RefreshCw size={15} /> Change Delivery Status
-                    </motion.button>
-                    <motion.button whileHover={{ x: 2 }} onClick={handleForceRefresh}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors">
-                      <RotateCcw size={15} /> Force Refresh Status
-                    </motion.button>
-                  </>
-                )}
-                {!isTerminal && !restaurantAdmin && (
-                  <motion.button whileHover={{ x: 2 }} onClick={() => setShowCancelModal(true)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors">
-                    <Ban size={15} /> Cancel Order
-                  </motion.button>
-                )}
+                <motion.button whileHover={{ x: 2 }} onClick={() => { setShowReassignModal(true); fetchAvailableExecutives(); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors">
+                  <User size={15} /> {hasDeliveryPartner ? 'Reassign Executive' : 'Assign Executive'}
+                </motion.button>
+                <motion.button whileHover={{ x: 2 }} onClick={() => setShowStatusModal(true)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors">
+                  <RefreshCw size={15} /> Change Delivery Status
+                </motion.button>
+                <motion.button whileHover={{ x: 2 }} onClick={handleForceRefresh}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors">
+                  <RotateCcw size={15} /> Force Refresh Status
+                </motion.button>
+                <motion.button whileHover={{ x: 2 }} onClick={() => setShowCancelModal(true)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 transition-colors">
+                  <Ban size={15} /> Cancel Order
+                </motion.button>
                 <motion.button whileHover={{ x: 2 }} onClick={handleDownloadInvoice}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors">
                   <Download size={15} /> Download Invoice
                 </motion.button>
-
               </div>
             </CardContent>
           </Card>
