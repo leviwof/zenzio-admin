@@ -24,9 +24,11 @@ import {
 import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
 import RefundManagement from "./RefundManagement";
+import { getCustomerStatus, isCustomerActive } from "../../utils/customerStatus";
 
 const mapUserToCustomer = (user) => {
   const fullName = `${user.profile?.first_name || ""} ${user.profile?.last_name || ""}`.trim();
+  const active = isCustomerActive(user);
   return {
     id: user.id,
     customerId: user.uid,
@@ -35,8 +37,8 @@ const mapUserToCustomer = (user) => {
     mobile: user.contact?.encryptedPhone || user.contact?.phone || "N/A",
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
-    isActive: user.isActive,
-    status: user.isActive ? "active" : "blocked",
+    isActive: active,
+    status: getCustomerStatus(user),
     city: user.address?.city || "—",
     state: user.address?.state || "—",
     providerType: user.providerType || "N/A",
