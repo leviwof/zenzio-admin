@@ -6,15 +6,16 @@ import {
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   RotateCcw, Eye, Filter, ArrowUpDown, CheckSquare, Square, MoreVertical,
   Loader2, ChevronDown, ShoppingBag, IndianRupee, TrendingUp, TrendingDown,
-  Ban, UtensilsCrossed, Bike, CreditCard, Radio,
+  Ban, UtensilsCrossed, Bike, CreditCard, Radio, Trash2,
 } from "lucide-react";
 import {
-  getAllOrders, getOrderMonitoringStats, updateDeliveryStatusByAdmin, exportOrders
+  getAllOrders, getOrderMonitoringStats, updateDeliveryStatusByAdmin, exportOrders,
+  deleteOrder, bulkDeleteOrders,
 } from "../../services/api";
 import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
 import { useOrderNotifications } from "../../context/OrderNotificationContext";
-import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
+import { getCurrentRestaurantUid, isRestaurantAdmin, isZenzioAdmin } from "../../utils/auth";
 
 const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 const loudNotificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
@@ -148,7 +149,7 @@ const FilterDropdown = ({ label, icon: Icon, value, options, onChange, onClear }
   );
 };
 
-const ActionMenu = ({ order, onView, onCancel }) => {
+const ActionMenu = ({ order, onView, onCancel, onDelete }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -178,20 +179,31 @@ const ActionMenu = ({ order, onView, onCancel }) => {
             transition={{ duration: 0.12 }}
             className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-gray-200 shadow-lg shadow-gray-200/50 z-50 py-1 overflow-hidden"
           >
-            <button
-              onClick={(e) => { e.stopPropagation(); setOpen(false); onView(order); }}
-              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <Eye size={14} />
-              View Details
-            </button>
-            {!isTerminal && (
+            {!onDelete && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setOpen(false); onView(order); }}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <Eye size={14} />
+                View Details
+              </button>
+            )}
+            {!isTerminal && onCancel && (
               <button
                 onClick={(e) => { e.stopPropagation(); setOpen(false); onCancel(order); }}
                 className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors"
               >
                 <Ban size={14} />
                 Cancel Order
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(order); }}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <Trash2 size={14} />
+                Delete Order
               </button>
             )}
           </motion.div>
@@ -229,17 +241,18 @@ const StatCard = ({ icon: Icon, label, value, color, sub, trend, onClick, isActi
   </motion.div>
 );
 
-const MobileOrderCard = ({ order, onView, onCancel, isHighlighted }) => {
+const MobileOrderCard = ({ order, onView, onCancel, onDelete, isHighlighted, confirmDeleteId, onDeleteConfirm, isDeleting }) => {
   const orderId = order.orderId || order.id;
   const customerInitial = (order.customer_name || order.customer || "G").charAt(0).toUpperCase();
   const isTerminal = ["DELIVERED", "COMPLETED", "CANCELLED"].includes((order.restaurantStatus || order.status || "").toUpperCase());
+  const showingConfirm = confirmDeleteId === orderId;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       className={`bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3 ${isHighlighted ? 'ring-2 ring-indigo-300 bg-indigo-50/20' : ''}`}
-      onClick={() => onView(order)}
+      onClick={() => { if (!showingConfirm) onView(order); }}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3 min-w-0">
@@ -256,9 +269,31 @@ const MobileOrderCard = ({ order, onView, onCancel, isHighlighted }) => {
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <ActionMenu order={order} onView={onView} onCancel={onCancel} />
+          <ActionMenu order={order} onView={onView} onCancel={onCancel} onDelete={onDelete} />
         </div>
       </div>
+      {showingConfirm && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <span className="text-xs font-medium text-red-700">Delete this order?</span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => onDeleteConfirm(null)}
+              className="px-2 py-1 text-[11px] font-medium text-gray-600 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+              disabled={isDeleting}
+            >
+              No
+            </button>
+            <button
+              onClick={() => onDeleteConfirm(order)}
+              disabled={isDeleting}
+              className="px-2 py-1 text-[11px] font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
+            >
+              {isDeleting && <Loader2 size={10} className="animate-spin" />}
+              {isDeleting ? '...' : 'Yes'}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-50">
         <div className="flex flex-col gap-0.5">
           <span className="font-medium text-gray-700">{order.customer_name || order.customer || "Guest"}</span>
@@ -375,6 +410,10 @@ const OrdersList = () => {
   const [cancelReason, setCancelReason] = useState("");
   const [otherReason, setOtherReason] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const knownOrderIds = useRef(new Set());
   const knownOrderStatuses = useRef(new Map());
@@ -787,6 +826,41 @@ const OrdersList = () => {
       toast.error(err.response?.data?.message || "Failed to cancel order");
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  const zenzioAdmin = isZenzioAdmin();
+
+  const handleDelete = async (order) => {
+    const id = order.orderId || order.id;
+    if (!id) return;
+    setIsDeleting(true);
+    try {
+      await deleteOrder(id);
+      toast.success("Order deleted successfully");
+      setConfirmDeleteId(null);
+      fetchOrders(true);
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to delete order");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setIsDeleting(true);
+    try {
+      const res = await bulkDeleteOrders(ids);
+      toast.success(res.data?.message || `${ids.length} orders deleted`);
+      setSelectedIds(new Set());
+      setBulkDeleteConfirm(false);
+      fetchOrders(true);
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to delete orders");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1262,6 +1336,52 @@ const OrdersList = () => {
         </div>
       </div>
 
+      {/* ── Bulk Actions ── */}
+      {zenzioAdmin && selectedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
+          <div className="flex items-center gap-2">
+            <CheckSquare size={16} className="text-red-600" />
+            <span className="text-sm font-medium text-red-700">{selectedIds.size} order{selectedIds.size > 1 ? 's' : ''} selected</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Clear Selection
+            </button>
+            {bulkDeleteConfirm ? (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
+                <span className="text-xs font-medium text-red-700">Delete {selectedIds.size} order{selectedIds.size > 1 ? 's' : ''}?</span>
+                <button
+                  onClick={() => setBulkDeleteConfirm(false)}
+                  className="px-2 py-1 text-[11px] font-medium text-gray-600 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+                  disabled={isDeleting}
+                >
+                  No
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={isDeleting}
+                  className="px-2 py-1 text-[11px] font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
+                >
+                  {isDeleting && <Loader2 size={10} className="animate-spin" />}
+                  {isDeleting ? 'Deleting...' : 'Yes'}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setBulkDeleteConfirm(true)}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors inline-flex items-center gap-1.5"
+              >
+                <Trash2 size={14} />
+                Delete Selected
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Content ── */}
       {loading ? (
         <LoadingSkeleton />
@@ -1399,13 +1519,43 @@ const OrdersList = () => {
                         {/* Actions */}
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                            <button
-                              onClick={() => handleView(order)}
-                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                            >
-                              View
-                            </button>
-                            <ActionMenu order={order} onView={handleView} onCancel={handleOpenCancelModal} />
+                            {zenzioAdmin ? (
+                              confirmDeleteId === orderId ? (
+                                <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1">
+                                  <span className="text-[11px] font-medium text-red-700">Delete?</span>
+                                  <button
+                                    onClick={() => setConfirmDeleteId(null)}
+                                    className="px-1.5 py-0.5 text-[11px] font-medium text-gray-600 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+                                    disabled={isDeleting}
+                                  >
+                                    No
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(order)}
+                                    disabled={isDeleting}
+                                    className="px-1.5 py-0.5 text-[11px] font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors"
+                                  >
+                                    {isDeleting ? <Loader2 size={10} className="animate-spin" /> : 'Yes'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setConfirmDeleteId(orderId)}
+                                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors"
+                                >
+                                  <Trash2 size={14} className="inline mr-1" />
+                                  Delete
+                                </button>
+                              )
+                            ) : (
+                              <button
+                                onClick={() => handleView(order)}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                              >
+                                View
+                              </button>
+                            )}
+                            <ActionMenu order={order} onView={handleView} onCancel={handleOpenCancelModal} onDelete={zenzioAdmin ? (o) => setConfirmDeleteId(o.orderId || o.id) : null} />
                           </div>
                         </td>
                       </motion.tr>
@@ -1424,7 +1574,11 @@ const OrdersList = () => {
                 order={order}
                 onView={handleView}
                 onCancel={handleOpenCancelModal}
+                onDelete={zenzioAdmin ? (o) => setConfirmDeleteId(o.orderId || o.id) : null}
                 isHighlighted={highlightedIds.has(order.orderId || order.id)}
+                confirmDeleteId={confirmDeleteId}
+                onDeleteConfirm={handleDelete}
+                isDeleting={isDeleting}
               />
             ))}
           </div>
