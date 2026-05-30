@@ -324,7 +324,11 @@ export const exportOrders = (params) =>
 export const reassignOrder = (orderId, newPartnerUid, reason = '') =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.put(`/orders/${orderId}/admin/reassign`, { newPartnerUid, reason });
 
+export const deleteOrder = (orderId) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/orders/${orderId}`);
 
+export const bulkDeleteOrders = (ids) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete('/orders/bulk/delete', { data: { ids } });
 
 export const getPendingEvents = (params = {}) => api.get('/events/pending', { params });
 export const getEventForApproval = (id) => api.get(`/events/approval/${id}`);
