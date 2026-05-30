@@ -601,9 +601,9 @@ const OrdersList = () => {
   }, [currentPage, itemsPerPage, debouncedSearch, sortBy, sortOrder, statusFilter, restaurantFilter, customerFilter, executiveFilter, paymentStatusFilter, paymentMethodFilter, orderTypeFilter, dateFilter, fromDate, toDate, amountMin, amountMax, cityFilter, restaurantAdmin, ownRestaurantUid]);
 
   // ── Fetch Orders ──
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent) setLoading(true);
       const params = buildParams();
       const response = await getAllOrders(params);
       const data = response.data?.data || response.data || [];
@@ -630,7 +630,7 @@ const OrdersList = () => {
       console.error("Error fetching orders:", err);
       setOrders([]);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, [buildParams, orderBelongsToOwnRestaurant, currentPage, itemsPerPage]);
 
@@ -704,6 +704,7 @@ const OrdersList = () => {
           addNewOrders(newlyArrived);
           highlightNewOrders(newlyArrived);
           showDesktopNotification(newlyArrived);
+          fetchOrders(true);
         }
 
         const statusBasedNew = newOrders.filter(o => shouldNotifyByStatus(o));
@@ -731,7 +732,7 @@ const OrdersList = () => {
     } finally {
       isPollingRef.current = false;
     }
-  }, [restaurantAdmin, ownRestaurantUid, orderBelongsToOwnRestaurant, playNotificationSound, scheduleLoudSound, addToast, addNewOrderNotification, addNewOrders, highlightNewOrders, showDesktopNotification, shouldNotifyByStatus, fetchStats]);
+  }, [restaurantAdmin, ownRestaurantUid, orderBelongsToOwnRestaurant, playNotificationSound, scheduleLoudSound, addToast, addNewOrderNotification, addNewOrders, highlightNewOrders, showDesktopNotification, shouldNotifyByStatus, fetchStats, fetchOrders]);
 
   pollOrdersRef.current = pollOrders;
 
