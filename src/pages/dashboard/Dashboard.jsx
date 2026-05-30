@@ -676,18 +676,22 @@ const Dashboard = () => {
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-base font-bold text-slate-900">Orders Analytics</h3>
-              <p className="text-xs text-slate-500">Completed vs cancelled</p>
+              <h3 className="text-base font-bold text-slate-900">Earning Analytics</h3>
+              <p className="text-xs text-slate-500">Daily earnings trend</p>
               <div className="mt-3 h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={ordersMixData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#f97316" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {revenueTrendData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={revenueTrendData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                      <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(value) => [`₹${Number(value).toLocaleString()}`, 'Earnings']} />
+                      <Bar dataKey="sales" fill="#10b981" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-slate-400">No earnings data for selected range</div>
+                )}
               </div>
             </div>
            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
