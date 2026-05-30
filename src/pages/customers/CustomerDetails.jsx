@@ -15,6 +15,7 @@ import {
   getCustomerOrders,
 } from "../../services/api";
 import toast from "react-hot-toast";
+import { getCustomerStatus, isCustomerActive } from "../../utils/customerStatus";
 
 const formatDate = (dateString) => {
   if (!dateString) return "N/A";
@@ -85,8 +86,8 @@ const normalizeCustomer = (response) => {
       lastActive: user?.updatedAt ?? null,
       gender: user?.profile?.gender ?? "Not specified",
       profilePhoto: user?.profile?.photo?.[0] ?? null,
-      status: user?.status ? "active" : "blocked",
-      isActive: Boolean(user?.isActive),
+      status: getCustomerStatus(user),
+      isActive: isCustomerActive(user),
       providerType: user?.providerType ?? "N/A",
       verificationFlags: user?.verificationFlags ?? 0,
       notificationsEnabled: user?.notificationsEnabled ?? false,
