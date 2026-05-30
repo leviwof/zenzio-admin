@@ -7,7 +7,7 @@ import {
   IndianRupee, Clock, RefreshCw, Download, Ban, RotateCcw,
   Copy, Check, CreditCard, ShoppingBag, FileText, Eye, Loader2,
 } from 'lucide-react';
-import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder } from '../../services/api';
+import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder, updateOrderStatus } from '../../services/api';
 import DeliveryMap from '../../components/DeliveryMap';
 import Card, { CardContent, CardHeader } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -47,6 +47,51 @@ const STATUS_ALIASES = {
 };
 
 const TERMINAL_STATUSES = new Set(['DELIVERED', 'COMPLETED', 'CANCELLED', 'ADMIN_CANCELLED', 'REJECTED', 'FAILED']);
+
+const LIFECYCLE_STEPS = [
+  { status: 'PLACED', label: 'New Order' },
+  { status: 'ACCEPTED', label: 'Accepted' },
+  { status: 'PREPARING', label: 'Preparing' },
+  { status: 'READY', label: 'Ready For Pickup' },
+  { status: 'PICKED_UP', label: 'Picked Up' },
+  { status: 'OUT_FOR_DELIVERY', label: 'Out For Delivery' },
+  { status: 'DELIVERED', label: 'Delivered' },
+];
+
+const ORDER_ACTION_CONFIG = {
+  PLACED: {
+    restaurant: [
+      { label: 'Accept Order', apiStatus: 'accepted', variant: 'primary' },
+      { label: 'Reject Order', apiStatus: 'cancelled', variant: 'danger' },
+    ],
+  },
+  ACCEPTED: {
+    restaurant: [
+      { label: 'Preparing Started', apiStatus: 'preparing', variant: 'primary' },
+    ],
+  },
+  PREPARING: {
+    restaurant: [
+      { label: 'Ready For Pickup', apiStatus: 'ready_for_pickup', variant: 'primary' },
+    ],
+  },
+  READY: {
+    restaurant: [],
+    admin: [
+      { label: 'Mark Picked Up', apiStatus: 'picked_up', variant: 'primary' },
+    ],
+  },
+  PICKED_UP: {
+    admin: [
+      { label: 'Mark Out For Delivery', apiStatus: 'out_for_delivery', variant: 'primary' },
+    ],
+  },
+  OUT_FOR_DELIVERY: {
+    admin: [
+      { label: 'Mark Delivered', apiStatus: 'delivered', variant: 'primary' },
+    ],
+  },
+};
 
 const DELIVERY_STATUSES = [
   { value: 'assigned', label: 'Assigned', color: 'bg-blue-100 text-blue-700' },
@@ -187,6 +232,8 @@ const OrderDetails = () => {
   const [loadingExecutives, setLoadingExecutives] = useState(false);
   const reassignPanelRef = useRef(null);
 
+  const [lifecycleUpdating, setLifecycleUpdating] = useState(false);
+
   useEffect(() => {
     if (showReassignModal && reassignPanelRef.current) {
       setTimeout(() => reassignPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' }), 100);
@@ -200,8 +247,8 @@ const OrderDetails = () => {
 
   const getCurrentOrderStatus = (orderData) => {
     const candidates = [
-      orderData?.deliveryStatus, orderData?.deliveryPartnerStatus,
-      orderData?.restaurantStatus, orderData?.orderStatus, orderData?.status,
+      orderData?.restaurantStatus, orderData?.deliveryStatus,
+      orderData?.deliveryPartnerStatus, orderData?.orderStatus, orderData?.status,
     ];
     const matchedStatus = candidates
       .map(normalizeStatus)
@@ -468,6 +515,42 @@ const OrderDetails = () => {
     toast.success('Invoice downloaded');
   };
 
+  const getLifecycleIndex = (status) => {
+    const order = ['PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+    const idx = order.indexOf(status);
+    if (idx !== -1) return idx;
+    if (['ASSIGNED', 'ON_THE_WAY_TO_RESTAURANT', 'REACHED_RESTAURANT'].includes(status)) return 3;
+    if (['ON_THE_WAY_TO_CUSTOMER'].includes(status)) return 5;
+    return -1;
+  };
+
+  const buildLifecycleTimeline = () => {
+    const idx = getLifecycleIndex(currentStatus);
+    const isCancelled = TERMINAL_STATUSES.has(currentStatus) && currentStatus !== 'DELIVERED' && currentStatus !== 'COMPLETED';
+    const timelineByStatus = {};
+    (orderTimeline || []).forEach(step => { timelineByStatus[step.status] = step; });
+    return LIFECYCLE_STEPS.map((step, i) => {
+      const matched = timelineByStatus[step.status];
+      const isCompleted = Boolean(matched?.timestamp);
+      const isCurrent = i === idx && !isCancelled;
+      return { ...step, timestamp: matched?.timestamp || null, isCompleted, isCurrent };
+    });
+  };
+
+  const handleOrderAction = async (apiStatus) => {
+    setLifecycleUpdating(true);
+    try {
+      await updateOrderStatus(orderId, apiStatus);
+      await fetchOrderDetails();
+      const action = Object.values(ORDER_ACTION_CONFIG).flatMap(c => [...(c.restaurant || []), ...(c.admin || [])]).find(a => a.apiStatus === apiStatus);
+      toast.success(action?.label ? `${action.label} successfully` : 'Status updated');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update order status');
+    } finally {
+      setLifecycleUpdating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-4 lg:p-6 max-w-7xl mx-auto space-y-4">
@@ -525,6 +608,12 @@ const OrderDetails = () => {
   const restaurantToCustomerKm = order.restaurant_to_customer_km ?? order.restaurantToCustomerDistance ?? null;
   const totalJourneyKm = order.total_journey_km ?? null;
   const chargedDeliveryFee = order.delivery_charge ?? ps.deliveryFee ?? ps.deliveryCharge ?? 0;
+
+  const lifecycleSteps = buildLifecycleTimeline();
+  const statusConfig = ORDER_ACTION_CONFIG[currentStatus];
+  const currentActions = restaurantAdmin
+    ? (statusConfig?.restaurant || [])
+    : (statusConfig?.admin || statusConfig?.restaurant || []);
 
   return (
     <div className="p-4 lg:p-6 max-w-7xl mx-auto">
@@ -637,6 +726,136 @@ const OrderDetails = () => {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* ── Order Action Center ── */}
+      {!isTerminal && (currentActions.length > 0 || (restaurantAdmin && currentStatus === 'READY')) && (
+        <div className="mb-6">
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                  <RefreshCw size={16} className="text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">Order Action Center</h3>
+                  <p className="text-[11px] text-gray-400">
+                    {restaurantAdmin ? 'Restaurant Controls' : 'Delivery Controls'}
+                  </p>
+                </div>
+              </div>
+
+              {currentStatus === 'PLACED' && (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Customer</span>
+                    <span className="text-sm font-semibold text-gray-900">{order.customerInformation?.name || '—'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Items</span>
+                    <span className="text-sm font-semibold text-gray-900">{(order.items || []).length} item(s)</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Total</span>
+                    <span className="text-sm font-bold text-gray-900">₹{order.priceSummary?.total || order.price || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Payment</span>
+                    <span className="text-sm font-semibold text-gray-900">{order.paymentMethod || '—'}</span>
+                  </div>
+                  {order.customerInformation?.deliveryAddress && (
+                    <div className="pt-2 border-t border-gray-200">
+                      <p className="text-xs text-gray-500 mb-0.5">Delivery Address</p>
+                      <p className="text-sm text-gray-700">{order.customerInformation.deliveryAddress}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {restaurantAdmin && currentStatus === 'READY' ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                  <p className="text-sm font-semibold text-amber-800">Waiting for Delivery Executive</p>
+                  <p className="text-xs text-amber-600 mt-1">Restaurant actions are disabled after Ready For Pickup.</p>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  {currentActions.map((action) => (
+                    <Button
+                      key={action.apiStatus}
+                      variant={action.variant}
+                      size="sm"
+                      onClick={() => handleOrderAction(action.apiStatus)}
+                      loading={lifecycleUpdating}
+                    >
+                      {action.label}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Order Lifecycle Timeline ── */}
+      <div className="mb-6">
+        <Card>
+          <CardContent className="p-5">
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
+              <Clock size={16} className="text-indigo-500" />
+              Order Lifecycle Timeline
+            </h3>
+            <div className="flex items-start gap-0 overflow-x-auto pb-2">
+              {(() => {
+                const isOrderCancelled = TERMINAL_STATUSES.has(currentStatus) && currentStatus !== 'DELIVERED' && currentStatus !== 'COMPLETED';
+                return lifecycleSteps.map((step, idx) => (
+                  <React.Fragment key={step.status}>
+                    <div className="flex flex-col items-center min-w-[90px]">
+                      <div className={`relative w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        step.isCompleted
+                          ? 'bg-green-500 text-white'
+                          : step.isCurrent && !isOrderCancelled
+                          ? 'bg-blue-500 text-white ring-4 ring-blue-100'
+                          : isOrderCancelled
+                          ? 'bg-red-100 text-red-400'
+                          : 'bg-gray-100 text-gray-400'
+                      }`}>
+                        {step.isCompleted ? <Check size={16} /> : idx + 1}
+                      </div>
+                      <p className={`text-[11px] mt-1.5 text-center font-medium leading-tight ${
+                        step.isCompleted
+                          ? 'text-green-700'
+                          : step.isCurrent && !isOrderCancelled
+                          ? 'text-blue-700'
+                          : isOrderCancelled
+                          ? 'text-red-500'
+                          : 'text-gray-400'
+                      }`}>
+                        {step.label}
+                      </p>
+                      {step.timestamp && (
+                        <p className="text-[9px] text-gray-400 text-center mt-0.5 whitespace-nowrap">
+                          {new Date(step.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        </p>
+                      )}
+                    </div>
+                    {idx < lifecycleSteps.length - 1 && (
+                      <div className={`flex-1 min-w-[16px] h-0.5 mt-5 ${
+                        lifecycleSteps[idx + 1].isCompleted
+                          ? 'bg-green-400'
+                          : step.isCurrent && !isOrderCancelled
+                          ? 'bg-blue-300'
+                          : isOrderCancelled
+                          ? 'bg-red-200'
+                          : 'bg-gray-200'
+                      }`} />
+                    )}
+                  </React.Fragment>
+                ));
+              })()}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* ── Delivery Executive Control + Map ── */}
