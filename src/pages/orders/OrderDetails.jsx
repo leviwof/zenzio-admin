@@ -15,9 +15,9 @@ import { SkeletonCard } from '../../components/ui/Skeleton';
 import { isRestaurantAdmin } from '../../utils/auth';
 import { saveAs } from 'file-saver';
 import toast from 'react-hot-toast';
+import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
 
-const ORDER_REFRESH_INTERVAL = 5000;
-const LIVE_TRACKING_INTERVAL = 3000;
+const ORDER_REFRESH_INTERVAL = 15000;
 
 const ORDER_TIMELINE_STEPS = [
   { status: 'PLACED', message: 'Order placed successfully' },
@@ -329,6 +329,10 @@ const OrderDetails = () => {
       const response = await getOrderDetails(orderId);
       if (response?.data) {
         setOrder(response.data);
+        if (response.data?.partner) {
+          setPartnerLocation(response.data.partner);
+          setLastPartnerUpdate(Date.now());
+        }
       } else {
         setError('Order data not found in response');
       }
@@ -346,29 +350,15 @@ const OrderDetails = () => {
 
   useEffect(() => {
     if (!orderId || !order || !isActiveOrder(order)) return;
-    const intervalId = setInterval(() => fetchOrderDetails({ silent: true }), ORDER_REFRESH_INTERVAL);
+    const pollKey = `order-details-${orderId}`;
+    const poll = () => {
+      if (shouldRunSharedPoll(pollKey, ORDER_REFRESH_INTERVAL - 1000)) {
+        fetchOrderDetails({ silent: true });
+      }
+    };
+    const intervalId = setInterval(poll, ORDER_REFRESH_INTERVAL);
     return () => clearInterval(intervalId);
   }, [orderId, order, fetchOrderDetails]);
-
-  // ── Live tracking poll (partner location only, every 3s) ──
-  useEffect(() => {
-    if (!orderId) return;
-    let mounted = true;
-    const pollPartner = async () => {
-      try {
-        const res = await getOrderDetails(orderId);
-        if (!mounted) return;
-        const d = res?.data;
-        if (d?.partner) {
-          setPartnerLocation(d.partner);
-        }
-        setLastPartnerUpdate(Date.now());
-      } catch { /* ignore */ }
-    };
-    pollPartner();
-    const interval = setInterval(pollPartner, LIVE_TRACKING_INTERVAL);
-    return () => { mounted = false; clearInterval(interval); };
-  }, [orderId]);
 
   const handleStatusChange = async () => {
     if (!selectedStatus) return;
