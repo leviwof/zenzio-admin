@@ -1208,7 +1208,7 @@ const MenuManagement = () => {
                             onClick={() => handleToggleStatus(menu)}
                             disabled={toggleLoading[menu.menu_uid]}
                             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset cursor-pointer transition-all duration-150
-                              hover:ring-2 disabled:opacity-50 disabled:cursor-not-allowed
+                              ${!toggleLoading[menu.menu_uid] ? 'hover:ring-2' : ''} disabled:opacity-50 disabled:cursor-not-allowed
                               ${statusBadge.bg} ${statusBadge.text} ${statusBadge.ring}`}
                             title={`Click to ${menu.isActive ? 'deactivate' : 'activate'}`}
                           >
