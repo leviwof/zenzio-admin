@@ -1203,31 +1203,28 @@ const MenuManagement = () => {
                             {menu.category || '-'}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset ${statusBadge.bg} ${statusBadge.text} ${statusBadge.ring}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${statusBadge.dot}`} />
-                            {statusBadge.label}
-                          </span>
-                        </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${availBadge.bg} ${availBadge.text} ${availBadge.ring}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${availBadge.dot}`} />
-                              {availBadge.label}
-                            </span>
-                            <button
-                              onClick={() => handleToggleStatus(menu)}
-                              disabled={toggleLoading[menu.menu_uid]}
-                              className="text-gray-400 hover:text-indigo-600 transition-colors disabled:opacity-50"
-                              title="Toggle status"
-                            >
-                              {toggleLoading[menu.menu_uid] ? (
-                                <Loader2 size={13} className="animate-spin" />
-                              ) : (
-                                <RotateCcw size={13} />
-                              )}
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => handleToggleStatus(menu)}
+                            disabled={toggleLoading[menu.menu_uid]}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset cursor-pointer transition-all duration-150
+                              hover:ring-2 disabled:opacity-50 disabled:cursor-not-allowed
+                              ${statusBadge.bg} ${statusBadge.text} ${statusBadge.ring}`}
+                            title={`Click to ${menu.isActive ? 'deactivate' : 'activate'}`}
+                          >
+                            {toggleLoading[menu.menu_uid] ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <span className={`w-1.5 h-1.5 rounded-full ${statusBadge.dot}`} />
+                            )}
+                            {toggleLoading[menu.menu_uid] ? 'Updating...' : statusBadge.label}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${availBadge.bg} ${availBadge.text} ${availBadge.ring}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${availBadge.dot}`} />
+                            {availBadge.label}
+                          </span>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 text-xs text-gray-500">
