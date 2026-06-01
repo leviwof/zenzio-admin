@@ -1,589 +1,538 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
-import { createOfferByAdmin, getAllRestaurants, getMenuCategories } from '../../services/api';
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Calendar, ChevronLeft, Gift, ImagePlus, Loader2, RotateCcw, Save, Store, Tag } from "lucide-react";
+import toast from "react-hot-toast";
+import {
+  createOffer,
+  createOfferByAdmin,
+  getAllMenus,
+  getAllRestaurants,
+  getMenuCategories,
+} from "../../services/api";
+import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
+
+const OFFER_TYPES = [
+  { label: "Percentage Discount", value: "PERCENTAGE_DISCOUNT" },
+  { label: "Fixed Amount Discount", value: "FIXED_AMOUNT_DISCOUNT" },
+  { label: "Buy 1 Get 1", value: "BUY_ONE_GET_ONE" },
+  { label: "Buy X Get Y", value: "BUY_X_GET_Y" },
+  { label: "Free Item On Cart Value", value: "FREE_ITEM_CART_VALUE" },
+  { label: "Free Item On Category", value: "FREE_ITEM_CATEGORY" },
+  { label: "Festival Offer", value: "FESTIVAL_OFFER" },
+  { label: "Platform Campaign Offer", value: "PLATFORM_CAMPAIGN" },
+];
+
+const TYPE_TO_DISCOUNT = {
+  PERCENTAGE_DISCOUNT: "PERCENTAGE",
+  FIXED_AMOUNT_DISCOUNT: "FLAT",
+  BUY_ONE_GET_ONE: "BOGO",
+  BUY_X_GET_Y: "BUY_X_GET_Y",
+  FREE_ITEM_CART_VALUE: "FREE_ITEM_CART",
+  FREE_ITEM_CATEGORY: "FREE_ITEM_CATEGORY",
+  FESTIVAL_OFFER: "PLATFORM_CAMPAIGN",
+  PLATFORM_CAMPAIGN: "PLATFORM_CAMPAIGN",
+};
+
+const emptyRules = {
+  buyItem: "",
+  buyQuantity: "1",
+  freeItem: "",
+  freeQuantity: "1",
+  minimumCartAmount: "",
+  triggerCategory: "",
+};
+
+const initialForm = {
+  title: "",
+  offerCode: "",
+  restaurantId: "",
+  categoryId: "",
+  offerType: "PERCENTAGE_DISCOUNT",
+  discountValue: "",
+  minOrderValue: "",
+  startDate: "",
+  endDate: "",
+  startTime: "",
+  endTime: "",
+  termsConditions: "",
+  description: "",
+  adminCommission: "15",
+  isCommissionAuto: true,
+  rules: emptyRules,
+};
+
+const normalizeArray = (response) => {
+  const data = response?.data;
+  if (Array.isArray(data?.data?.restaurants)) return data.data.restaurants;
+  if (Array.isArray(data?.restaurants)) return data.restaurants;
+  if (Array.isArray(data?.data?.restaurant_menu)) return data.data.restaurant_menu;
+  if (Array.isArray(data?.data?.items)) return data.data.items;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.categories)) return data.categories;
+  if (Array.isArray(data)) return data;
+  return [];
+};
+
+const getRestaurantName = (restaurant) =>
+  restaurant?.profile?.restaurant_name || restaurant?.restaurant_name || restaurant?.name || restaurant?.uid || restaurant?.id;
+
+const getMenuName = (menu) => menu?.menu_name || menu?.title || menu?.name || menu?.menuUid || menu?.menu_uid;
+
+const Field = ({ label, required, children, hint }) => (
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">
+      {label} {required && <span className="text-red-500">*</span>}
+    </label>
+    {children}
+    {hint && <p className="text-xs text-gray-500 mt-1">{hint}</p>}
+  </div>
+);
 
 const OfferConfiguration = () => {
   const navigate = useNavigate();
-
-  // ✅ FIX: Initialize as empty arrays
+  const restaurantAdmin = isRestaurantAdmin();
+  const ownRestaurantUid = getCurrentRestaurantUid();
   const [restaurants, setRestaurants] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [menus, setMenus] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetchingData, setFetchingData] = useState(true);
-
   const [formData, setFormData] = useState({
-    title: '',
-    restaurantId: '',
-    categoryId: '',
-    discountType: 'PERCENTAGE',
-    discountValue: '',
-    minOrderValue: '',
-    maxUsagePerUser: '1',
-    totalUsageLimit: '',
-    startDate: '',
-    endDate: '',
-    startTime: '',
-    endTime: '',
-    termsConditions: '',
-    description: '',
-    adminCommission: '15',
-    isCommissionAuto: true
+    ...initialForm,
+    restaurantId: restaurantAdmin ? ownRestaurantUid : "",
   });
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
   useEffect(() => {
+    const fetchInitialData = async () => {
+      setFetchingData(true);
+      try {
+        const requests = [
+          getMenuCategories().catch(() => ({ data: [] })),
+          getAllMenus({ restaurant: restaurantAdmin ? ownRestaurantUid : undefined }).catch(() => ({ data: [] })),
+        ];
+        if (!restaurantAdmin) requests.unshift(getAllRestaurants({}).catch(() => ({ data: [] })));
+        const responses = await Promise.all(requests);
+        if (!restaurantAdmin) {
+          setRestaurants(normalizeArray(responses[0]));
+          setCategories(normalizeArray(responses[1]));
+          setMenus(normalizeArray(responses[2]));
+        } else {
+          setCategories(normalizeArray(responses[0]));
+          setMenus(normalizeArray(responses[1]));
+        }
+      } finally {
+        setFetchingData(false);
+      }
+    };
     fetchInitialData();
-  }, []);
+  }, [restaurantAdmin, ownRestaurantUid]);
 
-  const fetchInitialData = async () => {
-    setFetchingData(true);
-    await Promise.all([fetchRestaurants(), fetchCategories()]);
-    setFetchingData(false);
-  };
-
-  const fetchRestaurants = async () => {
-    try {
-      const response = await getAllRestaurants();
-      console.log('Restaurants response:', response.data);
-
-      // Handle nested structure: data.data.restaurants
-      let restaurantData = [];
-
-      if (response.data?.data?.restaurants) {
-        // Structure: { data: { restaurants: [...] } }
-        restaurantData = response.data.data.restaurants;
-      } else if (response.data?.restaurants) {
-        // Structure: { restaurants: [...] }
-        restaurantData = response.data.restaurants;
-      } else if (Array.isArray(response.data?.data)) {
-        // Structure: { data: [...] }
-        restaurantData = response.data.data;
-      } else if (Array.isArray(response.data)) {
-        // Structure: [...]
-        restaurantData = response.data;
+  useEffect(() => {
+    const fetchMenusForRestaurant = async () => {
+      if (!formData.restaurantId || formData.restaurantId === "all") return;
+      try {
+        const response = await getAllMenus({ restaurant: formData.restaurantId });
+        setMenus(normalizeArray(response));
+      } catch {
+        setMenus([]);
       }
+    };
+    fetchMenusForRestaurant();
+  }, [formData.restaurantId]);
 
-      setRestaurants(Array.isArray(restaurantData) ? restaurantData : []);
-    } catch (error) {
-      console.error('Error fetching restaurants:', error);
-      setRestaurants([]);
-    }
-  };
+  const selectedRestaurantName = useMemo(() => {
+    if (restaurantAdmin) return ownRestaurantUid || "Own Restaurant";
+    if (!formData.restaurantId) return "All Restaurants";
+    return getRestaurantName(restaurants.find((restaurant) => [restaurant.uid, restaurant.id].includes(formData.restaurantId))) || "Selected Restaurant";
+  }, [formData.restaurantId, ownRestaurantUid, restaurantAdmin, restaurants]);
 
-  const fetchCategories = async () => {
-    try {
-      const response = await getMenuCategories();
-      console.log('Categories response:', response.data);
+  const selectedType = OFFER_TYPES.find((type) => type.value === formData.offerType)?.label || "Offer";
+  const menuOptions = menus.filter(Boolean);
 
-      let categoryData = [];
-
-      // Handle different response structures
-      if (Array.isArray(response.data?.data)) {
-        // Structure: { data: [...] }
-        categoryData = response.data.data;
-      } else if (Array.isArray(response.data)) {
-        // Structure: [...]
-        categoryData = response.data;
-      } else if (response.data?.categories && Array.isArray(response.data.categories)) {
-        // Structure: { categories: [...] }
-        categoryData = response.data.categories;
-      }
-
-      setCategories(Array.isArray(categoryData) ? categoryData : []);
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-      setCategories([]);
-    }
-  };
-
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
+  const handleChange = (event) => {
+    const { name, value, type, checked } = event.target;
+    setFormData((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === "checkbox" ? checked : value,
     }));
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
+  const handleRuleChange = (event) => {
+    const { name, value } = event.target;
+    setFormData((prev) => ({
+      ...prev,
+      rules: { ...prev.rules, [name]: value },
+    }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleImageChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setImagePreview(reader.result);
+    reader.readAsDataURL(file);
+  };
 
-    // Validation
-    if (!formData.title) {
-      alert('Please enter offer title');
-      return;
+  const buildRulePayload = () => {
+    const rules = formData.rules;
+    if (formData.offerType === "BUY_ONE_GET_ONE") {
+      return {
+        conditions: { buyItem: rules.buyItem, quantityRequired: Number(rules.buyQuantity || 1) },
+        rewards: { freeItem: rules.freeItem || rules.buyItem, freeQuantity: Number(rules.freeQuantity || 1) },
+      };
     }
-
-    if (!formData.discountValue) {
-      alert('Please enter discount value');
-      return;
+    if (formData.offerType === "BUY_X_GET_Y") {
+      return {
+        conditions: { buyProduct: rules.buyItem, buyQuantity: Number(rules.buyQuantity || 1) },
+        rewards: { freeProduct: rules.freeItem, freeQuantity: Number(rules.freeQuantity || 1) },
+      };
     }
+    if (formData.offerType === "FREE_ITEM_CART_VALUE") {
+      return {
+        conditions: { minimumCartAmount: Number(rules.minimumCartAmount || formData.minOrderValue || 0) },
+        rewards: { freeItem: rules.freeItem, freeQuantity: Number(rules.freeQuantity || 1) },
+      };
+    }
+    if (formData.offerType === "FREE_ITEM_CATEGORY") {
+      return {
+        conditions: { triggerCategory: rules.triggerCategory },
+        rewards: { freeItem: rules.freeItem, freeQuantity: Number(rules.freeQuantity || 1) },
+      };
+    }
+    return {
+      conditions: { minimumCartAmount: Number(formData.minOrderValue || 0), categoryId: formData.categoryId || null },
+      rewards: { discountType: TYPE_TO_DISCOUNT[formData.offerType], discountValue: Number(formData.discountValue || 0) },
+    };
+  };
 
-    if (!formData.startDate || !formData.endDate) {
-      alert('Please select start and end dates');
+  const validate = () => {
+    const start = new Date(formData.startDate);
+    const end = new Date(formData.endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (!formData.title.trim()) return "Please enter offer name";
+    if (!formData.offerCode.trim()) return "Please enter offer code";
+    if (!formData.startDate || !formData.endDate) return "Please select start and end dates";
+    if (start < today) return "Start date cannot be in the past";
+    if (end < start) return "End date cannot be before start date";
+    if (restaurantAdmin && formData.restaurantId !== ownRestaurantUid) return "Restaurant admins can only create offers for their own restaurant";
+    if (restaurantAdmin && formData.offerType === "PLATFORM_CAMPAIGN") return "Platform campaign offers can only be created by Zenzio Admin";
+
+    const discountTypes = ["PERCENTAGE_DISCOUNT", "FIXED_AMOUNT_DISCOUNT", "FESTIVAL_OFFER", "PLATFORM_CAMPAIGN"];
+    if (discountTypes.includes(formData.offerType) && Number(formData.discountValue) < 0) return "Discount cannot be negative";
+
+    const needsFreeItem = ["BUY_ONE_GET_ONE", "BUY_X_GET_Y", "FREE_ITEM_CART_VALUE", "FREE_ITEM_CATEGORY"].includes(formData.offerType);
+    if (needsFreeItem && !formData.rules.freeItem) return "Please select the free item";
+    if (["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType) && !formData.rules.buyItem) return "Please select the buy item";
+    if (formData.offerType === "FREE_ITEM_CATEGORY" && !formData.rules.triggerCategory) return "Please select trigger category";
+    if (formData.offerType === "FREE_ITEM_CART_VALUE" && Number(formData.rules.minimumCartAmount || formData.minOrderValue) <= 0) return "Please enter minimum cart amount";
+    return null;
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const validationError = validate();
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
     setLoading(true);
-
     try {
+      const { conditions, rewards } = buildRulePayload();
       const data = new FormData();
+      data.append("title", formData.title.trim());
+      data.append("offerCode", formData.offerCode.trim().toUpperCase());
+      data.append("offerType", formData.offerType);
+      data.append("discountType", TYPE_TO_DISCOUNT[formData.offerType]);
+      data.append("discountValue", String(formData.discountValue || 0));
+      data.append("minOrderValue", String(formData.minOrderValue || formData.rules.minimumCartAmount || 0));
+      data.append("startDate", formData.startDate);
+      data.append("endDate", formData.endDate);
+      data.append("isCommissionAuto", String(formData.isCommissionAuto));
+      data.append("adminCommission", String(formData.adminCommission || 15));
+      data.append("ruleConfig", JSON.stringify({ type: formData.offerType, ...formData.rules }));
+      data.append("conditions", JSON.stringify(conditions));
+      data.append("rewards", JSON.stringify(rewards));
 
-      // Add all form fields
-      Object.keys(formData).forEach(key => {
-        // Skip keys with empty string values
-        if (formData[key] !== '' && formData[key] !== null && formData[key] !== undefined) {
-          data.append(key, formData[key]);
-        }
-      });
+      if (formData.restaurantId) data.append("restaurantId", formData.restaurantId);
+      if (formData.categoryId) data.append("categoryId", formData.categoryId);
+      if (formData.startTime) data.append("startTime", formData.startTime);
+      if (formData.endTime) data.append("endTime", formData.endTime);
+      if (formData.description) data.append("description", formData.description);
+      if (formData.termsConditions) data.append("termsConditions", formData.termsConditions);
+      if (imageFile) data.append("image", imageFile);
 
-      // Add image if selected
-      if (imageFile) {
-        data.append('image', imageFile);
-      }
+      if (restaurantAdmin) await createOffer(data);
+      else await createOfferByAdmin(data);
 
-      await createOfferByAdmin(data);
-      alert('Offer created successfully!');
-      navigate('/offers/existing');
+      toast.success(restaurantAdmin ? "Offer submitted for approval" : "Offer created successfully");
+      navigate("/offers");
     } catch (error) {
-      console.error('Error:', error);
-      alert(error.response?.data?.message || 'Failed to create offer');
+      toast.error(error.response?.data?.message || "Failed to create offer");
     } finally {
       setLoading(false);
     }
   };
 
   const handleReset = () => {
-    setFormData({
-      title: '',
-      restaurantId: '',
-      categoryId: '',
-      discountType: 'PERCENTAGE',
-      discountValue: '',
-      minOrderValue: '',
-      maxUsagePerUser: '1',
-      totalUsageLimit: '',
-      startDate: '',
-      endDate: '',
-      startTime: '',
-      endTime: '',
-      termsConditions: '',
-      description: '',
-      adminCommission: '15',
-      isCommissionAuto: true
-    });
+    setFormData({ ...initialForm, restaurantId: restaurantAdmin ? ownRestaurantUid : "" });
     setImageFile(null);
     setImagePreview(null);
   };
 
-  // Show loading state while fetching initial data
+  const MenuSelect = ({ name, value, placeholder }) => (
+    <select
+      name={name}
+      value={value}
+      onChange={handleRuleChange}
+      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white"
+    >
+      <option value="">{placeholder}</option>
+      {menuOptions.map((menu) => {
+        const value = menu.menu_uid || menu.menuUid || getMenuName(menu);
+        return <option key={value} value={value}>{getMenuName(menu)}</option>;
+      })}
+    </select>
+  );
+
+  const renderRuleFields = () => {
+    if (["PERCENTAGE_DISCOUNT", "FIXED_AMOUNT_DISCOUNT", "FESTIVAL_OFFER", "PLATFORM_CAMPAIGN"].includes(formData.offerType)) {
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Discount Value" required>
+            <input type="number" name="discountValue" value={formData.discountValue} onChange={handleChange} min="0" step="0.01" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+          </Field>
+          <Field label="Minimum Order Value">
+            <input type="number" name="minOrderValue" value={formData.minOrderValue} onChange={handleChange} min="0" step="0.01" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+          </Field>
+        </div>
+      );
+    }
+
+    if (["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType)) {
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Buy Item" : "Buy Product"} required>
+            <MenuSelect name="buyItem" value={formData.rules.buyItem} placeholder="Select buy item" />
+          </Field>
+          <Field label="Quantity Required" required>
+            <input type="number" name="buyQuantity" value={formData.rules.buyQuantity} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+          </Field>
+          <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Free Item" : "Free Product"} required>
+            <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" />
+          </Field>
+          <Field label="Free Quantity" required>
+            <input type="number" name="freeQuantity" value={formData.rules.freeQuantity} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+          </Field>
+        </div>
+      );
+    }
+
+    if (formData.offerType === "FREE_ITEM_CART_VALUE") {
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Field label="Minimum Cart Amount" required>
+            <input type="number" name="minimumCartAmount" value={formData.rules.minimumCartAmount} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+          </Field>
+          <Field label="Free Item" required>
+            <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" />
+          </Field>
+          <Field label="Quantity" required>
+            <input type="number" name="freeQuantity" value={formData.rules.freeQuantity} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+          </Field>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Field label="Trigger Category" required>
+          <select name="triggerCategory" value={formData.rules.triggerCategory} onChange={handleRuleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white">
+            <option value="">Select category</option>
+            {categories.map((category, index) => {
+              const value = category.name || category.category || category.id || category;
+              return <option key={`${value}-${index}`} value={value}>{category.name || category.category || category}</option>;
+            })}
+          </select>
+        </Field>
+        <Field label="Free Item" required>
+          <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" />
+        </Field>
+      </div>
+    );
+  };
+
   if (fetchingData) {
     return (
       <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-red-500"></div>
-          <p className="mt-4 text-gray-600">Loading data...</p>
+          <Loader2 className="mx-auto animate-spin text-indigo-500" size={36} />
+          <p className="mt-4 text-gray-600">Loading offer setup...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <button
-        onClick={() => navigate('/offers/existing')}
-        className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
-      >
-        <ChevronLeft size={20} />
-        <span>Back</span>
+    <div className="p-4 md:p-6 lg:p-8 bg-gray-50/80 min-h-screen">
+      <button onClick={() => navigate("/offers")} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 mb-5">
+        <ChevronLeft size={18} />
+        Back to Offers
       </button>
 
-      <h1 className="text-3xl font-bold mb-6">Offer Configuration</h1>
+      <div className="mb-6">
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">Create Offer</h1>
+        <p className="text-sm text-gray-500 mt-1">{restaurantAdmin ? "Restaurant offers are submitted for Zenzio approval" : "Create restaurant-specific or platform-wide campaigns"}</p>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Form */}
-        <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
-          <form onSubmit={handleSubmit}>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Offer Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleChange}
-                  placeholder="e.g. Weekend Bonanza"
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Restaurant
-                  </label>
-                  <select
-                    name="restaurantId"
-                    value={formData.restaurantId}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  >
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <form onSubmit={handleSubmit} className="xl:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm p-5 md:p-6 space-y-6">
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <Tag size={18} className="text-indigo-500" />
+              <h2 className="font-semibold text-gray-900">Offer Information</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Offer Name" required>
+                <input name="title" value={formData.title} onChange={handleChange} placeholder="Weekend Special" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+              </Field>
+              <Field label="Offer Code" required>
+                <input name="offerCode" value={formData.offerCode} onChange={handleChange} placeholder="WEEKEND50" className="w-full px-4 py-2 border border-gray-200 rounded-lg uppercase focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+              </Field>
+              <Field label="Offer Type" required>
+                <select name="offerType" value={formData.offerType} onChange={handleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white">
+                  {OFFER_TYPES.filter((type) => !restaurantAdmin || type.value !== "PLATFORM_CAMPAIGN").map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                </select>
+              </Field>
+              <Field label="Restaurant" hint={restaurantAdmin ? "Locked to your restaurant" : "Leave empty for platform-wide offer"}>
+                {restaurantAdmin ? (
+                  <input value={ownRestaurantUid || "Own Restaurant"} disabled className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-100 text-gray-500" />
+                ) : (
+                  <select name="restaurantId" value={formData.restaurantId} onChange={handleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white">
                     <option value="">All Restaurants</option>
-                    {Array.isArray(restaurants) && restaurants.map(restaurant => (
-                      <option key={restaurant.uid || restaurant.id} value={restaurant.uid || restaurant.id}>
-                        {restaurant.profile?.restaurant_name || restaurant.rest_name || restaurant.name}
-                      </option>
-                    ))}
+                    {restaurants.map((restaurant) => {
+                      const value = restaurant.uid || restaurant.id;
+                      return <option key={value} value={value}>{getRestaurantName(restaurant)}</option>;
+                    })}
                   </select>
-                  <p className="text-xs text-gray-500 mt-1">Leave empty for global offer</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Food Category
-                  </label>
-                  <select
-                    name="categoryId"
-                    value={formData.categoryId}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  >
-                    <option value="">All Categories</option>
-                    {Array.isArray(categories) && categories.map((category, index) => (
-                      <option key={index} value={category.name}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">Leave empty for all categories</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Discount Type <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="discountType"
-                    value={formData.discountType}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  >
-                    <option value="PERCENTAGE">Percentage</option>
-                    <option value="FLAT">Flat Amount</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Discount Value <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="discountValue"
-                    value={formData.discountValue}
-                    onChange={handleChange}
-                    placeholder="e.g. 20"
-                    required
-                    min="0"
-                    step="0.01"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Minimum Order Value (₹)
-                  </label>
-                  <input
-                    type="number"
-                    name="minOrderValue"
-                    value={formData.minOrderValue}
-                    onChange={handleChange}
-                    placeholder="e.g. 500"
-                    min="0"
-                    step="0.01"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Max Usage Per User
-                  </label>
-                  <input
-                    type="number"
-                    name="maxUsagePerUser"
-                    value={formData.maxUsagePerUser}
-                    onChange={handleChange}
-                    placeholder="e.g. 1"
-                    min="1"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Total Usage Limit
-                </label>
-                <input
-                  type="number"
-                  name="totalUsageLimit"
-                  value={formData.totalUsageLimit}
-                  onChange={handleChange}
-                  placeholder="Leave empty for unlimited"
-                  min="1"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Start Date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    name="startDate"
-                    value={formData.startDate}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    End Date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    name="endDate"
-                    value={formData.endDate}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Start Time (Optional)
-                  </label>
-                  <input
-                    type="time"
-                    name="startTime"
-                    value={formData.startTime}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    End Time (Optional)
-                  </label>
-                  <input
-                    type="time"
-                    name="endTime"
-                    value={formData.endTime}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Commission Calculation
-                  </label>
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <span className="text-sm text-gray-600">Auto Calculate</span>
-                    <input
-                      type="checkbox"
-                      name="isCommissionAuto"
-                      checked={formData.isCommissionAuto}
-                      onChange={handleChange}
-                      className="w-4 h-4 text-red-500 rounded focus:ring-2 focus:ring-red-500"
-                    />
-                  </label>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Admin Commission (%)
-                  </label>
-                  <input
-                    type="number"
-                    name="adminCommission"
-                    value={formData.adminCommission}
-                    onChange={handleChange}
-                    disabled={formData.isCommissionAuto}
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Offer Description
-                </label>
-                <textarea
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  placeholder="Briefly describe the offer..."
-                  rows="3"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
-                ></textarea>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Terms & Conditions
-                </label>
-                <textarea
-                  name="termsConditions"
-                  value={formData.termsConditions}
-                  onChange={handleChange}
-                  placeholder="Enter terms and conditions (one per line)"
-                  rows="4"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
-                ></textarea>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Upload Offer Image
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-red-50 file:text-red-700 hover:file:bg-red-100"
-                />
-                <p className="text-xs text-gray-500 mt-1">Recommended: 800x400px, Max 2MB</p>
-                {imagePreview && (
-                  <div className="mt-3 relative">
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="w-full max-w-md h-48 rounded-md object-cover border-2 border-gray-200"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImageFile(null);
-                        setImagePreview(null);
-                      }}
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
                 )}
-              </div>
+              </Field>
             </div>
+          </section>
 
-            <div className="flex flex-wrap justify-center gap-4 mt-8">
-              <button
-                type="button"
-                onClick={handleReset}
-                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-              >
-                Reset Form
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Saving...' : 'Save Offer'}
-              </button>
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <Gift size={18} className="text-indigo-500" />
+              <h2 className="font-semibold text-gray-900">Discount Logic</h2>
             </div>
-          </form>
-        </div>
+            {renderRuleFields()}
+          </section>
 
-        {/* Preview */}
-        <div className="bg-white rounded-lg shadow p-6 h-fit sticky top-6">
-          <h3 className="font-bold text-lg mb-4">Offer Preview</h3>
-          <div className="border rounded-lg p-4 space-y-3">
-            {imagePreview && (
-              <div className="mb-3">
-                <img
-                  src={imagePreview}
-                  alt="Offer"
-                  className="w-full h-32 rounded-md object-cover"
-                />
-              </div>
-            )}
-
-            <p className="font-semibold text-lg">
-              {formData.title || 'Weekend Bonanza'}
-            </p>
-
-            <p className="text-sm text-gray-600">
-              Restaurant: {restaurants.find(r => (r.uid === formData.restaurantId || r.id === formData.restaurantId))?.profile?.restaurant_name || restaurants.find(r => (r.uid === formData.restaurantId || r.id === formData.restaurantId))?.rest_name || 'All Restaurants'}
-            </p>
-
-            <p className="text-sm text-gray-600">
-              Category: {formData.categoryId || 'All Categories'}
-            </p>
-
-            <div className="bg-red-50 p-3 rounded-md">
-              <p className="text-red-500 font-bold text-xl">
-                Discount: {formData.discountValue || '20'}{formData.discountType === 'PERCENTAGE' ? '%' : '₹'}
-              </p>
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <Calendar size={18} className="text-indigo-500" />
+              <h2 className="font-semibold text-gray-900">Lifecycle</h2>
             </div>
-
-            <div className="bg-gray-50 p-3 rounded-md">
-              <p className="text-gray-700 text-sm">
-                Min Order: ₹{formData.minOrderValue || '0'}
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Start Date" required>
+                <input type="date" name="startDate" value={formData.startDate} onChange={handleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+              </Field>
+              <Field label="End Date" required>
+                <input type="date" name="endDate" value={formData.endDate} onChange={handleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+              </Field>
+              <Field label="Start Time">
+                <input type="time" name="startTime" value={formData.startTime} onChange={handleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+              </Field>
+              <Field label="End Time">
+                <input type="time" name="endTime" value={formData.endTime} onChange={handleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+              </Field>
             </div>
+          </section>
 
-            <div className="bg-yellow-50 p-3 rounded-md">
-              <p className="text-yellow-700 font-bold">
-                Admin Commission: {formData.adminCommission || '15'}%
-              </p>
-            </div>
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="Offer Description">
+              <textarea name="description" value={formData.description} onChange={handleChange} rows={4} placeholder="Briefly describe the offer" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 resize-none" />
+            </Field>
+            <Field label="Terms & Conditions">
+              <textarea name="termsConditions" value={formData.termsConditions} onChange={handleChange} rows={4} placeholder="One condition per line" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 resize-none" />
+            </Field>
+          </section>
 
-            {formData.startDate && formData.endDate && (
-              <div className="text-xs text-gray-600">
-                Valid: {formData.startDate} to {formData.endDate}
-              </div>
-            )}
+          {!restaurantAdmin && (
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Commission Calculation">
+                <label className="flex items-center gap-2 h-10 text-sm text-gray-600">
+                  <input type="checkbox" name="isCommissionAuto" checked={formData.isCommissionAuto} onChange={handleChange} className="w-4 h-4 text-indigo-600 rounded" />
+                  Auto calculate commission
+                </label>
+              </Field>
+              <Field label="Admin Commission (%)">
+                <input type="number" name="adminCommission" value={formData.adminCommission} onChange={handleChange} disabled={formData.isCommissionAuto} min="0" max="100" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 disabled:bg-gray-100" />
+              </Field>
+            </section>
+          )}
+
+          <section>
+            <Field label="Offer Image">
+              <label className="flex items-center justify-center gap-2 px-4 py-5 border border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-50 text-sm text-gray-500">
+                <ImagePlus size={18} />
+                Upload offer banner
+                <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+              </label>
+            </Field>
+          </section>
+
+          <div className="flex flex-wrap justify-end gap-3 pt-2">
+            <button type="button" onClick={handleReset} className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50">
+              <RotateCcw size={15} />
+              Reset
+            </button>
+            <button type="submit" disabled={loading} className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50">
+              {loading ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              {restaurantAdmin ? "Submit for Approval" : "Save Offer"}
+            </button>
           </div>
-        </div>
+        </form>
+
+        <aside className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 h-fit sticky top-6">
+          <h3 className="font-semibold text-gray-900 mb-4">Offer Preview</h3>
+          {imagePreview ? (
+            <img src={imagePreview} alt="Offer preview" className="w-full h-40 object-cover rounded-xl border border-gray-100 mb-4" />
+          ) : (
+            <div className="w-full h-40 rounded-xl border border-gray-100 bg-gray-50 flex items-center justify-center text-gray-300 mb-4">
+              <ImagePlus size={36} />
+            </div>
+          )}
+          <div className="space-y-3">
+            <div>
+              <p className="text-lg font-bold text-gray-900">{formData.title || "Weekend Special"}</p>
+              <p className="text-xs text-gray-400">{formData.offerCode || "OFFER CODE"}</p>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Store size={14} className="text-gray-400" />
+              {selectedRestaurantName}
+            </div>
+            <div className="bg-indigo-50 text-indigo-700 rounded-lg p-3">
+              <p className="text-xs font-medium">{selectedType}</p>
+              <p className="text-xl font-bold">
+                {["PERCENTAGE_DISCOUNT", "FIXED_AMOUNT_DISCOUNT", "FESTIVAL_OFFER", "PLATFORM_CAMPAIGN"].includes(formData.offerType)
+                  ? `${formData.discountValue || 0}${formData.offerType === "PERCENTAGE_DISCOUNT" ? "%" : "₹"} OFF`
+                  : "Free item reward"}
+              </p>
+            </div>
+            <div className="text-xs text-gray-500">
+              Valid: {formData.startDate || "-"} to {formData.endDate || "-"}
+            </div>
+            <div className="text-xs text-gray-500">
+              Created by: {restaurantAdmin ? "Restaurant Admin" : "Zenzio Admin"}
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );
