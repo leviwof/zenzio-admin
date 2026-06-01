@@ -1,4 +1,5 @@
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../utils/auth';
 
 
@@ -34,6 +35,43 @@ const AUTH_STORAGE_KEYS = [
   'restaurant_id',
   'authUser',
 ];
+const RATE_LIMIT_MESSAGE = 'Too many requests. Please try again shortly.';
+const MAX_RATE_LIMIT_RETRIES = 2;
+const RATE_LIMIT_TOAST_COOLDOWN = 5000;
+let rateLimitPauseUntil = 0;
+let lastRateLimitToastAt = 0;
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getRetryAfterSeconds = (error) => {
+  const response = error?.response;
+  const retryAfter =
+    response?.data?.retryAfter ||
+    response?.headers?.['retry-after'] ||
+    response?.headers?.['retry-after-medium'] ||
+    response?.headers?.['retry-after-short'] ||
+    response?.headers?.['retry-after-long'];
+  const parsed = Number(retryAfter);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+};
+
+const isIdempotentRequest = (config = {}) => {
+  const method = String(config.method || 'get').toLowerCase();
+  return ['get', 'head', 'options'].includes(method);
+};
+
+const shouldRetryRateLimit = (config = {}) =>
+  isIdempotentRequest(config) &&
+  !config.__localRateLimitBlock &&
+  !config.skipRateLimitRetry &&
+  (config.__rateLimitRetryCount || 0) < MAX_RATE_LIMIT_RETRIES;
+
+const showRateLimitToast = (message = RATE_LIMIT_MESSAGE) => {
+  const now = Date.now();
+  if (now - lastRateLimitToastAt < RATE_LIMIT_TOAST_COOLDOWN) return;
+  lastRateLimitToastAt = now;
+  toast.error(message);
+};
 
 export const getStoredAccessToken = () =>
   ACCESS_TOKEN_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
@@ -73,6 +111,22 @@ export const refreshAccessToken = async () => {
 
 api.interceptors.request.use(
   (config) => {
+    if (Date.now() < rateLimitPauseUntil && !config.__skipRateLimitPause) {
+      const retryAfter = Math.max(1, Math.ceil((rateLimitPauseUntil - Date.now()) / 1000));
+      return Promise.reject({
+        __localRateLimitBlock: true,
+        config: { ...config, __localRateLimitBlock: true },
+        response: {
+          status: 429,
+          data: {
+            success: false,
+            message: RATE_LIMIT_MESSAGE,
+            retryAfter,
+          },
+        },
+      });
+    }
+
     const token = getStoredAccessToken();
 
     if (token) {
@@ -98,6 +152,27 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     const isRefreshRequest = originalRequest?.url?.includes('/auth/refresh');
+
+    if (error.response?.status === 429) {
+      const retryAfterSeconds = getRetryAfterSeconds(error);
+      rateLimitPauseUntil = Math.max(rateLimitPauseUntil, Date.now() + retryAfterSeconds * 1000);
+      showRateLimitToast(error.response?.data?.message || RATE_LIMIT_MESSAGE);
+
+      if (shouldRetryRateLimit(originalRequest)) {
+        const retryCount = originalRequest.__rateLimitRetryCount || 0;
+        const exponentialDelay = Math.min(
+          30000,
+          Math.max(retryAfterSeconds * 1000, 1000 * 2 ** retryCount),
+        );
+
+        await delay(exponentialDelay + Math.floor(Math.random() * 250));
+        originalRequest.__rateLimitRetryCount = retryCount + 1;
+        originalRequest.__skipRateLimitPause = true;
+        return api(originalRequest);
+      }
+
+      return Promise.reject(error);
+    }
 
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isRefreshRequest) {
       originalRequest._retry = true;

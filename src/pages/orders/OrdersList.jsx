@@ -16,10 +16,11 @@ import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
 import { useOrderNotifications } from "../../context/OrderNotificationContext";
 import { getCurrentRestaurantUid, isRestaurantAdmin, isZenzioAdmin } from "../../utils/auth";
+import { shouldRunSharedPoll } from "../../utils/requestCoordinator";
 
 const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 const loudNotificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
-const ORDER_POLL_INTERVAL = 5000;
+const ORDER_POLL_INTERVAL = 15000;
 const TOAST_DURATION = 9000;
 const HIGHLIGHT_DURATION = 20000;
 const EXIT_ANIMATION_DURATION = 350;
@@ -776,16 +777,20 @@ const OrdersList = () => {
   pollOrdersRef.current = pollOrders;
 
   useEffect(() => {
-    pollOrdersRef.current?.();
+    if (shouldRunSharedPoll('orders-list', ORDER_POLL_INTERVAL - 1000)) {
+      pollOrdersRef.current?.();
+    }
 
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (shouldRunSharedPoll('orders-list', ORDER_POLL_INTERVAL - 1000)) {
         pollOrdersRef.current?.();
       }
     }, ORDER_POLL_INTERVAL);
 
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') pollOrdersRef.current?.();
+      if (shouldRunSharedPoll('orders-list', ORDER_POLL_INTERVAL - 1000)) {
+        pollOrdersRef.current?.();
+      }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 

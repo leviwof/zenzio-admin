@@ -10,6 +10,7 @@ import {
 import { getNotifications, getRestaurantById, markNotificationAsRead, getRestaurantStats, getOrderStats } from '../../services/api';
 import { useOrderNotifications } from '../../context/OrderNotificationContext';
 import { getAuthUser, getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
+import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
 
 const notificationSoundPath = `${import.meta.env.BASE_URL}notification.mp3`;
 
@@ -193,7 +194,9 @@ const Header = ({ onLogout }) => {
       }
     };
     fetch();
-    const t = setInterval(fetch, 30000);
+    const t = setInterval(() => {
+      if (shouldRunSharedPoll('header-stats', 29000)) fetch();
+    }, 30000);
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
@@ -316,7 +319,13 @@ const Header = ({ onLogout }) => {
     } catch (error) { console.error('Failed to fetch notifications:', error); }
   }, [playNotificationSound]);
 
-  useEffect(() => { fetchNotifications(); const interval = setInterval(fetchNotifications, 15000); return () => clearInterval(interval); }, [fetchNotifications]);
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(() => {
+      if (shouldRunSharedPoll('notifications', 14000)) fetchNotifications();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
 
   useEffect(() => {
     if (unreadOrderCount > 0) { setBadgeAnim(true); const t = setTimeout(() => setBadgeAnim(false), 300); return () => clearTimeout(t); }

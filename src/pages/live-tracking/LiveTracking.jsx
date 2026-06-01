@@ -24,6 +24,7 @@ import {
     Wifi,
 } from 'lucide-react';
 import { getLiveExecutives, getLivePartnerLocations } from '../../services/api';
+import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
 
 const DEFAULT_CENTER = { lat: 11.9416, lng: 79.8083 };
 const ACTIVE_DELIVERY_STATUSES = new Set([
@@ -483,7 +484,11 @@ const LiveTracking = () => {
 
     useEffect(() => {
         fetchLocations();
-        const interval = setInterval(fetchLocations, 10000);
+        const interval = setInterval(() => {
+            if (shouldRunSharedPoll('live-tracking', 14000)) {
+                fetchLocations();
+            }
+        }, 15000);
         return () => clearInterval(interval);
     }, [fetchLocations]);
 

@@ -41,6 +41,7 @@ import {
   getRestaurantStats,
 } from "../../services/api";
 import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
+import { shouldRunSharedPoll } from "../../utils/requestCoordinator";
 
 const DATE_PRESETS = [
   { id: "today", label: "Today" },
@@ -346,7 +347,11 @@ const Dashboard = () => {
   }, [fetchDashboardData]);
 
   useEffect(() => {
-    const refreshInterval = setInterval(fetchDashboardData, 45000);
+    const refreshInterval = setInterval(() => {
+      if (shouldRunSharedPoll("dashboard", 44000)) {
+        fetchDashboardData();
+      }
+    }, 45000);
     return () => clearInterval(refreshInterval);
   }, [fetchDashboardData]);
 
