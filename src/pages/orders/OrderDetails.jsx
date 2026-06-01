@@ -53,8 +53,12 @@ const LIFECYCLE_STEPS = [
   { status: 'ACCEPTED', label: 'Accepted' },
   { status: 'PREPARING', label: 'Preparing' },
   { status: 'READY', label: 'Ready For Pickup' },
+  { status: 'ASSIGNED', label: 'Assigned' },
+  { status: 'ON_THE_WAY_TO_RESTAURANT', label: 'On The Way' },
+  { status: 'REACHED_RESTAURANT', label: 'Reached' },
   { status: 'PICKED_UP', label: 'Picked Up' },
   { status: 'OUT_FOR_DELIVERY', label: 'Out For Delivery' },
+  { status: 'ON_THE_WAY_TO_CUSTOMER', label: 'On The Way' },
   { status: 'DELIVERED', label: 'Delivered' },
 ];
 
@@ -67,28 +71,53 @@ const ORDER_ACTION_CONFIG = {
   },
   ACCEPTED: {
     restaurant: [
-      { label: 'Preparing Started', apiStatus: 'preparing', variant: 'primary' },
+      { label: 'Preparing Done', apiStatus: 'preparing', variant: 'primary' },
+    ],
+    rollback: [
+      { label: 'Go Back', apiStatus: 'new_order', variant: 'ghost' },
     ],
   },
   PREPARING: {
     restaurant: [
       { label: 'Ready For Pickup', apiStatus: 'ready_for_pickup', variant: 'primary' },
     ],
+    rollback: [
+      { label: 'Go Back', apiStatus: 'accepted', variant: 'ghost' },
+    ],
   },
   READY: {
-    restaurant: [],
     admin: [
-      { label: 'Mark Picked Up', apiStatus: 'picked_up', variant: 'primary' },
+      { label: 'Assign Executive', apiStatus: 'assigned', variant: 'primary' },
+    ],
+  },
+  ASSIGNED: {
+    admin: [
+      { label: 'On The Way To Restaurant', apiStatus: 'on_the_way_to_restaurant', variant: 'primary' },
+    ],
+  },
+  ON_THE_WAY_TO_RESTAURANT: {
+    admin: [
+      { label: 'Reached Restaurant', apiStatus: 'reached_restaurant', variant: 'primary' },
+    ],
+  },
+  REACHED_RESTAURANT: {
+    admin: [
+      { label: 'Picked Up', apiStatus: 'picked_up', variant: 'primary' },
     ],
   },
   PICKED_UP: {
     admin: [
-      { label: 'Mark Out For Delivery', apiStatus: 'out_for_delivery', variant: 'primary' },
+      { label: 'Out For Delivery', apiStatus: 'out_for_delivery', variant: 'primary' },
     ],
   },
   OUT_FOR_DELIVERY: {
     admin: [
-      { label: 'Mark Delivered', apiStatus: 'delivered', variant: 'primary' },
+      { label: 'On The Way To Customer', apiStatus: 'on_the_way_to_customer', variant: 'primary' },
+    ],
+  },
+  ON_THE_WAY_TO_CUSTOMER: {
+    admin: [
+      { label: 'Delivered', apiStatus: 'delivered', variant: 'primary' },
     ],
   },
 };
@@ -516,11 +545,9 @@ const OrderDetails = () => {
   };
 
   const getLifecycleIndex = (status) => {
-    const order = ['PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+    const order = ['PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'ASSIGNED', 'ON_THE_WAY_TO_RESTAURANT', 'REACHED_RESTAURANT', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'ON_THE_WAY_TO_CUSTOMER', 'DELIVERED'];
     const idx = order.indexOf(status);
     if (idx !== -1) return idx;
-    if (['ASSIGNED', 'ON_THE_WAY_TO_RESTAURANT', 'REACHED_RESTAURANT'].includes(status)) return 3;
-    if (['ON_THE_WAY_TO_CUSTOMER'].includes(status)) return 5;
     return -1;
   };
 
@@ -611,9 +638,11 @@ const OrderDetails = () => {
 
   const lifecycleSteps = buildLifecycleTimeline();
   const statusConfig = ORDER_ACTION_CONFIG[currentStatus];
+  const isAfterAssign = ['READY', 'ASSIGNED', 'ON_THE_WAY_TO_RESTAURANT', 'REACHED_RESTAURANT', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'ON_THE_WAY_TO_CUSTOMER', 'DELIVERED'].includes(currentStatus);
   const currentActions = restaurantAdmin
-    ? (statusConfig?.restaurant || [])
+    ? [...(statusConfig?.restaurant || []), ...(statusConfig?.rollback || [])]
     : (statusConfig?.admin || statusConfig?.restaurant || []);
+  const showActionCenter = !isTerminal && (currentActions.length > 0 || (restaurantAdmin && isAfterAssign));
 
   return (
     <div className="p-4 lg:p-6 max-w-7xl mx-auto">
@@ -729,7 +758,7 @@ const OrderDetails = () => {
       </div>
 
       {/* ── Order Action Center ── */}
-      {!isTerminal && (currentActions.length > 0 || (restaurantAdmin && currentStatus === 'READY')) && (
+      {showActionCenter && (
         <div className="mb-6">
           <Card>
             <CardContent className="p-5">
@@ -772,10 +801,9 @@ const OrderDetails = () => {
                 </div>
               )}
 
-              {restaurantAdmin && currentStatus === 'READY' ? (
+              {restaurantAdmin && isAfterAssign ? (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
-                  <p className="text-sm font-semibold text-amber-800">Waiting for Delivery Executive</p>
-                  <p className="text-xs text-amber-600 mt-1">Restaurant actions are disabled after Ready For Pickup.</p>
+                  <p className="text-sm font-semibold text-amber-800">Waiting for delivery executive to accept this order.</p>
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-2">
