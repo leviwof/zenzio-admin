@@ -1218,7 +1218,7 @@ const MenuManagement = () => {
                             <button
                               onClick={() => handleToggleStatus(menu)}
                               disabled={toggleLoading[menu.menu_uid]}
-                              className="text-gray-400 hover:text-indigo-600 transition-colors disabled:opacity-50"
+                              className={`text-gray-400 transition-colors disabled:opacity-50 ${!toggleLoading[menu.menu_uid] ? 'hover:text-indigo-600' : ''}`}
                               title="Toggle status"
                             >
                               {toggleLoading[menu.menu_uid] ? (
