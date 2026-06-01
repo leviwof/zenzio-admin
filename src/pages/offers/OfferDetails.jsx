@@ -1,10 +1,117 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
-import { getOfferDetails, approveOffer, rejectOffer, requestChanges } from '../../services/api';
-import { isRestaurantAdmin } from '../../utils/auth';
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  DollarSign,
+  Gift,
+  Loader2,
+  MessageSquare,
+  Receipt,
+  Store,
+  Tag,
+  TrendingUp,
+  User,
+  XCircle,
+} from "lucide-react";
+import toast from "react-hot-toast";
+import { approveOffer, getOfferDetails, rejectOffer, requestChanges } from "../../services/api";
+import { isRestaurantAdmin } from "../../utils/auth";
 
-const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '').replace('/api', '');
+const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace("/api/admin", "").replace("/api", "").replace(/\/+$/, "");
+
+const OFFER_TYPE_LABELS = {
+  PERCENTAGE_DISCOUNT: "Percentage Discount",
+  FIXED_AMOUNT_DISCOUNT: "Fixed Amount Discount",
+  BUY_ONE_GET_ONE: "Buy 1 Get 1",
+  BUY_X_GET_Y: "Buy X Get Y",
+  FREE_ITEM_CART_VALUE: "Free Item On Cart Value",
+  FREE_ITEM_CATEGORY: "Free Item On Category",
+  FREE_ITEM_OFFER: "Free Item Offer",
+  CART_VALUE_OFFER: "Cart Value Offer",
+  FESTIVAL_OFFER: "Festival Offer",
+  PLATFORM_CAMPAIGN: "Platform Campaign",
+};
+
+const formatDate = (value) =>
+  value ? new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-";
+
+const formatCurrency = (value) =>
+  `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+
+const getRestaurantName = (offer) =>
+  offer.restaurant?.profile?.restaurant_name ||
+  offer.restaurant?.restaurant_name ||
+  (offer.restaurantId ? offer.restaurantId : "All Restaurants");
+
+const buildImageUrl = (offerImage) => {
+  if (!offerImage) return null;
+  const normalized = offerImage.replace(/\\/g, "/");
+  if (normalized.startsWith("http")) return normalized;
+  if (normalized.startsWith("offers/")) return `${IMAGE_BASE_URL}/uploads/${normalized}`;
+  return `${IMAGE_BASE_URL}/${normalized}`;
+};
+
+const StatusPill = ({ status }) => {
+  const styles = {
+    ACTIVE: "bg-emerald-50 text-emerald-600 border-emerald-100",
+    INACTIVE: "bg-slate-50 text-slate-600 border-slate-200",
+    SCHEDULED: "bg-indigo-50 text-indigo-600 border-indigo-100",
+    EXPIRED: "bg-orange-50 text-orange-600 border-orange-100",
+    PENDING_APPROVAL: "bg-amber-50 text-amber-600 border-amber-100",
+    REJECTED: "bg-red-50 text-red-600 border-red-100",
+    CHANGES_REQUESTED: "bg-blue-50 text-blue-600 border-blue-100",
+  };
+  const label = {
+    PENDING_APPROVAL: "Pending Approval",
+    CHANGES_REQUESTED: "Changes Requested",
+  }[status] || String(status || "-").replaceAll("_", " ");
+
+  return <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border ${styles[status] || "bg-gray-50 text-gray-600 border-gray-100"}`}>{label}</span>;
+};
+
+const InfoCard = ({ icon: Icon, label, value, sub, color = "bg-indigo-50 text-indigo-600" }) => (
+  <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-center gap-3.5">
+    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
+      <Icon size={18} />
+    </div>
+    <div>
+      <p className="text-xs font-medium text-gray-500">{label}</p>
+      <p className="text-xl font-bold text-gray-900">{value}</p>
+      {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  </div>
+);
+
+const DetailBlock = ({ title, children }) => (
+  <section className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+    <h2 className="font-semibold text-gray-900 mb-4">{title}</h2>
+    {children}
+  </section>
+);
+
+const KeyValue = ({ label, value }) => (
+  <div>
+    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+    <p className="text-sm font-medium text-gray-800 mt-1 break-words">{value || "-"}</p>
+  </div>
+);
+
+const JsonSummary = ({ data }) => {
+  if (!data || Object.keys(data).length === 0) return <p className="text-sm text-gray-500">No rule details configured.</p>;
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {Object.entries(data).map(([key, value]) => (
+        <div key={key} className="rounded-lg bg-gray-50 border border-gray-100 p-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{key.replace(/([A-Z])/g, " $1")}</p>
+          <p className="text-sm font-medium text-gray-800 mt-1">{typeof value === "object" ? JSON.stringify(value) : String(value)}</p>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const OfferDetails = () => {
   const { id } = useParams();
@@ -12,233 +119,231 @@ const OfferDetails = () => {
   const restaurantAdmin = isRestaurantAdmin();
   const [offer, setOffer] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [adminNotes, setAdminNotes] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [adminNotes, setAdminNotes] = useState("");
   const [imageError, setImageError] = useState(false);
-
-  useEffect(() => {
-    fetchOfferDetails();
-    // eslint-disable-next-line
-  }, [id]);
 
   const fetchOfferDetails = async () => {
     try {
-      setImageError(false); // Reset image error state
+      setLoading(true);
+      setImageError(false);
       const response = await getOfferDetails(id);
-      const data = response.data;
-
-      // Normalize the image path and construct URL
-      let imageUrl = null;
-      if (data.offerImage) {
-        const normalizedPath = data.offerImage.replace(/\\/g, '/');
-        imageUrl = normalizedPath.startsWith('offers/')
-          ? `${IMAGE_BASE_URL}/uploads/${normalizedPath}`
-          : `${IMAGE_BASE_URL}/${normalizedPath}`;
-      } else {
-        imageUrl = null;
-      }
-
-      setOffer({
-        ...data,
-        imageUrl,
-        validFrom: data.startDate?.split('T')[0],
-        validTo: data.endDate?.split('T')[0],
-        approvalStatus: data.status, // <--- Added mapping
-      });
-
-      if (data.adminComments) setAdminNotes(data.adminComments);
+      const data = response.data?.data || response.data;
+      setOffer(data);
+      setAdminNotes(data?.adminComments || "");
     } catch (error) {
-      console.error('Error fetching offer:', error);
+      toast.error(error.response?.data?.message || "Failed to load offer");
     } finally {
       setLoading(false);
     }
   };
 
-  // Helper to update offer state locally
-  const updateOfferState = (updates) => setOffer((prev) => ({ ...prev, ...updates }));
+  useEffect(() => {
+    fetchOfferDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
-  const handleApprove = async () => {
+  const imageUrl = useMemo(() => buildImageUrl(offer?.offerImage), [offer?.offerImage]);
+  const canReview = offer && !restaurantAdmin && ["PENDING_APPROVAL", "CHANGES_REQUESTED"].includes(offer.lifecycleStatus);
+
+  const runAction = async (success, callback) => {
     try {
-      await approveOffer(id, adminNotes);
-      updateOfferState({ adminComments: adminNotes, approvalStatus: 'APPROVED' });
+      setActionLoading(true);
+      await callback();
+      toast.success(success);
+      fetchOfferDetails();
     } catch (error) {
-      console.error('Error approving offer:', error);
+      toast.error(error.response?.data?.message || "Offer action failed");
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const handleReject = async () => {
-    const reason = prompt('Enter reason for rejection:');
+  const handleApprove = () => runAction("Offer approved", () => approveOffer(id, adminNotes));
+
+  const handleReject = () => {
+    const reason = window.prompt("Enter reason for rejection:");
     if (!reason?.trim()) return;
-
-    try {
-      await rejectOffer(id, reason);
-      updateOfferState({ rejectionReason: reason, approvalStatus: 'REJECTED' });
-    } catch (error) {
-      console.error('Error rejecting offer:', error);
-    }
+    runAction("Offer rejected", () => rejectOffer(id, reason));
   };
 
-  const handleRequestChanges = async () => {
-    if (!adminNotes?.trim()) return;
-
-    try {
-      await requestChanges(id, adminNotes);
-      updateOfferState({ adminComments: adminNotes, approvalStatus: 'CHANGES_REQUESTED' });
-    } catch (error) {
-      console.error('Error requesting changes:', error);
+  const handleRequestChanges = () => {
+    if (!adminNotes.trim()) {
+      toast.error("Add notes before requesting changes");
+      return;
     }
+    runAction("Changes requested", () => requestChanges(id, adminNotes));
   };
 
-  const getStatusBadge = () => {
-    const colors = {
-      PENDING: 'bg-yellow-100 text-yellow-800',
-      APPROVED: 'bg-green-100 text-green-800',
-      REJECTED: 'bg-red-100 text-red-800',
-      CHANGES_REQUESTED: 'bg-blue-100 text-blue-800',
-    };
+  if (loading) {
     return (
-      <span className={`px-4 py-2 rounded-full text-sm font-medium ${colors[offer.approvalStatus] || 'bg-gray-100 text-gray-800'}`}>
-        {offer.approvalStatus.replace('_', ' ')}
-      </span>
+      <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+        <Loader2 className="animate-spin text-indigo-500" size={36} />
+      </div>
     );
-  };
+  }
 
-  if (loading) return <p className="p-6 text-center">Loading offer details...</p>;
-  if (!offer) return <p className="p-6 text-center">Offer not found</p>;
+  if (!offer) {
+    return (
+      <div className="p-6 bg-gray-50 min-h-screen">
+        <button onClick={() => navigate("/offers")} className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900">
+          <ArrowLeft size={16} />
+          Back to Offers
+        </button>
+        <div className="mt-8 bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-500">Offer not found</div>
+      </div>
+    );
+  }
+
+  const analytics = {
+    totalUses: offer.totalUses || offer.redemptionCount || 0,
+    revenue: offer.totalRevenueGenerated || offer.revenueGenerated || 0,
+    discount: offer.totalDiscountGiven || 0,
+    conversionRate: offer.conversionRate || 0,
+    redemptionRate: offer.redemptionRate || 0,
+  };
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <button onClick={() => navigate('/offers')} className="flex items-center text-gray-600 hover:text-gray-900 mb-4">
-        <ChevronLeft size={20} />
-        <span>Back to Offers</span>
+    <div className="p-4 md:p-6 lg:p-8 min-h-screen bg-gray-50/80">
+      <button onClick={() => navigate("/offers")} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 mb-5">
+        <ArrowLeft size={18} />
+        Back to Offers
       </button>
 
-      <div className="bg-white rounded-lg shadow p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">{offer.title}</h1>
-          {getStatusBadge()}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">{offer.title}</h1>
+            <StatusPill status={offer.lifecycleStatus} />
+          </div>
+          <p className="text-sm text-gray-500 mt-1">{offer.offerCode || "No code"} · {OFFER_TYPE_LABELS[offer.offerType] || offer.discountType}</p>
+        </div>
+        {canReview && (
+          <div className="flex flex-wrap gap-2">
+            <button onClick={handleRequestChanges} disabled={actionLoading} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-blue-200 text-blue-600 rounded-xl hover:bg-blue-50 disabled:opacity-50">
+              <MessageSquare size={15} />
+              Request Changes
+            </button>
+            <button onClick={handleReject} disabled={actionLoading} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-red-200 text-red-600 rounded-xl hover:bg-red-50 disabled:opacity-50">
+              <XCircle size={15} />
+              Reject
+            </button>
+            <button onClick={handleApprove} disabled={actionLoading} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50">
+              {actionLoading ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+              Approve
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-6">
+        <InfoCard icon={Receipt} label="Total Uses" value={analytics.totalUses} color="bg-indigo-50 text-indigo-600" />
+        <InfoCard icon={DollarSign} label="Revenue Generated" value={formatCurrency(analytics.revenue)} color="bg-emerald-50 text-emerald-600" />
+        <InfoCard icon={Gift} label="Discount Given" value={formatCurrency(analytics.discount)} color="bg-pink-50 text-pink-600" />
+        <InfoCard icon={TrendingUp} label="Conversion Rate" value={`${Number(analytics.conversionRate).toFixed(1)}%`} color="bg-blue-50 text-blue-600" />
+        <InfoCard icon={Tag} label="Redemption Rate" value={`${Number(analytics.redemptionRate).toFixed(1)}%`} color="bg-amber-50 text-amber-600" />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 space-y-6">
+          <DetailBlock title="Offer Information">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <KeyValue label="Offer Name" value={offer.title} />
+              <KeyValue label="Offer Code" value={offer.offerCode} />
+              <KeyValue label="Offer Type" value={OFFER_TYPE_LABELS[offer.offerType] || offer.discountType} />
+              <KeyValue label="Discount Type" value={offer.discountType} />
+              <KeyValue label="Discount Value" value={offer.discountType === "PERCENTAGE" ? `${offer.discountValue}%` : formatCurrency(offer.discountValue)} />
+              <KeyValue label="Minimum Order" value={formatCurrency(offer.minOrderValue)} />
+              <KeyValue label="Start Date" value={formatDate(offer.startDate)} />
+              <KeyValue label="End Date" value={formatDate(offer.endDate)} />
+              <KeyValue label="Created By" value={offer.createdByAdmin ? "Zenzio Admin" : "Restaurant Admin"} />
+            </div>
+            {offer.description && <p className="text-sm text-gray-600 mt-5 whitespace-pre-line">{offer.description}</p>}
+          </DetailBlock>
+
+          <DetailBlock title="Discount Logic">
+            <JsonSummary data={offer.ruleConfig || { ...offer.conditions, ...offer.rewards }} />
+          </DetailBlock>
+
+          <DetailBlock title="Usage Statistics">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <KeyValue label="Redemption Count" value={analytics.totalUses} />
+              <KeyValue label="Revenue Generated" value={formatCurrency(analytics.revenue)} />
+              <KeyValue label="Total Discount Given" value={formatCurrency(analytics.discount)} />
+              <KeyValue label="Conversion Rate" value={`${Number(analytics.conversionRate).toFixed(1)}%`} />
+              <KeyValue label="Redemption Rate" value={`${Number(analytics.redemptionRate).toFixed(1)}%`} />
+            </div>
+          </DetailBlock>
+
+          <DetailBlock title="Status Timeline">
+            {Array.isArray(offer.statusTimeline) && offer.statusTimeline.length > 0 ? (
+              <div className="space-y-3">
+                {offer.statusTimeline.map((item, index) => (
+                  <div key={`${item.status}-${index}`} className="flex gap-3">
+                    <div className="mt-1 w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">{String(item.status || "").replaceAll("_", " ")}</p>
+                      <p className="text-xs text-gray-400">{formatDate(item.at)} {item.actor ? `· ${item.actor}` : ""}</p>
+                      {item.note && <p className="text-sm text-gray-600 mt-1">{item.note}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No timeline events recorded.</p>
+            )}
+          </DetailBlock>
         </div>
 
-        {/* Preview + Info */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div>
-            <h3 className="font-bold text-lg mb-4">Visual Preview</h3>
-            <div className="bg-gray-100 rounded-lg overflow-hidden">
-              {!imageError ? (
-                <img
-                  src={offer.imageUrl}
-                  alt={offer.title}
-                  className="w-full h-64 object-cover"
-                  onError={() => setImageError(true)}
-                />
+        <div className="space-y-6">
+          <DetailBlock title="Visual Preview">
+            <div className="rounded-xl overflow-hidden border border-gray-100 bg-gray-50">
+              {imageUrl && !imageError ? (
+                <img src={imageUrl} alt={offer.title} className="w-full h-56 object-cover" onError={() => setImageError(true)} />
               ) : (
-                <div className="w-full h-64 bg-gray-100">
-                  <img
-                    src="/logo.png"
-                    alt="Default Offer"
-                    className="w-full h-full object-cover"
-                  />
+                <div className="w-full h-56 flex items-center justify-center text-gray-300">
+                  <Gift size={42} />
                 </div>
               )}
             </div>
-          </div>
+          </DetailBlock>
 
-          <div className="space-y-3 text-sm">
-            <p className="text-gray-500">Offer Name</p>
-            <p className="font-medium">{offer.title}</p>
-
-            <p className="text-gray-500">Offer Description</p>
-            <p className="font-medium">{offer.description || 'No description provided'}</p>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-gray-500">Discount Type</p>
-                <p className="font-medium">{offer.discountType}</p>
+          <DetailBlock title="Restaurant Information">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Store size={18} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">{getRestaurantName(offer)}</p>
+                  <p className="text-xs text-gray-400">{offer.restaurantId ? "Restaurant-specific offer" : "Platform-wide offer"}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-gray-500">Discount Value</p>
-                <p className="font-medium text-red-500 text-2xl">
-                  {offer.discountValue}{offer.discountType === 'PERCENTAGE' ? '%' : '₹'}
-                </p>
-              </div>
+              <KeyValue label="Email" value={offer.restaurant?.profile?.contact_email || offer.restaurant?.contact?.email} />
+              <KeyValue label="Phone" value={offer.restaurant?.profile?.contact_number || offer.restaurant?.contact?.phone} />
+              <KeyValue label="Address" value={offer.restaurant?.address?.address_line_1 || offer.restaurant?.address?.city} />
             </div>
+          </DetailBlock>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-gray-500">Valid From</p>
-                <p className="font-medium">{offer.validFrom}</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Valid Until</p>
-                <p className="font-medium">{offer.validTo}</p>
-              </div>
-            </div>
+          <DetailBlock title="Terms">
+            <p className="text-sm text-gray-600 whitespace-pre-line">{offer.termsConditions || "No terms and conditions specified."}</p>
+          </DetailBlock>
 
-            <p className="text-sm text-gray-500">Category</p>
-            <p className="font-medium">{offer.categoryId || 'All Categories'}</p>
-
-            <p className="text-gray-500">Minimum Order Value</p>
-            <p className="font-medium">₹{offer.minOrderValue || 0}</p>
-          </div>
-        </div>
-
-        {/* Terms & Conditions */}
-        <div>
-          <h3 className="font-bold text-lg mb-2">Terms & Conditions</h3>
-          <p className="text-sm text-gray-700 whitespace-pre-line">{offer.termsConditions || 'No terms and conditions specified'}</p>
-        </div>
-
-        {/* Restaurant Details */}
-        {offer.restaurant && (
-          <div>
-            <h3 className="font-bold text-lg mb-2">Restaurant Details</h3>
-            <div className="text-sm space-y-1">
-              <p><span className="text-gray-500">Name:</span> {offer.restaurant?.profile?.restaurant_name || offer.restaurant?.rest_name}</p>
-              <p><span className="text-gray-500">Email:</span> {offer.restaurant?.profile?.contact_email || offer.restaurant?.contact_email}</p>
-              <p><span className="text-gray-500">Phone:</span> {offer.restaurant?.profile?.contact_number || offer.restaurant?.contact_number}</p>
-              <p><span className="text-gray-500">Address:</span> {offer.restaurant?.address?.address_line_1 || offer.restaurant?.rest_address || 'N/A'}</p>
-            </div>
-          </div>
-        )}
-
-        {!restaurantAdmin && (
-          <div>
-            <h3 className="font-bold text-lg mb-2">Admin Notes</h3>
-            <textarea
-              value={adminNotes}
-              onChange={(e) => setAdminNotes(e.target.value)}
-              placeholder="Add notes or feedback for the restaurant..."
-              className="w-full p-3 border border-gray-300 rounded-md h-32 resize-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-            />
-          </div>
-        )}
-
-        {/* Previous Feedback */}
-        {(offer.rejectionReason || offer.adminComments) && (
-          <div className="bg-gray-50 p-4 rounded-md space-y-2">
-            {offer.rejectionReason && (
-              <div>
-                <p className="text-sm font-medium text-red-600">Rejection Reason:</p>
-                <p className="text-sm text-gray-700">{offer.rejectionReason}</p>
-              </div>
-            )}
-            {offer.adminComments && (
-              <div>
-                <p className="text-sm font-medium text-blue-600">Admin Comments:</p>
-                <p className="text-sm text-gray-700">{offer.adminComments}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex flex-wrap justify-center gap-4 mt-6">
-          <button onClick={() => navigate('/offers')} className="px-6 py-2 border border-gray-300 rounded-md hover:bg-gray-50">Back</button>
-          {!restaurantAdmin && (offer.approvalStatus === 'PENDING' || offer.approvalStatus === 'CHANGES_REQUESTED') && (
-            <>
-              <button onClick={handleRequestChanges} className="px-6 py-2 border border-blue-500 text-blue-500 rounded-md hover:bg-blue-50">Request Changes</button>
-              <button onClick={handleReject} className="px-6 py-2 border border-red-500 text-red-500 rounded-md hover:bg-red-50">Reject Offer</button>
-              <button onClick={handleApprove} className="px-6 py-2 bg-red-500 text-white rounded-md hover:bg-red-600">Approve Offer</button>
-            </>
+          {!restaurantAdmin && (
+            <DetailBlock title="Approval Notes">
+              <textarea
+                value={adminNotes}
+                onChange={(event) => setAdminNotes(event.target.value)}
+                placeholder="Add approval comments or change requests..."
+                className="w-full h-28 p-3 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+              />
+              {(offer.rejectionReason || offer.adminComments) && (
+                <div className="mt-4 space-y-2">
+                  {offer.rejectionReason && <p className="text-sm text-red-600">Rejected: {offer.rejectionReason}</p>}
+                  {offer.adminComments && <p className="text-sm text-blue-600">Notes: {offer.adminComments}</p>}
+                </div>
+              )}
+            </DetailBlock>
           )}
         </div>
       </div>

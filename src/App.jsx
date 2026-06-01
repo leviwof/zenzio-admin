@@ -129,6 +129,7 @@ function App() {
               element={<EventApprovalDetails />}
             />
 
+            <Route path="/offers/create" element={<OfferConfiguration />} />
             <Route path="/offers" element={<OffersList />} />
             <Route path="/offers/:id" element={<OfferDetails />} />
 
@@ -175,7 +176,6 @@ function App() {
               <Route path="/bookings" element={<BookingsList />} />
               <Route path="/bookings/:id" element={<BookingDetails />} />
 
-              <Route path="/offers/create" element={<OfferConfiguration />} />
               <Route path="/offers/existing" element={<ExistingOffers />} />
               <Route path="/offers/edit/:id" element={<OfferEdit />} />
               <Route path="/offers/admin/:id" element={<AdminOfferDetails />} />

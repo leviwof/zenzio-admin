@@ -405,6 +405,9 @@ export const getBookingStats = (params = {}) => api.get('/bookings/stats', { par
 export const getPendingOffers = () => api.get('/offers/pending');
 export const getAllOffers = (params = {}) => api.get('/offers', { params });
 export const getOfferDetails = (offerId) => api.get(`/offers/details/${offerId}`);
+export const createOffer = (formData) => api.post('/offers', formData, {
+  headers: { 'Content-Type': 'multipart/form-data' },
+});
 export const approveOffer = (offerId, comments = '') =>
   api.put(`/offers/${offerId}/approve`, { comments });
 export const rejectOffer = (offerId, reason) =>
