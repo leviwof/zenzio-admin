@@ -99,14 +99,44 @@ const KeyValue = ({ label, value }) => (
   </div>
 );
 
+const formatRuleLabel = (key) =>
+  key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").trim();
+
+const isItemDetailObject = (value) =>
+  value &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  (value.name || value.menu_name || value.menu_uid);
+
+const formatRuleValue = (key, value) => {
+  if (value === undefined || value === null || value === "") return "-";
+  if (isItemDetailObject(value)) {
+    const name = value.name || value.menu_name || value.menu_uid;
+    const parts = [
+      name,
+      value.category ? `Category: ${value.category}` : null,
+      value.price !== undefined && value.price !== null ? `Price: ${formatCurrency(value.price)}` : null,
+    ].filter(Boolean);
+    return parts.join(" | ");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined && entryValue !== null && entryValue !== "")
+      .map(([entryKey, entryValue]) => `${formatRuleLabel(entryKey)}: ${typeof entryValue === "object" ? formatRuleValue(entryKey, entryValue) : String(entryValue)}`)
+      .join(" | ") || "-";
+  }
+  if (/amount|value|price/i.test(key) && !Number.isNaN(Number(value))) return formatCurrency(value);
+  return String(value);
+};
+
 const JsonSummary = ({ data }) => {
   if (!data || Object.keys(data).length === 0) return <p className="text-sm text-gray-500">No rule details configured.</p>;
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {Object.entries(data).map(([key, value]) => (
         <div key={key} className="rounded-lg bg-gray-50 border border-gray-100 p-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{key.replace(/([A-Z])/g, " $1")}</p>
-          <p className="text-sm font-medium text-gray-800 mt-1">{typeof value === "object" ? JSON.stringify(value) : String(value)}</p>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{formatRuleLabel(key)}</p>
+          <p className="text-sm font-medium text-gray-800 mt-1 break-words">{formatRuleValue(key, value)}</p>
         </div>
       ))}
     </div>
@@ -121,6 +151,9 @@ const OfferDetails = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [adminNotes, setAdminNotes] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [showRejectReason, setShowRejectReason] = useState(false);
+  const [showChangeReason, setShowChangeReason] = useState(false);
   const [imageError, setImageError] = useState(false);
 
   const fetchOfferDetails = async () => {
@@ -131,6 +164,9 @@ const OfferDetails = () => {
       const data = response.data?.data || response.data;
       setOffer(data);
       setAdminNotes(data?.adminComments || "");
+      setRejectionReason(data?.rejectionReason || "");
+      setShowRejectReason(Boolean(data?.rejectionReason));
+      setShowChangeReason(Boolean(data?.adminComments));
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to load offer");
     } finally {
@@ -162,14 +198,26 @@ const OfferDetails = () => {
   const handleApprove = () => runAction("Offer approved", () => approveOffer(id, adminNotes));
 
   const handleReject = () => {
-    const reason = window.prompt("Enter reason for rejection:");
-    if (!reason?.trim()) return;
-    runAction("Offer rejected", () => rejectOffer(id, reason));
+    if (!showRejectReason) {
+      setShowRejectReason(true);
+      setShowChangeReason(false);
+      return;
+    }
+    if (!rejectionReason.trim()) {
+      toast.error("Enter reason for rejection");
+      return;
+    }
+    runAction("Offer rejected", () => rejectOffer(id, rejectionReason.trim()));
   };
 
   const handleRequestChanges = () => {
+    if (!showChangeReason) {
+      setShowChangeReason(true);
+      setShowRejectReason(false);
+      return;
+    }
     if (!adminNotes.trim()) {
-      toast.error("Add notes before requesting changes");
+      toast.error("Enter reason for requested changes");
       return;
     }
     runAction("Changes requested", () => requestChanges(id, adminNotes));
@@ -219,19 +267,43 @@ const OfferDetails = () => {
           <p className="text-sm text-gray-500 mt-1">{offer.offerCode || "No code"} · {OFFER_TYPE_LABELS[offer.offerType] || offer.discountType}</p>
         </div>
         {canReview && (
-          <div className="flex flex-wrap gap-2">
-            <button onClick={handleRequestChanges} disabled={actionLoading} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-blue-200 text-blue-600 rounded-xl hover:bg-blue-50 disabled:opacity-50">
-              <MessageSquare size={15} />
-              Request Changes
-            </button>
-            <button onClick={handleReject} disabled={actionLoading} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-red-200 text-red-600 rounded-xl hover:bg-red-50 disabled:opacity-50">
-              <XCircle size={15} />
-              Reject
-            </button>
-            <button onClick={handleApprove} disabled={actionLoading} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50">
-              {actionLoading ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-              Approve
-            </button>
+          <div className="w-full sm:w-auto sm:min-w-[360px]">
+            {showChangeReason && (
+              <div className="mb-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Reason for requested changes</label>
+                <textarea
+                  value={adminNotes}
+                  onChange={(event) => setAdminNotes(event.target.value)}
+                  placeholder="Enter what needs to be changed..."
+                  className="w-full h-16 p-2.5 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-300"
+                />
+              </div>
+            )}
+            {showRejectReason && (
+              <div className="mb-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Reason for rejection</label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(event) => setRejectionReason(event.target.value)}
+                  placeholder="Enter reason before rejecting..."
+                  className="w-full h-16 p-2.5 text-sm border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-red-400/20 focus:border-red-300"
+                />
+              </div>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <button onClick={handleRequestChanges} disabled={actionLoading} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-blue-200 text-blue-600 rounded-xl hover:bg-blue-50 disabled:opacity-50">
+                <MessageSquare size={15} />
+                Request Changes
+              </button>
+              <button onClick={handleReject} disabled={actionLoading} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-red-200 text-red-600 rounded-xl hover:bg-red-50 disabled:opacity-50">
+                <XCircle size={15} />
+                Reject
+              </button>
+              <button onClick={handleApprove} disabled={actionLoading} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50">
+                {actionLoading ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                Approve
+              </button>
+            </div>
           </div>
         )}
       </div>

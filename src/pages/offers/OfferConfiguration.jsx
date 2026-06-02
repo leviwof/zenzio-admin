@@ -34,8 +34,10 @@ const TYPE_TO_DISCOUNT = {
 };
 
 const emptyRules = {
+  buyCategory: "",
   buyItem: "",
   buyQuantity: "1",
+  freeCategory: "",
   freeItem: "",
   freeQuantity: "1",
   minimumCartAmount: "",
@@ -65,6 +67,7 @@ const normalizeArray = (response) => {
   const data = response?.data;
   if (Array.isArray(data?.data?.restaurants)) return data.data.restaurants;
   if (Array.isArray(data?.restaurants)) return data.restaurants;
+  if (Array.isArray(data?.data?.restaurant_menus)) return data.data.restaurant_menus;
   if (Array.isArray(data?.data?.restaurant_menu)) return data.data.restaurant_menu;
   if (Array.isArray(data?.data?.items)) return data.data.items;
   if (Array.isArray(data?.data)) return data.data;
@@ -77,6 +80,10 @@ const getRestaurantName = (restaurant) =>
   restaurant?.profile?.restaurant_name || restaurant?.restaurant_name || restaurant?.name || restaurant?.uid || restaurant?.id;
 
 const getMenuName = (menu) => menu?.menu_name || menu?.title || menu?.name || menu?.menuUid || menu?.menu_uid;
+const getMenuId = (menu) => menu?.menu_uid || menu?.menuUid || getMenuName(menu);
+const getMenuCategory = (menu) => menu?.category || menu?.categoryName || menu?.category_name || "Uncategorized";
+
+const getCategoryName = (category) => category?.name || category?.category || category?.id || category;
 
 const Field = ({ label, required, children, hint }) => (
   <div>
@@ -131,9 +138,11 @@ const OfferConfiguration = () => {
 
   useEffect(() => {
     const fetchMenusForRestaurant = async () => {
-      if (!formData.restaurantId || formData.restaurantId === "all") return;
       try {
-        const response = await getAllMenus({ restaurant: formData.restaurantId });
+        const params = formData.restaurantId && formData.restaurantId !== "all"
+          ? { restaurant: formData.restaurantId }
+          : {};
+        const response = await getAllMenus(params);
         setMenus(normalizeArray(response));
       } catch {
         setMenus([]);
@@ -150,12 +159,35 @@ const OfferConfiguration = () => {
 
   const selectedType = OFFER_TYPES.find((type) => type.value === formData.offerType)?.label || "Offer";
   const menuOptions = menus.filter(Boolean);
+  const itemOfferTypes = ["BUY_ONE_GET_ONE", "BUY_X_GET_Y", "FREE_ITEM_CART_VALUE", "FREE_ITEM_CATEGORY"];
+  const itemOfferNeedsRestaurant = !restaurantAdmin && itemOfferTypes.includes(formData.offerType) && !formData.restaurantId;
+  const menuCategoryOptions = useMemo(() => {
+    const names = menuOptions
+      .map(getMenuCategory)
+      .filter(Boolean);
+    return Array.from(new Set(names)).sort((a, b) => String(a).localeCompare(String(b)));
+  }, [menuOptions]);
+
+  const categoryOptions = useMemo(() => {
+    const names = [
+      ...categories.map(getCategoryName),
+      ...menuCategoryOptions,
+    ].filter(Boolean);
+    return Array.from(new Set(names)).sort((a, b) => String(a).localeCompare(String(b)));
+  }, [categories, menuCategoryOptions]);
+
+  const getFilteredMenus = (category) => {
+    if (!category) return menuOptions;
+    return menuOptions.filter((menu) => getMenuCategory(menu) === category);
+  };
 
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
     setFormData((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
+      ...(name === "offerType" ? { rules: { ...emptyRules } } : {}),
+      ...(name === "restaurantId" ? { rules: { ...prev.rules, buyCategory: "", buyItem: "", freeCategory: "", freeItem: "", triggerCategory: "" } } : {}),
     }));
   };
 
@@ -163,7 +195,12 @@ const OfferConfiguration = () => {
     const { name, value } = event.target;
     setFormData((prev) => ({
       ...prev,
-      rules: { ...prev.rules, [name]: value },
+      rules: {
+        ...prev.rules,
+        [name]: value,
+        ...(name === "buyCategory" ? { buyItem: "" } : {}),
+        ...(name === "freeCategory" ? { freeItem: "" } : {}),
+      },
     }));
   };
 
@@ -176,30 +213,77 @@ const OfferConfiguration = () => {
     reader.readAsDataURL(file);
   };
 
+  const getSelectedMenu = (menuId) => menuOptions.find((menu) => getMenuId(menu) === menuId);
+
+  const buildItemSnapshot = (menuId) => {
+    const menu = getSelectedMenu(menuId);
+    if (!menuId) return null;
+    return {
+      menu_uid: menuId,
+      name: getMenuName(menu) || menuId,
+      category: menu ? getMenuCategory(menu) : undefined,
+      price: menu?.price,
+      restaurant_uid: menu?.restaurant_uid || menu?.restaurantUid || formData.restaurantId || undefined,
+    };
+  };
+
   const buildRulePayload = () => {
     const rules = formData.rules;
+    const buyItem = buildItemSnapshot(rules.buyItem);
+    const freeItem = buildItemSnapshot(rules.freeItem);
+
     if (formData.offerType === "BUY_ONE_GET_ONE") {
       return {
-        conditions: { buyItem: rules.buyItem, quantityRequired: Number(rules.buyQuantity || 1) },
-        rewards: { freeItem: rules.freeItem || rules.buyItem, freeQuantity: Number(rules.freeQuantity || 1) },
+        conditions: {
+          buyItem: rules.buyItem,
+          buyItemName: buyItem?.name,
+          buyCategory: rules.buyCategory || buyItem?.category,
+          quantityRequired: Number(rules.buyQuantity || 1),
+        },
+        rewards: {
+          freeItem: rules.freeItem,
+          freeItemName: freeItem?.name,
+          freeCategory: rules.freeCategory || freeItem?.category,
+          freeQuantity: Number(rules.freeQuantity || 1),
+        },
       };
     }
     if (formData.offerType === "BUY_X_GET_Y") {
       return {
-        conditions: { buyProduct: rules.buyItem, buyQuantity: Number(rules.buyQuantity || 1) },
-        rewards: { freeProduct: rules.freeItem, freeQuantity: Number(rules.freeQuantity || 1) },
+        conditions: {
+          buyProduct: rules.buyItem,
+          buyProductName: buyItem?.name,
+          buyCategory: rules.buyCategory || buyItem?.category,
+          buyQuantity: Number(rules.buyQuantity || 1),
+        },
+        rewards: {
+          freeProduct: rules.freeItem,
+          freeProductName: freeItem?.name,
+          freeCategory: rules.freeCategory || freeItem?.category,
+          freeQuantity: Number(rules.freeQuantity || 1),
+        },
       };
     }
     if (formData.offerType === "FREE_ITEM_CART_VALUE") {
       return {
         conditions: { minimumCartAmount: Number(rules.minimumCartAmount || formData.minOrderValue || 0) },
-        rewards: { freeItem: rules.freeItem, freeQuantity: Number(rules.freeQuantity || 1) },
+        rewards: {
+          freeItem: rules.freeItem,
+          freeItemName: freeItem?.name,
+          freeCategory: rules.freeCategory || freeItem?.category,
+          freeQuantity: Number(rules.freeQuantity || 1),
+        },
       };
     }
     if (formData.offerType === "FREE_ITEM_CATEGORY") {
       return {
         conditions: { triggerCategory: rules.triggerCategory },
-        rewards: { freeItem: rules.freeItem, freeQuantity: Number(rules.freeQuantity || 1) },
+        rewards: {
+          freeItem: rules.freeItem,
+          freeItemName: freeItem?.name,
+          freeCategory: rules.freeCategory || freeItem?.category,
+          freeQuantity: Number(rules.freeQuantity || 1),
+        },
       };
     }
     return {
@@ -226,8 +310,13 @@ const OfferConfiguration = () => {
     if (discountTypes.includes(formData.offerType) && Number(formData.discountValue) < 0) return "Discount cannot be negative";
 
     const needsFreeItem = ["BUY_ONE_GET_ONE", "BUY_X_GET_Y", "FREE_ITEM_CART_VALUE", "FREE_ITEM_CATEGORY"].includes(formData.offerType);
+    const needsBuyItem = ["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType);
+    if ((needsFreeItem || needsBuyItem) && !restaurantAdmin && !formData.restaurantId) return "Please select a restaurant before choosing menu items";
+    if ((needsFreeItem || needsBuyItem) && menuOptions.length === 0) return "No menu items are available for the selected restaurant";
     if (needsFreeItem && !formData.rules.freeItem) return "Please select the free item";
-    if (["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType) && !formData.rules.buyItem) return "Please select the buy item";
+    if (needsBuyItem && !formData.rules.buyItem) return "Please select the buy item";
+    if (needsBuyItem && !getSelectedMenu(formData.rules.buyItem)) return "Please select a valid buy item from the menu list";
+    if (needsFreeItem && !getSelectedMenu(formData.rules.freeItem)) return "Please select a valid free item from the menu list";
     if (formData.offerType === "FREE_ITEM_CATEGORY" && !formData.rules.triggerCategory) return "Please select trigger category";
     if (formData.offerType === "FREE_ITEM_CART_VALUE" && Number(formData.rules.minimumCartAmount || formData.minOrderValue) <= 0) return "Please enter minimum cart amount";
     return null;
@@ -255,7 +344,12 @@ const OfferConfiguration = () => {
       data.append("endDate", formData.endDate);
       data.append("isCommissionAuto", String(formData.isCommissionAuto));
       data.append("adminCommission", String(formData.adminCommission || 15));
-      data.append("ruleConfig", JSON.stringify({ type: formData.offerType, ...formData.rules }));
+      data.append("ruleConfig", JSON.stringify({
+        type: formData.offerType,
+        ...formData.rules,
+        buyItemDetails: buildItemSnapshot(formData.rules.buyItem),
+        freeItemDetails: buildItemSnapshot(formData.rules.freeItem),
+      }));
       data.append("conditions", JSON.stringify(conditions));
       data.append("rewards", JSON.stringify(rewards));
 
@@ -285,20 +379,47 @@ const OfferConfiguration = () => {
     setImagePreview(null);
   };
 
-  const MenuSelect = ({ name, value, placeholder }) => (
+  const selectedBuyItemName = buildItemSnapshot(formData.rules.buyItem)?.name;
+  const selectedFreeItemName = buildItemSnapshot(formData.rules.freeItem)?.name;
+
+  const CategorySelect = ({ name, value, placeholder = "All categories" }) => (
     <select
       name={name}
       value={value}
       onChange={handleRuleChange}
-      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white"
+      disabled={itemOfferNeedsRestaurant}
+      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white disabled:bg-gray-100 disabled:text-gray-400"
     >
-      <option value="">{placeholder}</option>
-      {menuOptions.map((menu) => {
-        const value = menu.menu_uid || menu.menuUid || getMenuName(menu);
-        return <option key={value} value={value}>{getMenuName(menu)}</option>;
-      })}
+      <option value="">{itemOfferNeedsRestaurant ? "Select restaurant first" : placeholder}</option>
+      {categoryOptions.map((category) => (
+        <option key={category} value={category}>{category}</option>
+      ))}
     </select>
   );
+
+  const MenuSelect = ({ name, value, placeholder, category }) => {
+    const filteredMenus = getFilteredMenus(category);
+    const disabled = itemOfferNeedsRestaurant || filteredMenus.length === 0;
+    return (
+      <select
+        name={name}
+        value={value}
+        onChange={handleRuleChange}
+        disabled={disabled}
+        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white disabled:bg-gray-100 disabled:text-gray-400"
+      >
+        <option value="">{itemOfferNeedsRestaurant ? "Select restaurant first" : filteredMenus.length ? placeholder : "No menu items found"}</option>
+        {filteredMenus.map((menu) => {
+          const value = getMenuId(menu);
+          return (
+            <option key={value} value={value}>
+              {getMenuName(menu)}{getMenuCategory(menu) ? ` - ${getMenuCategory(menu)}` : ""}{menu.price ? ` - Rs.${menu.price}` : ""}
+            </option>
+          );
+        })}
+      </select>
+    );
+  };
 
   const renderRuleFields = () => {
     if (["PERCENTAGE_DISCOUNT", "FIXED_AMOUNT_DISCOUNT", "FESTIVAL_OFFER", "PLATFORM_CAMPAIGN"].includes(formData.offerType)) {
@@ -316,15 +437,21 @@ const OfferConfiguration = () => {
 
     if (["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType)) {
       return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Buy Item Category" : "Buy Product Category"} hint="Filter the buy item list by category">
+            <CategorySelect name="buyCategory" value={formData.rules.buyCategory} />
+          </Field>
           <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Buy Item" : "Buy Product"} required>
-            <MenuSelect name="buyItem" value={formData.rules.buyItem} placeholder="Select buy item" />
+            <MenuSelect name="buyItem" value={formData.rules.buyItem} placeholder="Select buy item" category={formData.rules.buyCategory} />
           </Field>
           <Field label="Quantity Required" required>
             <input type="number" name="buyQuantity" value={formData.rules.buyQuantity} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
           </Field>
+          <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Free Item Category" : "Free Product Category"} hint="Filter the free item list by category">
+            <CategorySelect name="freeCategory" value={formData.rules.freeCategory} />
+          </Field>
           <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Free Item" : "Free Product"} required>
-            <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" />
+            <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" category={formData.rules.freeCategory} />
           </Field>
           <Field label="Free Quantity" required>
             <input type="number" name="freeQuantity" value={formData.rules.freeQuantity} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
@@ -335,12 +462,15 @@ const OfferConfiguration = () => {
 
     if (formData.offerType === "FREE_ITEM_CART_VALUE") {
       return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Minimum Cart Amount" required>
             <input type="number" name="minimumCartAmount" value={formData.rules.minimumCartAmount} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
           </Field>
+          <Field label="Free Item Category" hint="Filter the free item list by category">
+            <CategorySelect name="freeCategory" value={formData.rules.freeCategory} />
+          </Field>
           <Field label="Free Item" required>
-            <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" />
+            <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" category={formData.rules.freeCategory} />
           </Field>
           <Field label="Quantity" required>
             <input type="number" name="freeQuantity" value={formData.rules.freeQuantity} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
@@ -352,16 +482,18 @@ const OfferConfiguration = () => {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Trigger Category" required>
-          <select name="triggerCategory" value={formData.rules.triggerCategory} onChange={handleRuleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white">
-            <option value="">Select category</option>
-            {categories.map((category, index) => {
-              const value = category.name || category.category || category.id || category;
-              return <option key={`${value}-${index}`} value={value}>{category.name || category.category || category}</option>;
-            })}
+          <select name="triggerCategory" value={formData.rules.triggerCategory} onChange={handleRuleChange} disabled={itemOfferNeedsRestaurant} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white disabled:bg-gray-100 disabled:text-gray-400">
+            <option value="">{itemOfferNeedsRestaurant ? "Select restaurant first" : "Select category"}</option>
+            {categoryOptions.map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
           </select>
         </Field>
+        <Field label="Free Item Category" hint="Filter the free item list by category">
+          <CategorySelect name="freeCategory" value={formData.rules.freeCategory} />
+        </Field>
         <Field label="Free Item" required>
-          <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" />
+          <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" category={formData.rules.freeCategory} />
         </Field>
       </div>
     );
@@ -524,6 +656,8 @@ const OfferConfiguration = () => {
                   ? `${formData.discountValue || 0}${formData.offerType === "PERCENTAGE_DISCOUNT" ? "%" : "₹"} OFF`
                   : "Free item reward"}
               </p>
+              {selectedBuyItemName && <p className="text-xs mt-1">Buy: {selectedBuyItemName}</p>}
+              {selectedFreeItemName && <p className="text-xs mt-1">Free: {selectedFreeItemName}</p>}
             </div>
             <div className="text-xs text-gray-500">
               Valid: {formData.startDate || "-"} to {formData.endDate || "-"}
