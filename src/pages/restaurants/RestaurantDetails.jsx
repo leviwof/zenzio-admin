@@ -43,6 +43,7 @@ const mealColors = {
 
 const getStatusDisplay = (restaurant) => {
   if (!restaurant) return { label: 'Unknown', className: 'bg-gray-100 text-gray-800', dot: 'bg-gray-400' }
+  if (restaurant.isActive === false) return { label: 'Blocked', className: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500' }
   if (restaurant.isOpen === false) return { label: 'Closed', className: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500' }
   return { label: 'Open', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200', dot: 'bg-emerald-500' }
 }
@@ -285,8 +286,9 @@ const RestaurantDetails = () => {
   const handleToggleOpen = async () => {
     if (!restaurant.uid) return
     try {
+      const nextOpen = restaurant.isManuallyOff === true
       await toggleRestaurantOff(restaurant.uid)
-      toast.success(restaurant.isOpen === false ? 'Restaurant opened' : 'Restaurant closed')
+      toast.success(nextOpen ? 'Restaurant opened' : 'Restaurant closed')
       fetchRestaurantDetails()
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to update status') }
   }
@@ -575,7 +577,12 @@ const RestaurantDetails = () => {
                           <EyeOff size={12} /> {nextOpen}
                         </span>
                       )}
-                      {restaurantAdmin && <Toggle enabled={restaurant.isOpen !== false} onChange={handleToggleOpen} size="sm" />}
+                      <Toggle
+                        enabled={restaurant.isActive !== false && restaurant.isManuallyOff !== true && restaurant.isOpen !== false}
+                        onChange={handleToggleOpen}
+                        disabled={restaurant.isActive === false}
+                        size="sm"
+                      />
                     </div>
                   </div>
                 </div>
@@ -947,15 +954,15 @@ const RestaurantDetails = () => {
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">
                     <FileText size={15} /> Manage Menu
                   </motion.button>
-                  {restaurantAdmin && (
+                  {restaurant.isActive !== false && (
                     <div className="border-t border-gray-100 pt-1.5 mt-1.5">
                       <motion.button whileHover={{ x: 2 }} onClick={handleToggleOpen}
                         className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                          restaurant.isOpen === false
+                          restaurant.isManuallyOff === true
                             ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
                             : 'text-gray-600 bg-gray-50 hover:bg-gray-100'
                         }`}>
-                        {restaurant.isOpen === false ? <><Power size={15} /> Open Restaurant</> : <><Power size={15} /> Close Restaurant</>}
+                        {restaurant.isManuallyOff === true ? <><Power size={15} /> Open Restaurant</> : <><Power size={15} /> Close Restaurant</>}
                       </motion.button>
                     </div>
                   )}
