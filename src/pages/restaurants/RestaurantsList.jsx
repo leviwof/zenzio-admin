@@ -9,7 +9,7 @@ import {
   Loader2, UtensilsCrossed, RefreshCw, ChevronDown,
 } from "lucide-react";
 import {
-  getAllRestaurants, getRestaurantById, toggleRestaurantActive,
+  getAllRestaurants, getRestaurantById, toggleRestaurantOff,
   updateRestaurantStatus, permanentlyDeleteRestaurant
 } from "../../services/api";
 import { saveAs } from "file-saver";
@@ -54,18 +54,26 @@ const RatingStars = ({ rating }) => {
 
 const StatusPill = ({ restaurant }) => {
   const { isOpen, isActive, isManuallyOff } = restaurant;
-  if (isManuallyOff || isActive === false || isOpen === false) {
+  if (isActive === false) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+        Blocked
+      </span>
+    );
+  }
+  if (isManuallyOff || isOpen === false) {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
         <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-        Inactive
+        Closed
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-600 border border-emerald-100">
       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-      Active
+      Open
     </span>
   );
 };
@@ -139,7 +147,7 @@ const FilterDropdown = ({ label, icon: Icon, value, options, onChange, onClear }
 };
 
 // ─── Action Menu ─────────────────────────────────────
-const ActionMenu = ({ restaurant, onView, onEdit, onDelete, onSuspend }) => {
+const ActionMenu = ({ restaurant, onView, onEdit, onDelete, onBlock, canModerate }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -149,13 +157,20 @@ const ActionMenu = ({ restaurant, onView, onEdit, onDelete, onSuspend }) => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const isInactive = restaurant.isManuallyOff || restaurant.isActive === false;
-
   const items = [
     { label: "View Restaurant", icon: Store, action: () => onView(restaurant) },
     { label: "Edit", icon: Edit3, action: () => onEdit?.(restaurant) },
-    { label: isInactive ? "Activate" : "Suspend", icon: Power, action: () => onSuspend(restaurant), danger: !isInactive },
-    { label: "Delete", icon: Trash2, action: () => onDelete(restaurant), danger: true },
+    ...(canModerate
+      ? [
+          {
+            label: restaurant.isActive === false ? "Unblock" : "Block",
+            icon: Power,
+            action: () => onBlock(restaurant),
+            danger: restaurant.isActive !== false,
+          },
+          { label: "Delete", icon: Trash2, action: () => onDelete(restaurant), danger: true },
+        ]
+      : []),
   ];
 
   return (
@@ -262,7 +277,7 @@ const StatCard = ({ icon: Icon, label, value, color, sub, trend }) => (
 );
 
 // ─── Mobile Restaurant Card ──────────────────────────
-const MobileRestaurantCard = ({ restaurant, details, detailsLoading, selected, onSelect, onView, onToggle, toggleLoading, onDelete, onSuspend }) => (
+const MobileRestaurantCard = ({ restaurant, details, detailsLoading, selected, onSelect, onView, onToggle, toggleLoading, onDelete, onBlock, canModerate }) => (
   <motion.div
     initial={{ opacity: 0, y: 8 }}
     animate={{ opacity: 1, y: 0 }}
@@ -285,13 +300,15 @@ const MobileRestaurantCard = ({ restaurant, details, detailsLoading, selected, o
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        <button
-          onClick={(e) => { e.stopPropagation(); onSelect(restaurant.uid); }}
-          className={`p-1 rounded transition-colors ${selected ? "text-indigo-600" : "text-gray-300 hover:text-gray-400"}`}
-        >
-          {selected ? <CheckSquare size={18} /> : <Square size={18} />}
-        </button>
-        <ActionMenu restaurant={restaurant} onView={onView} onDelete={onDelete} onSuspend={onSuspend} />
+        {canModerate && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onSelect(restaurant.uid); }}
+            className={`p-1 rounded transition-colors ${selected ? "text-indigo-600" : "text-gray-300 hover:text-gray-400"}`}
+          >
+            {selected ? <CheckSquare size={18} /> : <Square size={18} />}
+          </button>
+        )}
+        <ActionMenu restaurant={restaurant} onView={onView} onDelete={onDelete} onBlock={onBlock} canModerate={canModerate} />
       </div>
     </div>
     <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-50">
@@ -301,9 +318,9 @@ const MobileRestaurantCard = ({ restaurant, details, detailsLoading, selected, o
       <div className="flex items-center gap-2">
         <span>{formatDate(restaurant.createdAt)}</span>
         <Toggle
-          enabled={restaurant.isActive !== false}
+          enabled={restaurant.isActive !== false && restaurant.isManuallyOff !== true && restaurant.isOpen !== false}
           onChange={() => onToggle(restaurant.uid)}
-          disabled={toggleLoading[restaurant.uid]}
+          disabled={toggleLoading[restaurant.uid] || restaurant.isActive === false}
           size="sm"
         />
       </div>
@@ -524,13 +541,13 @@ const RestaurantsList = () => {
     setToggleLoading((prev) => ({ ...prev, [uid]: true }));
     try {
       const r = restaurants.find((x) => x.uid === uid);
-      const nextStatus = r?.isActive === false;
-      if (restaurantAdmin) {
-        await toggleRestaurantActive(uid);
-      } else {
-        await updateRestaurantStatus(uid, nextStatus);
+      if (r?.isActive === false) {
+        toast.error("Blocked restaurants must be unblocked by a Zenzio admin before opening");
+        return;
       }
-      toast.success(nextStatus ? "Restaurant activated" : "Restaurant deactivated");
+      const nextOpen = r?.isManuallyOff === true || r?.isOpen === false;
+      await toggleRestaurantOff(uid);
+      toast.success(nextOpen ? "Restaurant opened" : "Restaurant closed");
       fetchRestaurants();
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to update restaurant");
@@ -539,8 +556,22 @@ const RestaurantsList = () => {
     }
   };
 
-  const handleSuspend = async (restaurant) => {
-    handleToggle(restaurant.uid);
+  const handleBlock = async (restaurant) => {
+    if (restaurantAdmin) {
+      toast.error("Restaurant admins can only open or close their restaurant");
+      return;
+    }
+    setToggleLoading((prev) => ({ ...prev, [restaurant.uid]: true }));
+    try {
+      const nextStatus = restaurant.isActive === false;
+      await updateRestaurantStatus(restaurant.uid, nextStatus);
+      toast.success(nextStatus ? "Restaurant unblocked" : "Restaurant blocked");
+      fetchRestaurants();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to update restaurant");
+    } finally {
+      setToggleLoading((prev) => ({ ...prev, [restaurant.uid]: false }));
+    }
   };
 
   const handleView = (restaurant) => {
@@ -588,18 +619,22 @@ const RestaurantsList = () => {
   };
 
   const handleBulkAction = async (action) => {
+    if (restaurantAdmin) {
+      toast.error("Restaurant admins can only open or close their restaurant");
+      return;
+    }
     if (selectedIds.size === 0) { toast.error("No restaurants selected"); return; }
     const ids = Array.from(selectedIds);
     if (action === "activate") {
       for (const uid of ids) {
         try { await updateRestaurantStatus(uid, true); } catch { /* skip */ }
       }
-      toast.success(`${ids.length} restaurant(s) activated`);
+      toast.success(`${ids.length} restaurant(s) unblocked`);
     } else if (action === "deactivate") {
       for (const uid of ids) {
         try { await updateRestaurantStatus(uid, false); } catch { /* skip */ }
       }
-      toast.success(`${ids.length} restaurant(s) deactivated`);
+      toast.success(`${ids.length} restaurant(s) blocked`);
     } else if (action === "delete") {
       if (!window.confirm(`Delete ${ids.length} restaurant(s) permanently?`)) return;
       for (const uid of ids) {
@@ -835,7 +870,7 @@ const RestaurantsList = () => {
 
       {/* ── Bulk Action Bar ── */}
       <AnimatePresence>
-        {selectedIds.size > 0 && (
+        {selectedIds.size > 0 && !restaurantAdmin && (
           <motion.div
             initial={{ opacity: 0, y: -8, height: 0 }}
             animate={{ opacity: 1, y: 0, height: "auto" }}
@@ -851,13 +886,13 @@ const RestaurantsList = () => {
                 onClick={() => handleBulkAction("activate")}
                 className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
               >
-                Activate All
+                Unblock All
               </button>
               <button
                 onClick={() => handleBulkAction("deactivate")}
                 className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
               >
-                Deactivate All
+                Block All
               </button>
               <button
                 onClick={() => handleBulkAction("delete")}
@@ -889,14 +924,16 @@ const RestaurantsList = () => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
-                    <th className="w-10 px-4 py-3.5 text-left">
-                      <button onClick={toggleSelectAll} className="text-gray-400 hover:text-gray-600 transition-colors">
-                        {selectedIds.size === currentRestaurants.length && currentRestaurants.length > 0
-                          ? <CheckSquare size={16} className="text-indigo-600" />
-                          : <Square size={16} />
-                        }
-                      </button>
-                    </th>
+                    {!restaurantAdmin && (
+                      <th className="w-10 px-4 py-3.5 text-left">
+                        <button onClick={toggleSelectAll} className="text-gray-400 hover:text-gray-600 transition-colors">
+                          {selectedIds.size === currentRestaurants.length && currentRestaurants.length > 0
+                            ? <CheckSquare size={16} className="text-indigo-600" />
+                            : <Square size={16} />
+                          }
+                        </button>
+                      </th>
+                    )}
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Restaurant</th>
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">City</th>
@@ -925,11 +962,13 @@ const RestaurantsList = () => {
                         `}
                       >
                         {/* Checkbox */}
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          <button onClick={() => toggleSelect(restaurant.uid)} className="text-gray-300 hover:text-indigo-600 transition-colors">
-                            {selected ? <CheckSquare size={16} className="text-indigo-600" /> : <Square size={16} />}
-                          </button>
-                        </td>
+                        {!restaurantAdmin && (
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => toggleSelect(restaurant.uid)} className="text-gray-300 hover:text-indigo-600 transition-colors">
+                              {selected ? <CheckSquare size={16} className="text-indigo-600" /> : <Square size={16} />}
+                            </button>
+                          </td>
+                        )}
 
                         {/* Restaurant Name + Cuisine */}
                         <td className="px-4 py-3">
@@ -1013,9 +1052,9 @@ const RestaurantsList = () => {
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-2">
                             <Toggle
-                              enabled={restaurant.isActive !== false}
+                              enabled={restaurant.isActive !== false && restaurant.isManuallyOff !== true && restaurant.isOpen !== false}
                               onChange={() => handleToggle(restaurant.uid)}
-                              disabled={toggleLoading[restaurant.uid]}
+                              disabled={toggleLoading[restaurant.uid] || restaurant.isActive === false}
                               size="sm"
                             />
                             {toggleLoading[restaurant.uid] && <Loader2 size={12} className="animate-spin text-indigo-500" />}
@@ -1036,7 +1075,8 @@ const RestaurantsList = () => {
                               onView={handleView}
                               onEdit={handleView}
                               onDelete={handleDeleteClick}
-                              onSuspend={handleSuspend}
+                              onBlock={handleBlock}
+                              canModerate={!restaurantAdmin}
                             />
                           </div>
                         </td>
@@ -1062,7 +1102,8 @@ const RestaurantsList = () => {
                 onToggle={handleToggle}
                 toggleLoading={toggleLoading}
                 onDelete={handleDeleteClick}
-                onSuspend={handleSuspend}
+                onBlock={handleBlock}
+                canModerate={!restaurantAdmin}
               />
             ))}
           </div>
