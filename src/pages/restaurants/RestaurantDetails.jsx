@@ -165,6 +165,15 @@ const getOperatingHoursPayload = (meals) => {
   }
 }
 
+const getAdminRating = (restaurant) => {
+  const ratingAvg = Number(restaurant?.rating_avg || 0)
+  if (ratingAvg > 0) return ratingAvg
+  if (restaurant?.displayRating !== undefined && restaurant?.displayRating !== null) {
+    return Number(restaurant.displayRating)
+  }
+  return 4.0
+}
+
 const buildMealTimesFromRestaurant = (restaurant) => {
   const payload = emptyMealPayload()
   const rawHours = restaurant?.operationalHours || {}
@@ -507,7 +516,7 @@ const RestaurantDetails = () => {
               <p className="text-xs text-gray-500">ID: {restaurant.uid?.slice(0, 12)}...</p>
               <span className="text-xs text-gray-300">|</span>
               <span className="text-xs text-gray-500">
-                Rating: {restaurant.displayRating !== undefined ? Number(restaurant.displayRating).toFixed(1) : (restaurant.rating_avg ? Number(restaurant.rating_avg).toFixed(1) : '4.0')}
+                Rating: {getAdminRating(restaurant).toFixed(1)}
                 {' '}({restaurant.rating_count || 0} reviews)
               </span>
             </div>

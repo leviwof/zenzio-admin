@@ -22,6 +22,18 @@ import Toggle from "../../components/ui/Toggle";
 const MIN_RATING_THRESHOLD = 50;
 const DEFAULT_RATING = 4.0;
 
+const getRestaurantDisplayRating = (restaurant) => {
+  const ratingCount = Number(restaurant?.rating_count || 0);
+  const ratingAvg = Number(restaurant?.rating_avg || 0);
+  if (ratingAvg > 0) return ratingAvg;
+  if (restaurant?.displayRating !== undefined && restaurant?.displayRating !== null) {
+    return Number(restaurant.displayRating);
+  }
+  return ratingCount >= MIN_RATING_THRESHOLD ? ratingAvg : DEFAULT_RATING;
+};
+
+const getRestaurantRatingCount = (restaurant) => Number(restaurant?.rating_count || 0);
+
 // ─── Helpers ──────────────────────────────────────────
 const formatDate = (d) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-";
@@ -388,7 +400,8 @@ const RestaurantsList = () => {
         city: "-",
         email: "-",
         phone: "-",
-        rating: 0,
+        rating: getRestaurantDisplayRating(r),
+        ratingCount: getRestaurantRatingCount(r),
       }));
       setRestaurants(processed);
     } catch (error) {
@@ -423,8 +436,8 @@ const RestaurantsList = () => {
           else if (d?.contact?.encryptedPhone) phone = d.contact.encryptedPhone;
           else if (d?.contact?.phone) phone = d.contact.phone;
           if (d?.address?.city) city = d.address.city;
-          const ratingCount = d?.rating_count || 0;
-          const displayRating = ratingCount >= MIN_RATING_THRESHOLD ? (d?.rating_avg || 0) : DEFAULT_RATING;
+          const ratingCount = getRestaurantRatingCount(d);
+          const displayRating = getRestaurantDisplayRating(d);
           setRestaurantDetails((prev) => ({
             ...prev,
             [restaurant.uid]: { email, phone, city, rating: displayRating, ratingCount, cuisines: d?.cuisines || [] },
