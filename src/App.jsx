@@ -39,6 +39,7 @@ import CuisineList from "./pages/cuisine/CuisineList";
 import CouponManagement from "./pages/coupon/CouponManagement";
 import SubscriptionManagement from "./pages/subscription/SubscriptionManagement";
 import QuickMenuManagement from "./pages/quick-menu/QuickMenuManagement";
+import TopRestaurantsManagement from "./pages/top-restaurants/TopRestaurantsManagement";
 import MenuManagement from "./pages/menu/MenuManagement";
 import MenuDetails from "./pages/menu/MenuDetails";
 import CategoryItems from "./pages/menu/CategoryItems";
@@ -183,6 +184,7 @@ function App() {
 
               <Route path="/coupon" element={<CouponManagement />} />
               <Route path="/quick-menu" element={<QuickMenuManagement />} />
+              <Route path="/top-restaurants" element={<TopRestaurantsManagement />} />
 
               <Route path="/analytics" element={<AnalyticsDashboard />} />
               <Route path="/settings" element={<Settings />} />
