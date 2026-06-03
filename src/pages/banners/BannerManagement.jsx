@@ -1,202 +1,748 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Image as ImageIcon, Loader2, AlertCircle } from 'lucide-react';
-import { getBanners, uploadBanner, deleteBanner } from '../../services/api';
+import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import {
+  AlertCircle,
+  Edit2,
+  Image as ImageIcon,
+  Loader2,
+  Plus,
+  Power,
+  PowerOff,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react';
+import {
+  createDynamicBanner,
+  deleteBanner,
+  deleteDynamicBanner,
+  getBannerRestaurantOptions,
+  getBanners,
+  getDynamicBannersAdmin,
+  updateDynamicBanner,
+  updateDynamicBannerStatus,
+  uploadBanner,
+} from '../../services/api';
+
+const tabs = [
+  { id: 'image', label: 'Image Banners' },
+  { id: 'promotional', label: 'Promotional Banners', bannerType: 'PROMOTIONAL' },
+  { id: 'restaurant', label: 'Restaurant Offer Banners', bannerType: 'RESTAURANT_OFFER' },
+];
+
+const themeOptions = [
+  { value: 'pink', label: 'Pink Gradient', className: 'from-pink-500 to-rose-500' },
+  { value: 'orange', label: 'Orange Gradient', className: 'from-orange-500 to-amber-500' },
+  { value: 'purple', label: 'Purple Gradient', className: 'from-purple-600 to-indigo-500' },
+];
+
+const promotionalTags = ['HOT DEAL', 'LIMITED OFFER', 'POCKET SAVER', 'NEW OFFER', 'TODAY SPECIAL'];
+const ctaOptions = ['View Offer', 'Order Now'];
+
+const getApiErrorMessage = (error, fallback) => {
+  const responseMessage = error?.response?.data?.message;
+  if (Array.isArray(responseMessage)) return responseMessage.join(', ');
+  if (responseMessage) return responseMessage;
+  if (error?.response?.data?.error) return error.response.data.error;
+  if (error?.message) return error.message;
+  return fallback;
+};
+
+const emptyForm = {
+  restaurant_uid: '',
+  offer_tag: 'HOT DEAL',
+  offer_title: '',
+  offer_description: '',
+  coupon_code: '',
+  offer_amount: '',
+  theme: 'pink',
+  priority: '1',
+  is_active: true,
+  cta_label: 'View Offer',
+};
 
 const BannerManagement = () => {
-    const [banners, setBanners] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [uploading, setUploading] = useState(false);
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [previewUrl, setPreviewUrl] = useState(null);
+  const [activeTab, setActiveTab] = useState('image');
+  const [banners, setBanners] = useState([]);
+  const [dynamicBanners, setDynamicBanners] = useState([]);
+  const [restaurants, setRestaurants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dynamicLoading, setDynamicLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingBanner, setEditingBanner] = useState(null);
+  const [formData, setFormData] = useState(emptyForm);
+  const [search, setSearch] = useState('');
+  const [restaurantSearch, setRestaurantSearch] = useState('');
+  const [deleteConfirmBanner, setDeleteConfirmBanner] = useState(null);
 
-    useEffect(() => {
-        fetchBanners();
-    }, []);
+  const currentTab = tabs.find((tab) => tab.id === activeTab) || tabs[0];
+  const isRestaurantOffer = currentTab.bannerType === 'RESTAURANT_OFFER';
+  const selectedTheme = themeOptions.find((theme) => theme.value === formData.theme) || themeOptions[0];
+  const selectedRestaurant = useMemo(
+    () => restaurants.find((restaurant) => restaurant.restaurant_uid === formData.restaurant_uid),
+    [restaurants, formData.restaurant_uid],
+  );
 
-    const fetchBanners = async () => {
-        try {
-            setLoading(true);
-            const response = await getBanners();
-            setBanners(response.data);
-        } catch (error) {
-            console.error('Error fetching banners:', error);
-            toast.error('Failed to load banners');
-        } finally {
-            setLoading(false);
-        }
-    };
+  useEffect(() => {
+    if (activeTab === 'image') {
+      fetchImageBanners();
+    } else {
+      fetchDynamicBanners();
+    }
+  }, [activeTab]);
 
-    const handleFileChange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            if (file.size > 5 * 1024 * 1024) {
-                toast.error('File size should be less than 5MB');
-                return;
-            }
-            setSelectedFile(file);
-            const url = URL.createObjectURL(file);
-            setPreviewUrl(url);
-        }
-    };
+  useEffect(() => {
+    if (activeTab === 'image') return undefined;
+    const timer = setTimeout(fetchDynamicBanners, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-    const handleUpload = async () => {
-        if (!selectedFile) {
-            toast.error('Please select an image first');
-            return;
-        }
+  useEffect(() => {
+    if (!modalOpen || !isRestaurantOffer) return undefined;
+    const timer = setTimeout(() => fetchRestaurants(restaurantSearch), 300);
+    return () => clearTimeout(timer);
+  }, [modalOpen, restaurantSearch, isRestaurantOffer]);
 
-        if (banners.length >= 3) {
-            toast.error('Maximum 3 banners allowed. Delete one to add more.');
-            return;
-        }
+  const fetchImageBanners = async () => {
+    try {
+      setLoading(true);
+      const response = await getBanners();
+      setBanners(response.data || []);
+    } catch (error) {
+      toast.error('Failed to load banners');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        try {
-            setUploading(true);
-            const formData = new FormData();
-            formData.append('image', selectedFile);
+  const fetchDynamicBanners = async () => {
+    try {
+      setDynamicLoading(true);
+      const response = await getDynamicBannersAdmin({
+        page: 1,
+        limit: 50,
+        banner_type: currentTab.bannerType,
+        search: search.trim() || undefined,
+        status: 'all',
+      });
+      setDynamicBanners(response.data?.data || []);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to load dynamic banners'));
+    } finally {
+      setDynamicLoading(false);
+    }
+  };
 
-            await uploadBanner(formData);
-            toast.success('Banner uploaded successfully');
-            setSelectedFile(null);
-            setPreviewUrl(null);
-            fetchBanners();
-        } catch (error) {
-            console.error('Error uploading banner:', error);
-            toast.error(error.response?.data?.message || 'Failed to upload banner');
-        } finally {
-            setUploading(false);
-        }
-    };
+  const fetchRestaurants = async (query = '') => {
+    try {
+      const response = await getBannerRestaurantOptions({
+        search: query.trim() || undefined,
+        limit: 30,
+      });
+      setRestaurants(response.data?.data || []);
+    } catch (error) {
+      toast.error('Failed to load restaurants');
+    }
+  };
 
-    const handleDelete = async (id) => {
-        if (!window.confirm('Are you sure you want to delete this banner?')) return;
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
 
-        try {
-            await deleteBanner(id);
-            toast.success('Banner deleted successfully');
-            fetchBanners();
-        } catch (error) {
-            console.error('Error deleting banner:', error);
-            toast.error('Failed to delete banner');
-        }
-    };
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size should be less than 5MB');
+      return;
+    }
 
-    return (
-        <div className="p-6 bg-gray-50 min-h-screen">
-            <div className="max-w-4xl mx-auto">
-                <header className="mb-8">
-                    <h1 className="text-2xl font-bold text-gray-800">Home Screen Banners</h1>
-                    <p className="text-gray-600">Manage the promotional slider images for the user app (Max 3).</p>
-                </header>
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+  };
 
-                {/* Upload Section */}
-                <div className="bg-white rounded-xl shadow-sm p-6 mb-8 border border-gray-100">
-                    <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <Plus className="w-5 h-5 text-red-500" />
-                        Add New Banner
-                    </h2>
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      toast.error('Please select an image first');
+      return;
+    }
 
-                    <div className="flex flex-col md:flex-row gap-6 items-start">
-                        <div className="w-full md:w-1/2">
-                            <label
-                                className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors
-                  ${previewUrl ? 'border-red-200 bg-red-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
-                            >
-                                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                    {previewUrl ? (
-                                        <img src={previewUrl} alt="Preview" className="h-40 object-contain rounded-md" />
-                                    ) : (
-                                        <>
-                                            <ImageIcon className="w-10 h-10 mb-3 text-gray-400" />
-                                            <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                                            <p className="text-xs text-gray-400">PNG, JPG or JPEG (Max. 5MB)</p>
-                                        </>
-                                    )}
-                                </div>
-                                <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
-                            </label>
-                        </div>
+    if (banners.length >= 3) {
+      toast.error('Maximum 3 image banners allowed');
+      return;
+    }
 
-                        <div className="w-full md:w-1/2 space-y-4">
-                            <div className="p-4 bg-orange-50 rounded-lg flex gap-3 text-orange-700 text-sm">
-                                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                                <p>Upload high-quality images with an aspect ratio of approximately 3:1 (e.g., 1200x400) for best appearance.</p>
-                            </div>
+    try {
+      setUploading(true);
+      const payload = new FormData();
+      payload.append('image', selectedFile);
+      await uploadBanner(payload);
+      toast.success('Banner uploaded successfully');
+      setSelectedFile(null);
+      setPreviewUrl(null);
+      fetchImageBanners();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to upload banner'));
+    } finally {
+      setUploading(false);
+    }
+  };
 
-                            <button
-                                onClick={handleUpload}
-                                disabled={uploading || !selectedFile || banners.length >= 3}
-                                className={`w-full py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-all
-                  ${uploading || !selectedFile || banners.length >= 3
-                                        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                                        : 'bg-red-500 text-white hover:bg-red-600 shadow-md hover:shadow-lg'}`}
-                            >
-                                {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                                {uploading ? 'Uploading...' : 'Upload Banner'}
-                            </button>
+  const handleDeleteImage = async (id) => {
+    if (!window.confirm('Delete this image banner?')) return;
+    try {
+      await deleteBanner(id);
+      toast.success('Banner deleted successfully');
+      fetchImageBanners();
+    } catch (error) {
+      toast.error('Failed to delete banner');
+    }
+  };
 
-                            {banners.length >= 3 && (
-                                <p className="text-xs text-red-500 text-center font-medium">
-                                    Maximum limit reached. Remove an existing banner to add a new one.
-                                </p>
-                            )}
-                        </div>
-                    </div>
+  const openCreateModal = () => {
+    setEditingBanner(null);
+    setFormData(emptyForm);
+    setRestaurantSearch('');
+    setRestaurants([]);
+    setDeleteConfirmBanner(null);
+    setModalOpen(true);
+  };
+
+  const openEditModal = (banner) => {
+    setEditingBanner(banner);
+    setDeleteConfirmBanner(null);
+    setFormData({
+      restaurant_uid: banner.restaurant_uid || '',
+      offer_tag: banner.offer_tag || 'HOT DEAL',
+      offer_title: banner.offer_title || '',
+      offer_description: banner.offer_description || '',
+      coupon_code: banner.coupon_code || '',
+      offer_amount: banner.offer_amount || '',
+      theme: banner.theme || 'pink',
+      priority: String(banner.priority || 1),
+      is_active: Boolean(banner.is_active),
+      cta_label: banner.cta_label || 'View Offer',
+    });
+    setRestaurantSearch(banner.restaurant_name || banner.restaurant_uid || '');
+    if (banner.restaurant_uid) {
+      setRestaurants([{ restaurant_uid: banner.restaurant_uid, restaurant_name: banner.restaurant_name }]);
+    }
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingBanner(null);
+    setFormData(emptyForm);
+    setRestaurantSearch('');
+    setRestaurants([]);
+  };
+
+  const validateDynamicForm = () => {
+    if (isRestaurantOffer && !formData.restaurant_uid) {
+      toast.error('Restaurant is required');
+      return false;
+    }
+
+    if (!formData.offer_title.trim()) {
+      toast.error('Offer title is required');
+      return false;
+    }
+
+    const priority = Number(formData.priority);
+    if (!Number.isInteger(priority) || priority < 1 || priority > 6) {
+      toast.error('Priority must be between 1 and 6');
+      return false;
+    }
+
+    return true;
+  };
+
+  const buildDynamicPayload = () => ({
+    banner_type: currentTab.bannerType,
+    restaurant_uid: isRestaurantOffer ? formData.restaurant_uid : undefined,
+    offer_tag: isRestaurantOffer ? undefined : formData.offer_tag.trim(),
+    offer_title: formData.offer_title.trim(),
+    offer_description: formData.offer_description.trim(),
+    coupon_code: isRestaurantOffer ? undefined : formData.coupon_code.trim(),
+    offer_amount: isRestaurantOffer ? undefined : formData.offer_amount.trim(),
+    theme: formData.theme,
+    priority: Number(formData.priority),
+    is_active: Boolean(formData.is_active),
+    cta_label: isRestaurantOffer ? formData.cta_label : undefined,
+  });
+
+  const handleDynamicSubmit = async (event) => {
+    event.preventDefault();
+    if (!validateDynamicForm()) return;
+
+    try {
+      setSaving(true);
+      if (editingBanner) {
+        await updateDynamicBanner(editingBanner.id, buildDynamicPayload());
+        toast.success('Banner updated');
+      } else {
+        await createDynamicBanner(buildDynamicPayload());
+        toast.success('Banner created');
+      }
+      closeModal();
+      fetchDynamicBanners();
+    } catch (error) {
+      console.error('Dynamic banner save failed:', error?.response?.data || error);
+      toast.error(getApiErrorMessage(error, 'Failed to save banner'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleDynamicStatus = async (banner) => {
+    const nextStatus = !banner.is_active;
+    try {
+      await updateDynamicBannerStatus(banner.id, nextStatus);
+      toast.success(nextStatus ? 'Banner activated' : 'Banner deactivated');
+      fetchDynamicBanners();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to update status'));
+    }
+  };
+
+  const handleDeleteDynamic = async (banner) => {
+    try {
+      await deleteDynamicBanner(banner.id);
+      toast.success('Banner deleted');
+      setDeleteConfirmBanner(null);
+      fetchDynamicBanners();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to delete banner'));
+    }
+  };
+
+  const renderImageBanners = () => (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
+          <Plus className="h-5 w-5 text-red-500" />
+          Add Image Banner
+        </h2>
+
+        <div className="flex flex-col items-start gap-6 md:flex-row">
+          <div className="w-full md:w-1/2">
+            <label className={`flex h-48 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors ${previewUrl ? 'border-red-200 bg-red-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}>
+              {previewUrl ? (
+                <img src={previewUrl} alt="Preview" className="h-40 rounded-md object-contain" />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-center">
+                  <ImageIcon className="mb-3 h-10 w-10 text-gray-400" />
+                  <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                  <p className="text-xs text-gray-400">PNG, JPG or JPEG, max 5MB</p>
                 </div>
+              )}
+              <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+            </label>
+          </div>
 
-                {/* Banners List */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                        <h2 className="font-semibold text-gray-800">Active Banners ({banners.length}/3)</h2>
-                    </div>
-
-                    <div className="divide-y divide-gray-100">
-                        {loading ? (
-                            <div className="p-12 text-center text-gray-500">
-                                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-red-500" />
-                                <p>Loading banners...</p>
-                            </div>
-                        ) : banners.length === 0 ? (
-                            <div className="p-12 text-center text-gray-500">
-                                <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                                <p>No banners uploaded yet. Add your first banner above.</p>
-                            </div>
-                        ) : (
-                            banners.map((banner, index) => (
-                                <div key={banner.id} className="p-6 flex items-center gap-6 group hover:bg-gray-50 transition-colors">
-                                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 font-medium">
-                                        {index + 1}
-                                    </div>
-
-                                    <div className="flex-1">
-                                        <img
-                                            src={banner.imageUrl}
-                                            alt={`Banner ${banner.id}`}
-                                            className="w-full h-32 object-cover rounded-lg border border-gray-200 shadow-sm transition-transform group-hover:scale-[1.01]"
-                                        />
-                                    </div>
-
-                                    <div className="text-right flex flex-col items-end gap-2">
-                                        <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
-                                            Active
-                                        </span>
-                                        <button
-                                            onClick={() => handleDelete(banner.id)}
-                                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                            title="Delete banner"
-                                        >
-                                            <Trash2 className="w-5 h-5" />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
+          <div className="w-full space-y-4 md:w-1/2">
+            <div className="flex gap-3 rounded-lg bg-orange-50 p-4 text-sm text-orange-700">
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+              <p>Existing image banners continue to work as before. Maximum 3 active image banners.</p>
             </div>
+            <button
+              onClick={handleUpload}
+              disabled={uploading || !selectedFile || banners.length >= 3}
+              className={`flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 font-medium transition-all ${uploading || !selectedFile || banners.length >= 3 ? 'cursor-not-allowed bg-gray-200 text-gray-500' : 'bg-red-500 text-white shadow-md hover:bg-red-600'}`}
+            >
+              {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Plus className="h-5 w-5" />}
+              {uploading ? 'Uploading...' : 'Upload Banner'}
+            </button>
+          </div>
         </div>
-    );
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4">
+          <h2 className="font-semibold text-gray-800">Active Image Banners ({banners.length}/3)</h2>
+        </div>
+
+        {loading ? (
+          <div className="p-12 text-center text-gray-500">
+            <Loader2 className="mx-auto mb-2 h-8 w-8 animate-spin text-red-500" />
+            <p>Loading banners...</p>
+          </div>
+        ) : banners.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">
+            <ImageIcon className="mx-auto mb-3 h-12 w-12 opacity-20" />
+            <p>No image banners uploaded yet.</p>
+          </div>
+        ) : (
+          banners.map((banner, index) => (
+            <div key={banner.id} className="flex items-center gap-6 border-b border-gray-100 p-6 last:border-b-0 hover:bg-gray-50">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 font-medium text-gray-500">{index + 1}</div>
+              <img src={banner.imageUrl} alt={`Banner ${banner.id}`} className="h-32 flex-1 rounded-lg border border-gray-200 object-cover shadow-sm" />
+              <button
+                onClick={() => handleDeleteImage(banner.id)}
+                className="rounded-lg p-2 text-gray-400 transition-all hover:bg-red-50 hover:text-red-500"
+                title="Delete banner"
+              >
+                <Trash2 className="h-5 w-5" />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  const renderDynamicBanners = () => (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search offer title, tag, or restaurant..."
+              className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+            />
+          </div>
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-600"
+          >
+            <Plus size={18} />
+            Add Banner
+          </button>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[920px]">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Offer Title</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Restaurant</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Theme</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Priority</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {dynamicLoading ? (
+                <tr>
+                  <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                    <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-red-500" />
+                    Loading banners...
+                  </td>
+                </tr>
+              ) : dynamicBanners.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                    <ImageIcon className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+                    No dynamic banners found.
+                  </td>
+                </tr>
+              ) : (
+                dynamicBanners.map((banner) => (
+                  <tr key={banner.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm text-gray-600">{banner.banner_type}</td>
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-gray-900">{banner.offer_title}</p>
+                      <p className="text-xs text-gray-500">{banner.offer_tag || banner.cta_label || banner.coupon_code || '-'}</p>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{banner.restaurant_name || '-'}</td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex rounded-full bg-gradient-to-r px-3 py-1 text-xs font-semibold text-white ${themeOptions.find((theme) => theme.value === banner.theme)?.className || themeOptions[0].className}`}>
+                        {banner.theme}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-sm font-semibold text-red-600">{banner.priority}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${banner.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {banner.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => openEditModal(banner)} className="rounded-lg p-2 text-blue-600 hover:bg-blue-50" title="Edit">
+                          <Edit2 size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleToggleDynamicStatus(banner)}
+                          className={`rounded-lg p-2 ${banner.is_active ? 'text-amber-600 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'}`}
+                          title={banner.is_active ? 'Deactivate' : 'Activate'}
+                        >
+                          {banner.is_active ? <PowerOff size={18} /> : <Power size={18} />}
+                        </button>
+                        <div className="relative">
+                          {deleteConfirmBanner?.id === banner.id && (
+                            <div className="absolute bottom-full right-0 z-20 mb-2 w-64 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-lg">
+                              <p className="mb-3 text-sm font-medium text-gray-800">
+                                Delete &quot;{banner.offer_title}&quot;?
+                              </p>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmBanner(null)}
+                                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDynamic(banner)}
+                                  className="rounded-md bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => setDeleteConfirmBanner(banner)}
+                            className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                            title="Delete"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-800">Banner Management</h1>
+          <p className="text-gray-600">Manage image banners and dynamic offer slider cards.</p>
+        </header>
+
+        <div className="mb-6 flex flex-wrap gap-2 border-b border-gray-200">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setSearch('');
+              }}
+              className={`border-b-2 px-4 py-3 text-sm font-medium transition-colors ${activeTab === tab.id ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'image' ? renderImageBanners() : renderDynamicBanners()}
+      </div>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-3xl rounded-lg bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                {editingBanner ? 'Edit Banner' : 'Add Banner'}
+              </h2>
+              <button onClick={closeModal} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleDynamicSubmit} className="grid gap-6 p-6 md:grid-cols-[1fr_280px]">
+              <div className="space-y-4">
+                {isRestaurantOffer && (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">Search Restaurant</label>
+                      <input
+                        type="text"
+                        value={restaurantSearch}
+                        onChange={(event) => setRestaurantSearch(event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        placeholder="Restaurant name or UID"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">Restaurant</label>
+                      <select
+                        value={formData.restaurant_uid}
+                        onChange={(event) => setFormData((current) => ({ ...current, restaurant_uid: event.target.value }))}
+                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                      >
+                        <option value="">Choose restaurant</option>
+                        {restaurants.map((restaurant) => (
+                          <option key={restaurant.restaurant_uid} value={restaurant.restaurant_uid}>
+                            {restaurant.restaurant_name || restaurant.restaurant_uid}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+
+                {!isRestaurantOffer && (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Offer Tag</label>
+                    <select
+                      value={formData.offer_tag}
+                      onChange={(event) => setFormData((current) => ({ ...current, offer_tag: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                    >
+                      {promotionalTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Offer Title</label>
+                  <input
+                    type="text"
+                    value={formData.offer_title}
+                    onChange={(event) => setFormData((current) => ({ ...current, offer_title: event.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                    placeholder={isRestaurantOffer ? 'Flat Rs 100 Off' : 'Meals Under Rs 149'}
+                    maxLength={120}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Offer Description</label>
+                  <textarea
+                    value={formData.offer_description}
+                    onChange={(event) => setFormData((current) => ({ ...current, offer_description: event.target.value }))}
+                    className="min-h-20 w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                    placeholder="Valid on orders above Rs 499"
+                    maxLength={240}
+                  />
+                </div>
+
+                {!isRestaurantOffer && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">Coupon Code</label>
+                      <input
+                        type="text"
+                        value={formData.coupon_code}
+                        onChange={(event) => setFormData((current) => ({ ...current, coupon_code: event.target.value.toUpperCase() }))}
+                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        placeholder="SAVE100"
+                        maxLength={40}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">Offer Amount</label>
+                      <input
+                        type="text"
+                        value={formData.offer_amount}
+                        onChange={(event) => setFormData((current) => ({ ...current, offer_amount: event.target.value }))}
+                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        placeholder="Rs 100, Rs 149, 50%"
+                        maxLength={40}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {isRestaurantOffer && (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">CTA</label>
+                    <select
+                      value={formData.cta_label}
+                      onChange={(event) => setFormData((current) => ({ ...current, cta_label: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                    >
+                      {ctaOptions.map((cta) => <option key={cta} value={cta}>{cta}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Theme</label>
+                    <select
+                      value={formData.theme}
+                      onChange={(event) => setFormData((current) => ({ ...current, theme: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                    >
+                      {themeOptions.map((theme) => <option key={theme.value} value={theme.value}>{theme.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
+                    <select
+                      value={formData.priority}
+                      onChange={(event) => setFormData((current) => ({ ...current, priority: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                    >
+                      {Array.from({ length: 6 }, (_, index) => String(index + 1)).map((priority) => (
+                        <option key={priority} value={priority}>{priority}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_active}
+                    onChange={(event) => setFormData((current) => ({ ...current, is_active: event.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300 text-red-500 focus:ring-red-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Active</span>
+                </label>
+              </div>
+
+              <div className="space-y-4">
+                <div className={`rounded-xl bg-gradient-to-br p-5 text-white shadow-sm ${selectedTheme.className}`}>
+                  <p className="text-xs font-bold uppercase tracking-wide">{isRestaurantOffer ? selectedRestaurant?.restaurant_name || 'Restaurant Offer' : formData.offer_tag}</p>
+                  <h3 className="mt-3 text-2xl font-bold">{formData.offer_title || 'Offer Title'}</h3>
+                  <p className="mt-2 text-sm text-white/90">{formData.offer_description || 'Offer description appears here'}</p>
+                  {!isRestaurantOffer && formData.coupon_code && (
+                    <p className="mt-4 rounded-lg bg-white/20 px-3 py-2 text-sm font-semibold">Coupon: {formData.coupon_code}</p>
+                  )}
+                  {isRestaurantOffer && formData.cta_label && (
+                    <p className="mt-4 inline-flex rounded-lg bg-white px-3 py-2 text-sm font-semibold text-gray-900">{formData.cta_label}</p>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {editingBanner ? 'Save Changes' : 'Create Banner'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default BannerManagement;

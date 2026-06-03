@@ -563,6 +563,18 @@ export const uploadBanner = (formData) =>
     headers: { 'Content-Type': 'multipart/form-data' },
   });
 export const deleteBanner = (id) => api.delete(`/banners/${id}`);
+export const getDynamicBannersAdmin = (params = {}) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/banners/admin/promotional/list', { params });
+export const getBannerRestaurantOptions = (params = {}) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/banners/admin/restaurants', { params });
+export const createDynamicBanner = (data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/banners/admin/promotional', data);
+export const updateDynamicBanner = (id, data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/banners/admin/promotional/${id}`, data);
+export const updateDynamicBannerStatus = (id, isActive) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/banners/admin/promotional/${id}/status`, { is_active: isActive });
+export const deleteDynamicBanner = (id) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/banners/admin/promotional/${id}`);
 
 export const getQuickMenusAdmin = (params = {}) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/quick-search/admin/list', { params });
