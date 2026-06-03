@@ -6,7 +6,7 @@ import {
   ClipboardList, Tag, Menu, BarChart3,
   Settings, CheckCircle, Calendar,
   Gift, Navigation, Image, ChevronLeft,
-  ChevronRight, Plus
+  ChevronRight, Plus, Search
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { getAdminProfile } from '../../services/api';
@@ -26,6 +26,7 @@ const menuItems = [
   { id: 'admin-offers', path: '/offers/existing', icon: Gift, label: 'Admin Offers', adminOnly: true },
   { id: 'coupon', path: '/coupon', icon: Tag, label: 'Coupon', adminOnly: true },
   { id: 'cuisine', path: '/cuisine', icon: Utensils, label: 'Cuisine Categories', adminOnly: true },
+  { id: 'quick-menu', path: '/quick-menu', icon: Search, label: 'Quick Menu', adminOnly: true },
   { id: 'menu', path: '/menu', icon: Menu, label: 'Menu' },
   { id: 'banners', path: '/banners', icon: Image, label: 'Banners', adminOnly: true },
   { id: 'analytics', path: '/analytics', icon: BarChart3, label: 'Analytics', adminOnly: true },
