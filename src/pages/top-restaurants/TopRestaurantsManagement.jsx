@@ -22,11 +22,45 @@ import {
   updateTopRestaurant,
   updateTopRestaurantStatus,
 } from '../../services/api';
+import { getRestaurantLogoUrl } from '../../utils/imageUtils';
 
 const emptyForm = {
   restaurant_uid: '',
   priority: '1',
   is_active: true,
+};
+
+const resolveTopRestaurantImage = (image) => {
+  if (!image) return null;
+
+  const normalized = String(image)
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/^images\/restaurant\//, '');
+
+  return getRestaurantLogoUrl(normalized);
+};
+
+const TopRestaurantImage = ({ image, name }) => {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = resolveTopRestaurantImage(image);
+
+  if (!imageUrl || imageFailed) {
+    return (
+      <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-400">
+        <Star size={18} />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={imageUrl}
+      alt={name}
+      className="h-12 w-12 rounded-lg border border-gray-200 object-cover"
+      onError={() => setImageFailed(true)}
+    />
+  );
 };
 
 const TopRestaurantsManagement = () => {
@@ -335,17 +369,10 @@ const TopRestaurantsManagement = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          {restaurant.image ? (
-                            <img
-                              src={restaurant.image}
-                              alt={restaurant.restaurant_name || restaurant.restaurant_uid}
-                              className="h-12 w-12 rounded-lg border border-gray-200 object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-400">
-                              <Star size={18} />
-                            </div>
-                          )}
+                          <TopRestaurantImage
+                            image={restaurant.image}
+                            name={restaurant.restaurant_name || restaurant.restaurant_uid}
+                          />
                           <div>
                             <p className="font-medium text-gray-900">{restaurant.restaurant_name || restaurant.restaurant_uid}</p>
                             <p className="text-xs text-gray-500">{restaurant.food_type || 'Food type not set'}</p>
