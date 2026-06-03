@@ -39,6 +39,15 @@ const themeOptions = [
 const promotionalTags = ['HOT DEAL', 'LIMITED OFFER', 'POCKET SAVER', 'NEW OFFER', 'TODAY SPECIAL'];
 const ctaOptions = ['View Offer', 'Order Now'];
 
+const getApiErrorMessage = (error, fallback) => {
+  const responseMessage = error?.response?.data?.message;
+  if (Array.isArray(responseMessage)) return responseMessage.join(', ');
+  if (responseMessage) return responseMessage;
+  if (error?.response?.data?.error) return error.response.data.error;
+  if (error?.message) return error.message;
+  return fallback;
+};
+
 const emptyForm = {
   restaurant_uid: '',
   offer_tag: 'HOT DEAL',
@@ -68,6 +77,7 @@ const BannerManagement = () => {
   const [formData, setFormData] = useState(emptyForm);
   const [search, setSearch] = useState('');
   const [restaurantSearch, setRestaurantSearch] = useState('');
+  const [deleteConfirmBanner, setDeleteConfirmBanner] = useState(null);
 
   const currentTab = tabs.find((tab) => tab.id === activeTab) || tabs[0];
   const isRestaurantOffer = currentTab.bannerType === 'RESTAURANT_OFFER';
@@ -121,7 +131,7 @@ const BannerManagement = () => {
       });
       setDynamicBanners(response.data?.data || []);
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to load dynamic banners');
+      toast.error(getApiErrorMessage(error, 'Failed to load dynamic banners'));
     } finally {
       setDynamicLoading(false);
     }
@@ -173,7 +183,7 @@ const BannerManagement = () => {
       setPreviewUrl(null);
       fetchImageBanners();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to upload banner');
+      toast.error(getApiErrorMessage(error, 'Failed to upload banner'));
     } finally {
       setUploading(false);
     }
@@ -195,11 +205,13 @@ const BannerManagement = () => {
     setFormData(emptyForm);
     setRestaurantSearch('');
     setRestaurants([]);
+    setDeleteConfirmBanner(null);
     setModalOpen(true);
   };
 
   const openEditModal = (banner) => {
     setEditingBanner(banner);
+    setDeleteConfirmBanner(null);
     setFormData({
       restaurant_uid: banner.restaurant_uid || '',
       offer_tag: banner.offer_tag || 'HOT DEAL',
@@ -277,7 +289,8 @@ const BannerManagement = () => {
       closeModal();
       fetchDynamicBanners();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to save banner');
+      console.error('Dynamic banner save failed:', error?.response?.data || error);
+      toast.error(getApiErrorMessage(error, 'Failed to save banner'));
     } finally {
       setSaving(false);
     }
@@ -290,18 +303,18 @@ const BannerManagement = () => {
       toast.success(nextStatus ? 'Banner activated' : 'Banner deactivated');
       fetchDynamicBanners();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update status');
+      toast.error(getApiErrorMessage(error, 'Failed to update status'));
     }
   };
 
   const handleDeleteDynamic = async (banner) => {
-    if (!window.confirm(`Delete "${banner.offer_title}"?`)) return;
     try {
       await deleteDynamicBanner(banner.id);
       toast.success('Banner deleted');
+      setDeleteConfirmBanner(null);
       fetchDynamicBanners();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to delete banner');
+      toast.error(getApiErrorMessage(error, 'Failed to delete banner'));
     }
   };
 
@@ -467,9 +480,38 @@ const BannerManagement = () => {
                         >
                           {banner.is_active ? <PowerOff size={18} /> : <Power size={18} />}
                         </button>
-                        <button onClick={() => handleDeleteDynamic(banner)} className="rounded-lg p-2 text-red-600 hover:bg-red-50" title="Delete">
-                          <Trash2 size={18} />
-                        </button>
+                        <div className="relative">
+                          {deleteConfirmBanner?.id === banner.id && (
+                            <div className="absolute bottom-full right-0 z-20 mb-2 w-64 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-lg">
+                              <p className="mb-3 text-sm font-medium text-gray-800">
+                                Delete &quot;{banner.offer_title}&quot;?
+                              </p>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmBanner(null)}
+                                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDynamic(banner)}
+                                  className="rounded-md bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => setDeleteConfirmBanner(banner)}
+                            className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                            title="Delete"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>
