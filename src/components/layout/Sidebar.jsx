@@ -27,6 +27,7 @@ const menuItems = [
   { id: 'coupon', path: '/coupon', icon: Tag, label: 'Coupon', adminOnly: true },
   { id: 'cuisine', path: '/cuisine', icon: Utensils, label: 'Cuisine Categories', adminOnly: true },
   { id: 'quick-menu', path: '/quick-menu', icon: Search, label: 'Quick Menu', adminOnly: true },
+  { id: 'top-restaurants', path: '/top-restaurants', icon: Gift, label: 'Top Restaurants', adminOnly: true },
   { id: 'menu', path: '/menu', icon: Menu, label: 'Menu' },
   { id: 'banners', path: '/banners', icon: Image, label: 'Banners', adminOnly: true },
   { id: 'analytics', path: '/analytics', icon: BarChart3, label: 'Analytics', adminOnly: true },

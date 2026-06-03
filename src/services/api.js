@@ -579,6 +579,19 @@ export const updateQuickMenuStatus = (id, isActive) =>
 export const deleteQuickMenu = (id) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/quick-search/admin/${id}`);
 
+export const getTopRestaurantsAdmin = (params = {}) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/top-restaurants/admin/list', { params });
+export const getTopRestaurantOptions = (params = {}) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/top-restaurants/admin/restaurant-options', { params });
+export const createTopRestaurant = (data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/top-restaurants/admin', data);
+export const updateTopRestaurant = (id, data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/top-restaurants/admin/${id}`, data);
+export const updateTopRestaurantStatus = (id, isActive) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/top-restaurants/admin/${id}/status`, { is_active: isActive });
+export const deleteTopRestaurant = (id) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/top-restaurants/admin/${id}`);
+
 // Restaurant Edit APIs
 export const updateRestaurantProfileAdmin = (uid, profileData) =>
   api.put(`/restaurants/${uid}/admin/profile`, profileData);
