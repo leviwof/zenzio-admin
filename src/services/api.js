@@ -564,6 +564,21 @@ export const uploadBanner = (formData) =>
   });
 export const deleteBanner = (id) => api.delete(`/banners/${id}`);
 
+export const getQuickMenusAdmin = (params = {}) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/quick-search/admin/list', { params });
+export const createQuickMenu = (formData) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/quick-search/admin', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+export const updateQuickMenu = (id, formData) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/quick-search/admin/${id}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+export const updateQuickMenuStatus = (id, isActive) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/quick-search/admin/${id}/status`, { is_active: isActive });
+export const deleteQuickMenu = (id) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/quick-search/admin/${id}`);
+
 // Restaurant Edit APIs
 export const updateRestaurantProfileAdmin = (uid, profileData) =>
   api.put(`/restaurants/${uid}/admin/profile`, profileData);
