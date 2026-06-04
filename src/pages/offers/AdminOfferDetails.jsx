@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getAdminOfferById } from '../../services/api';
-import { ChevronLeft, Calendar, Tag, Percent, ShoppingCart, Users, Clock, CheckCircle, XCircle, Edit } from 'lucide-react';
+import { ChevronLeft, Calendar, Percent, ShoppingCart, Users, Clock, CheckCircle, XCircle, Edit, Gift } from 'lucide-react';
 
 const AdminOfferDetails = () => {
   const { id } = useParams();
@@ -10,6 +10,18 @@ const AdminOfferDetails = () => {
   const [loading, setLoading] = useState(true);
 
   const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '');
+  const offerTypeLabels = {
+    PERCENTAGE_DISCOUNT: 'Percentage Discount',
+    FIXED_AMOUNT_DISCOUNT: 'Fixed Amount Discount',
+    BUY_ONE_GET_ONE: 'Buy One Get One',
+    BUY_X_GET_Y: 'Buy X Get Y',
+    FREE_ITEM_CART_VALUE: 'Free Item On Cart Value',
+    FREE_ITEM_CATEGORY: 'Free Item On Category',
+    FREE_ITEM_OFFER: 'Free Item Offer',
+    CART_VALUE_OFFER: 'Cart Value Offer',
+    FESTIVAL_OFFER: 'Festival Offer',
+    PLATFORM_CAMPAIGN: 'Platform Campaign',
+  };
 
   useEffect(() => {
     fetchOfferDetails();
@@ -33,6 +45,33 @@ const AdminOfferDetails = () => {
       return `${IMAGE_BASE_URL}/uploads/${imagePath}`;
     }
     return `${IMAGE_BASE_URL}/${imagePath}`;
+  };
+
+  const getDiscountItemSummary = () => {
+    const names = [
+      offer.discountItemNames?.buyItem,
+      offer.discountItemNames?.freeItem,
+      ...(offer.discountItemNames?.applicableItems || []),
+      ...(offer.applicableItemNames || []),
+    ].filter(Boolean);
+    return [...new Set(names)];
+  };
+
+  const getOfferTypeLabel = () => offerTypeLabels[offer.offerType] || offer.offerType?.replaceAll('_', ' ') || offer.discountType;
+
+  const getReadableOfferRule = () => {
+    const buyItem = offer.discountItemNames?.buyItem || offer.conditions?.buyItemName || offer.conditions?.buyProductName;
+    const freeItem = offer.discountItemNames?.freeItem || offer.rewards?.freeItemName || offer.rewards?.freeProductName;
+    const buyQty = offer.conditions?.quantityRequired || offer.conditions?.buyQuantity || offer.ruleConfig?.buyQuantity || 1;
+    const freeQty = offer.rewards?.freeQuantity || offer.ruleConfig?.freeQuantity || 1;
+
+    if (['BUY_ONE_GET_ONE', 'BUY_X_GET_Y'].includes(offer.offerType) && buyItem && freeItem) {
+      return `Buy ${buyQty} ${buyItem}, get ${freeQty} ${freeItem} free`;
+    }
+    if (['FREE_ITEM_CART_VALUE', 'FREE_ITEM_CATEGORY', 'FREE_ITEM_OFFER'].includes(offer.offerType) && freeItem) {
+      return `Get ${freeQty} ${freeItem} free`;
+    }
+    return getOfferTypeLabel();
   };
 
   if (loading) {
@@ -154,12 +193,27 @@ const AdminOfferDetails = () => {
 
                 <div className="bg-orange-50 p-4 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
-                    <Tag className="text-orange-500" size={20} />
+                    <Gift className="text-orange-500" size={20} />
                   </div>
-                  <p className="text-2xl font-bold text-orange-600">{offer.adminCommission || 15}%</p>
-                  <p className="text-xs text-gray-600">Commission</p>
+                  <p className="text-sm font-bold text-orange-600 truncate">
+                    {getOfferTypeLabel()}
+                  </p>
+                  <p className="text-xs text-gray-600">Offer Type</p>
                 </div>
               </div>
+
+              {getDiscountItemSummary().length > 0 && (
+                <div className="mt-6 rounded-lg border border-orange-100 bg-orange-50 p-4">
+                  <p className="text-sm font-semibold text-orange-900">{getReadableOfferRule()}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {getDiscountItemSummary().map((name) => (
+                      <span key={name} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-orange-700 border border-orange-100">
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -248,27 +302,6 @@ const AdminOfferDetails = () => {
                   </div>
                 </>
               )}
-            </div>
-          </div>
-
-          {/* Commission Card */}
-          <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg shadow p-6 border border-yellow-200">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Commission Info</h2>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Admin Commission</span>
-                <span className="text-2xl font-bold text-orange-600">
-                  {offer.adminCommission || 15}%
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between border-t border-yellow-200 pt-3">
-                <span className="text-sm text-gray-600">Calculation</span>
-                <span className="text-sm font-medium text-gray-900">
-                  {offer.isCommissionAuto ? 'Automatic' : 'Manual'}
-                </span>
-              </div>
             </div>
           </div>
         </div>
