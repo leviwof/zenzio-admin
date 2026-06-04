@@ -9,7 +9,7 @@ import {
   Loader2, UtensilsCrossed, RefreshCw, ChevronDown,
 } from "lucide-react";
 import {
-  getAllRestaurants, getRestaurantById, toggleRestaurantOff,
+  getAllRestaurants, getRestaurantById, toggleRestaurantActive,
   updateRestaurantStatus, permanentlyDeleteRestaurant
 } from "../../services/api";
 import { saveAs } from "file-saver";
@@ -17,7 +17,7 @@ import toast from "react-hot-toast";
 import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
 import Card, { CardContent, CardHeader } from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
-import Toggle from "../../components/ui/Toggle";
+import { isRestaurantOnline, normalizeRestaurantAvailability } from "../../utils/restaurantAvailability";
 
 const MIN_RATING_THRESHOLD = 50;
 const DEFAULT_RATING = 4.0;
@@ -65,8 +65,7 @@ const RatingStars = ({ rating }) => {
 };
 
 const StatusPill = ({ restaurant }) => {
-  const { isOpen, isActive, isManuallyOff } = restaurant;
-  if (isActive === false) {
+  if (restaurant.isActive === false) {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
         <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
@@ -74,7 +73,7 @@ const StatusPill = ({ restaurant }) => {
       </span>
     );
   }
-  if (isManuallyOff || isOpen === false) {
+  if (!isRestaurantOnline(restaurant)) {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
         <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -92,6 +91,34 @@ const StatusPill = ({ restaurant }) => {
 
 const VerificationBadge = ({ verified }) =>
   verified ? <BadgeCheck size={14} className="text-blue-500 shrink-0" /> : null;
+
+const OpenCloseButton = ({ restaurant, onClick, loading, compact = false }) => {
+  const online = isRestaurantOnline(restaurant);
+  const disabled = loading || restaurant.isActive === false;
+  const label = online ? "Close" : "Open";
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(restaurant.uid);
+      }}
+      disabled={disabled}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
+        compact ? "px-2.5 py-1.5" : "px-3 py-2"
+      } ${
+        online
+          ? "border-red-100 bg-red-50 text-red-600 hover:bg-red-100"
+          : "border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+      }`}
+      title={restaurant.isActive === false ? "Blocked restaurants must be unblocked first" : `${label} restaurant`}
+    >
+      {loading ? <Loader2 size={13} className="animate-spin" /> : <Power size={13} />}
+      {label}
+    </button>
+  );
+};
 
 // ─── Filter Dropdown ──────────────────────────────────
 const FilterDropdown = ({ label, icon: Icon, value, options, onChange, onClear }) => {
@@ -329,11 +356,11 @@ const MobileRestaurantCard = ({ restaurant, details, detailsLoading, selected, o
       </div>
       <div className="flex items-center gap-2">
         <span>{formatDate(restaurant.createdAt)}</span>
-        <Toggle
-          enabled={restaurant.isActive !== false && restaurant.isManuallyOff !== true && restaurant.isOpen !== false}
-          onChange={() => onToggle(restaurant.uid)}
-          disabled={toggleLoading[restaurant.uid] || restaurant.isActive === false}
-          size="sm"
+        <OpenCloseButton
+          restaurant={restaurant}
+          onClick={onToggle}
+          loading={toggleLoading[restaurant.uid]}
+          compact
         />
       </div>
     </div>
@@ -387,22 +414,22 @@ const RestaurantsList = () => {
       let basicData = [];
       if (Array.isArray(response.data)) basicData = response.data;
       else if (response.data?.data) basicData = response.data.data;
-      const processed = basicData.map((r) => ({
-        id: r.id,
-        uid: r.uid || `NO_UID_${r.id}`,
-        isActive: r.isActive,
-        isManuallyOff: r.isManuallyOff,
-        isOpen: r.isOpen,
-        statusLabel: r.statusLabel,
-        createdAt: r.createdAt,
-        restaurant_name: r.profile?.restaurant_name || r.restaurant_name || "-",
-        verified: r.verified || r.profile?.verified || false,
-        city: "-",
-        email: "-",
-        phone: "-",
-        rating: getRestaurantDisplayRating(r),
-        ratingCount: getRestaurantRatingCount(r),
-      }));
+      const processed = basicData.map((r) => {
+        const availability = normalizeRestaurantAvailability(r);
+        return {
+          ...availability,
+          id: r.id,
+          uid: r.uid || `NO_UID_${r.id}`,
+          createdAt: r.createdAt,
+          restaurant_name: r.profile?.restaurant_name || r.restaurant_name || "-",
+          verified: r.verified || r.profile?.verified || false,
+          city: "-",
+          email: "-",
+          phone: "-",
+          rating: getRestaurantDisplayRating(r),
+          ratingCount: getRestaurantRatingCount(r),
+        };
+      });
       setRestaurants(processed);
     } catch (error) {
       console.error("Error fetching restaurants:", error);
@@ -427,7 +454,7 @@ const RestaurantsList = () => {
         setDetailsLoading((prev) => ({ ...prev, [restaurant.uid]: true }));
         try {
           const resp = await getRestaurantById(restaurant.uid);
-          const d = resp.data?.data?.restaurant || resp.data?.restaurant || resp.data?.data;
+          const d = normalizeRestaurantAvailability(resp.data?.data?.restaurant || resp.data?.restaurant || resp.data?.data || {});
           let email = "-", phone = "-", city = "-";
           if (d?.profile?.contact_email) email = d.profile.contact_email;
           else if (d?.contact?.encryptedEmail) email = d.contact.encryptedEmail;
@@ -442,6 +469,23 @@ const RestaurantsList = () => {
             ...prev,
             [restaurant.uid]: { email, phone, city, rating: displayRating, ratingCount, cuisines: d?.cuisines || [] },
           }));
+          setRestaurants((prev) => prev.map((item) => (
+            item.uid === restaurant.uid
+              ? {
+                  ...item,
+                  isActive: d.isActive,
+                  accountIsActive: d.accountIsActive,
+                  isOnline: d.isOnline,
+                  restaurantOnline: d.restaurantOnline,
+                  isManuallyOff: d.isManuallyOff,
+                  isOpen: d.isOpen,
+                  canAcceptOrders: d.canAcceptOrders,
+                  isAvailable: d.isAvailable,
+                  statusLabel: d.statusLabel,
+                  availability: d.availability,
+                }
+              : item
+          )));
         } catch {
           setRestaurantDetails((prev) => ({
             ...prev,
@@ -469,9 +513,9 @@ const RestaurantsList = () => {
 
     // Status filter
     if (statusFilter === "active") {
-      filtered = filtered.filter((r) => r.isOpen !== false && r.isManuallyOff !== true && r.isActive !== false);
+      filtered = filtered.filter((r) => isRestaurantOnline(r));
     } else if (statusFilter === "inactive") {
-      filtered = filtered.filter((r) => r.isOpen === false || r.isManuallyOff === true || r.isActive === false);
+      filtered = filtered.filter((r) => !isRestaurantOnline(r));
     } else if (statusFilter === "pending") {
       filtered = filtered.filter((r) => r.statusLabel === "pending");
     }
@@ -520,8 +564,8 @@ const RestaurantsList = () => {
         case "rating":
           return (restaurantDetails[b.uid]?.rating || 0) - (restaurantDetails[a.uid]?.rating || 0);
         case "status": {
-          const aActive = a.isActive !== false && a.isOpen !== false && a.isManuallyOff !== true;
-          const bActive = b.isActive !== false && b.isOpen !== false && b.isManuallyOff !== true;
+          const aActive = isRestaurantOnline(a);
+          const bActive = isRestaurantOnline(b);
           return (aActive === bActive ? 0 : aActive ? -1 : 1);
         }
         default:
@@ -541,8 +585,8 @@ const RestaurantsList = () => {
   // Stats
   const stats = useMemo(() => {
     const total = restaurants.length;
-    const active = restaurants.filter((r) => r.isOpen !== false && r.isManuallyOff !== true && r.isActive !== false).length;
-    const inactive = restaurants.filter((r) => r.isOpen === false || r.isManuallyOff === true || r.isActive === false).length;
+    const active = restaurants.filter((r) => isRestaurantOnline(r)).length;
+    const inactive = restaurants.filter((r) => !isRestaurantOnline(r)).length;
     const pending = restaurants.filter((r) => r.statusLabel === "pending").length;
     const qualified = Object.values(restaurantDetails).filter((d) => (d.ratingCount || 0) >= MIN_RATING_THRESHOLD);
     const avgRating = qualified.length ? (qualified.reduce((a, b) => a + b.rating, 0) / qualified.length) : 0;
@@ -558,8 +602,14 @@ const RestaurantsList = () => {
         toast.error("Blocked restaurants must be unblocked by a Zenzio admin before opening");
         return;
       }
-      const nextOpen = r?.isManuallyOff === true || r?.isOpen === false;
-      await toggleRestaurantOff(uid);
+      const nextOpen = !isRestaurantOnline(r);
+      const response = await toggleRestaurantActive(uid);
+      const responseData = response.data?.data || response.data?.restaurant || response.data;
+      if (responseData) {
+        setRestaurants((prev) => prev.map((item) => (
+          item.uid === uid ? normalizeRestaurantAvailability({ ...item, ...responseData }) : item
+        )));
+      }
       toast.success(nextOpen ? "Restaurant opened" : "Restaurant closed");
       fetchRestaurants();
     } catch (err) {
@@ -953,7 +1003,7 @@ const RestaurantsList = () => {
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Rating</th>
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Registered</th>
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Online</th>
+                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Open/Close</th>
                     <th className="w-12 px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"></th>
                   </tr>
                 </thead>
@@ -1061,16 +1111,15 @@ const RestaurantsList = () => {
                           <StatusPill restaurant={restaurant} />
                         </td>
 
-                        {/* Online Toggle */}
+                        {/* Open/Close */}
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-2">
-                            <Toggle
-                              enabled={restaurant.isActive !== false && restaurant.isManuallyOff !== true && restaurant.isOpen !== false}
-                              onChange={() => handleToggle(restaurant.uid)}
-                              disabled={toggleLoading[restaurant.uid] || restaurant.isActive === false}
-                              size="sm"
+                            <OpenCloseButton
+                              restaurant={restaurant}
+                              onClick={handleToggle}
+                              loading={toggleLoading[restaurant.uid]}
+                              compact
                             />
-                            {toggleLoading[restaurant.uid] && <Loader2 size={12} className="animate-spin text-indigo-500" />}
                           </div>
                         </td>
 
