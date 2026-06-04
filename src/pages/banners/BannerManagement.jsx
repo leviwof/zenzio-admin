@@ -31,19 +31,61 @@ const tabs = [
 ];
 
 const DEFAULT_THEME_COLOR = '#ec4899';
+const DEFAULT_THEME_COLORS = ['#ec4899', '#f97316', '#9333ea'];
 const legacyThemeColors = {
   pink: '#ec4899',
   orange: '#f97316',
   purple: '#9333ea',
 };
 
-const resolveThemeColor = (value) => {
-  const theme = String(value || DEFAULT_THEME_COLOR).trim().toLowerCase();
+const isHexColor = (value) => /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(value || '').trim());
+
+const resolveThemeColor = (value, fallback = DEFAULT_THEME_COLOR) => {
+  const theme = String(value || fallback).trim().toLowerCase();
   const resolved = legacyThemeColors[theme] || theme;
-  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(resolved) ? resolved : DEFAULT_THEME_COLOR;
+  return isHexColor(resolved) ? resolved : fallback;
 };
 
-const getReadableTextColor = (hexColor) => {
+const getThemeColorStops = (value) => {
+  const rawTheme = String(value || '').trim();
+  const colorMatches = rawTheme.match(/#(?:[0-9a-f]{3}|[0-9a-f]{6})/gi) || [];
+  const colors = colorMatches.length > 0
+    ? colorMatches.map((color, index) => resolveThemeColor(color, DEFAULT_THEME_COLORS[index] || DEFAULT_THEME_COLOR))
+    : [resolveThemeColor(rawTheme)];
+
+  while (colors.length < 3) {
+    colors.push(DEFAULT_THEME_COLORS[colors.length] || colors[colors.length - 1] || DEFAULT_THEME_COLOR);
+  }
+
+  return colors.slice(0, 3);
+};
+
+const buildThemeGradient = (colors) => {
+  const [first, second, third] = getThemeColorStops(colors?.join?.(',') || colors);
+  return `linear-gradient(135deg, ${first} 0%, ${second} 52%, ${third} 100%)`;
+};
+
+const resolveThemeBackground = (value) => {
+  const rawTheme = String(value || '').trim();
+  if (/^linear-gradient\(/i.test(rawTheme) && getThemeColorStops(rawTheme).length >= 3) {
+    return buildThemeGradient(getThemeColorStops(rawTheme));
+  }
+
+  return isHexColor(rawTheme) || legacyThemeColors[rawTheme.toLowerCase()]
+    ? resolveThemeColor(rawTheme)
+    : buildThemeGradient(DEFAULT_THEME_COLORS);
+};
+
+const getThemeLabel = (value) => {
+  const rawTheme = String(value || '').trim();
+  if (/^linear-gradient\(/i.test(rawTheme)) {
+    return getThemeColorStops(rawTheme).join(' + ');
+  }
+
+  return resolveThemeColor(rawTheme);
+};
+
+const getColorLuminance = (hexColor) => {
   const normalized = resolveThemeColor(hexColor).replace('#', '');
   const value = normalized.length === 3
     ? normalized.split('').map((char) => `${char}${char}`).join('')
@@ -51,7 +93,12 @@ const getReadableTextColor = (hexColor) => {
   const red = parseInt(value.slice(0, 2), 16);
   const green = parseInt(value.slice(2, 4), 16);
   const blue = parseInt(value.slice(4, 6), 16);
-  const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+  return (red * 299 + green * 587 + blue * 114) / 1000;
+};
+
+const getReadableTextColor = (theme) => {
+  const colors = getThemeColorStops(theme);
+  const luminance = colors.reduce((total, color) => total + getColorLuminance(color), 0) / colors.length;
   return luminance > 150 ? '#111827' : '#ffffff';
 };
 
@@ -74,6 +121,7 @@ const emptyForm = {
   coupon_code: '',
   offer_amount: '',
   theme: DEFAULT_THEME_COLOR,
+  theme_colors: DEFAULT_THEME_COLORS,
   priority: '1',
   is_active: true,
   cta_label: 'View Offer',
@@ -99,8 +147,14 @@ const BannerManagement = () => {
 
   const currentTab = tabs.find((tab) => tab.id === activeTab) || tabs[0];
   const isRestaurantOffer = currentTab.bannerType === 'RESTAURANT_OFFER';
-  const selectedThemeColor = resolveThemeColor(formData.theme);
-  const selectedThemeTextColor = getReadableTextColor(selectedThemeColor);
+  const selectedThemeColors = Array.isArray(formData.theme_colors)
+    ? formData.theme_colors
+    : getThemeColorStops(formData.theme_colors);
+  const selectedThemePreviewColors = selectedThemeColors.map((color, index) =>
+    resolveThemeColor(color, DEFAULT_THEME_COLORS[index]),
+  );
+  const selectedThemeBackground = buildThemeGradient(selectedThemePreviewColors);
+  const selectedThemeTextColor = getReadableTextColor(selectedThemePreviewColors);
   const selectedRestaurant = useMemo(
     () => restaurants.find((restaurant) => restaurant.restaurant_uid === formData.restaurant_uid),
     [restaurants, formData.restaurant_uid],
@@ -238,7 +292,8 @@ const BannerManagement = () => {
       offer_description: banner.offer_description || '',
       coupon_code: banner.coupon_code || '',
       offer_amount: banner.offer_amount || '',
-      theme: resolveThemeColor(banner.theme),
+      theme: banner.theme || DEFAULT_THEME_COLOR,
+      theme_colors: getThemeColorStops(banner.theme),
       priority: String(banner.priority || 1),
       is_active: Boolean(banner.is_active),
       cta_label: banner.cta_label || 'View Offer',
@@ -269,8 +324,8 @@ const BannerManagement = () => {
       return false;
     }
 
-    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(formData.theme).trim())) {
-      toast.error('Theme color must be a valid hex color');
+    if (!selectedThemeColors.every(isHexColor)) {
+      toast.error('All 3 theme colors must be valid hex colors');
       return false;
     }
 
@@ -291,7 +346,7 @@ const BannerManagement = () => {
     offer_description: formData.offer_description.trim(),
     coupon_code: isRestaurantOffer ? undefined : formData.coupon_code.trim(),
     offer_amount: isRestaurantOffer ? undefined : formData.offer_amount.trim(),
-    theme: resolveThemeColor(formData.theme),
+    theme: buildThemeGradient(selectedThemePreviewColors),
     priority: Number(formData.priority),
     is_active: Boolean(formData.is_active),
     cta_label: isRestaurantOffer ? formData.cta_label : undefined,
@@ -485,9 +540,9 @@ const BannerManagement = () => {
                       >
                         <span
                           className="h-3 w-3 rounded-full border border-gray-200"
-                          style={{ backgroundColor: resolveThemeColor(banner.theme) }}
+                          style={{ background: resolveThemeBackground(banner.theme) }}
                         />
-                        {resolveThemeColor(banner.theme)}
+                        {getThemeLabel(banner.theme)}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -702,24 +757,49 @@ const BannerManagement = () => {
                 )}
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">Theme Color</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="color"
-                        value={selectedThemeColor}
-                        onChange={(event) => setFormData((current) => ({ ...current, theme: event.target.value }))}
-                        className="h-10 w-12 rounded-lg border border-gray-300 bg-white p-1"
-                      />
-                      <input
-                        type="text"
-                        value={formData.theme}
-                        onChange={(event) => setFormData((current) => ({ ...current, theme: event.target.value }))}
-                        onBlur={() => setFormData((current) => ({ ...current, theme: resolveThemeColor(current.theme) }))}
-                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                        placeholder="#ec4899"
-                        maxLength={7}
-                      />
+                  <div className="sm:col-span-2">
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Theme Colors</label>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {selectedThemeColors.map((color, index) => (
+                        <div key={`theme-color-${index}`} className="flex gap-2">
+                          <input
+                            type="color"
+                            value={resolveThemeColor(color, DEFAULT_THEME_COLORS[index])}
+                            onChange={(event) => {
+                              const nextColors = [...selectedThemeColors];
+                              nextColors[index] = event.target.value;
+                              setFormData((current) => ({
+                                ...current,
+                                theme_colors: nextColors,
+                                theme: buildThemeGradient(nextColors),
+                              }));
+                            }}
+                            className="h-10 w-12 rounded-lg border border-gray-300 bg-white p-1"
+                          />
+                          <input
+                            type="text"
+                            value={color}
+                            onChange={(event) => {
+                              const nextColors = [...selectedThemeColors];
+                              nextColors[index] = event.target.value;
+                              setFormData((current) => ({ ...current, theme_colors: nextColors }));
+                            }}
+                            onBlur={() => {
+                              const nextColors = selectedThemeColors.map((currentColor, colorIndex) =>
+                                resolveThemeColor(currentColor, DEFAULT_THEME_COLORS[colorIndex])
+                              );
+                              setFormData((current) => ({
+                                ...current,
+                                theme_colors: nextColors,
+                                theme: buildThemeGradient(nextColors),
+                              }));
+                            }}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                            placeholder={DEFAULT_THEME_COLORS[index]}
+                            maxLength={7}
+                          />
+                        </div>
+                      ))}
                     </div>
                   </div>
                   <div>
@@ -748,7 +828,7 @@ const BannerManagement = () => {
               </div>
 
               <div className="space-y-4">
-                <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: selectedThemeColor, color: selectedThemeTextColor }}>
+                <div className="rounded-xl p-5 shadow-sm" style={{ background: selectedThemeBackground, color: selectedThemeTextColor }}>
                   <p className="text-xs font-bold uppercase tracking-wide">{isRestaurantOffer ? selectedRestaurant?.restaurant_name || 'Restaurant Offer' : formData.offer_tag || 'Offer Tag'}</p>
                   <h3 className="mt-3 text-2xl font-bold">{formData.offer_title || 'Offer Title'}</h3>
                   <p className="mt-2 text-sm opacity-90">{formData.offer_description || 'Offer description appears here'}</p>
