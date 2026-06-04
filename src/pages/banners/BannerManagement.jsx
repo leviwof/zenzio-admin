@@ -30,13 +30,31 @@ const tabs = [
   { id: 'restaurant', label: 'Restaurant Offer Banners', bannerType: 'RESTAURANT_OFFER' },
 ];
 
-const themeOptions = [
-  { value: 'pink', label: 'Pink Gradient', className: 'from-pink-500 to-rose-500' },
-  { value: 'orange', label: 'Orange Gradient', className: 'from-orange-500 to-amber-500' },
-  { value: 'purple', label: 'Purple Gradient', className: 'from-purple-600 to-indigo-500' },
-];
+const DEFAULT_THEME_COLOR = '#ec4899';
+const legacyThemeColors = {
+  pink: '#ec4899',
+  orange: '#f97316',
+  purple: '#9333ea',
+};
 
-const promotionalTags = ['HOT DEAL', 'LIMITED OFFER', 'POCKET SAVER', 'NEW OFFER', 'TODAY SPECIAL'];
+const resolveThemeColor = (value) => {
+  const theme = String(value || DEFAULT_THEME_COLOR).trim().toLowerCase();
+  const resolved = legacyThemeColors[theme] || theme;
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(resolved) ? resolved : DEFAULT_THEME_COLOR;
+};
+
+const getReadableTextColor = (hexColor) => {
+  const normalized = resolveThemeColor(hexColor).replace('#', '');
+  const value = normalized.length === 3
+    ? normalized.split('').map((char) => `${char}${char}`).join('')
+    : normalized;
+  const red = parseInt(value.slice(0, 2), 16);
+  const green = parseInt(value.slice(2, 4), 16);
+  const blue = parseInt(value.slice(4, 6), 16);
+  const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+  return luminance > 150 ? '#111827' : '#ffffff';
+};
+
 const ctaOptions = ['View Offer', 'Order Now'];
 
 const getApiErrorMessage = (error, fallback) => {
@@ -50,12 +68,12 @@ const getApiErrorMessage = (error, fallback) => {
 
 const emptyForm = {
   restaurant_uid: '',
-  offer_tag: 'HOT DEAL',
+  offer_tag: '',
   offer_title: '',
   offer_description: '',
   coupon_code: '',
   offer_amount: '',
-  theme: 'pink',
+  theme: DEFAULT_THEME_COLOR,
   priority: '1',
   is_active: true,
   cta_label: 'View Offer',
@@ -81,7 +99,8 @@ const BannerManagement = () => {
 
   const currentTab = tabs.find((tab) => tab.id === activeTab) || tabs[0];
   const isRestaurantOffer = currentTab.bannerType === 'RESTAURANT_OFFER';
-  const selectedTheme = themeOptions.find((theme) => theme.value === formData.theme) || themeOptions[0];
+  const selectedThemeColor = resolveThemeColor(formData.theme);
+  const selectedThemeTextColor = getReadableTextColor(selectedThemeColor);
   const selectedRestaurant = useMemo(
     () => restaurants.find((restaurant) => restaurant.restaurant_uid === formData.restaurant_uid),
     [restaurants, formData.restaurant_uid],
@@ -214,12 +233,12 @@ const BannerManagement = () => {
     setDeleteConfirmBanner(null);
     setFormData({
       restaurant_uid: banner.restaurant_uid || '',
-      offer_tag: banner.offer_tag || 'HOT DEAL',
+      offer_tag: banner.offer_tag || '',
       offer_title: banner.offer_title || '',
       offer_description: banner.offer_description || '',
       coupon_code: banner.coupon_code || '',
       offer_amount: banner.offer_amount || '',
-      theme: banner.theme || 'pink',
+      theme: resolveThemeColor(banner.theme),
       priority: String(banner.priority || 1),
       is_active: Boolean(banner.is_active),
       cta_label: banner.cta_label || 'View Offer',
@@ -250,6 +269,11 @@ const BannerManagement = () => {
       return false;
     }
 
+    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(formData.theme).trim())) {
+      toast.error('Theme color must be a valid hex color');
+      return false;
+    }
+
     const priority = Number(formData.priority);
     if (!Number.isInteger(priority) || priority < 1 || priority > 6) {
       toast.error('Priority must be between 1 and 6');
@@ -267,7 +291,7 @@ const BannerManagement = () => {
     offer_description: formData.offer_description.trim(),
     coupon_code: isRestaurantOffer ? undefined : formData.coupon_code.trim(),
     offer_amount: isRestaurantOffer ? undefined : formData.offer_amount.trim(),
-    theme: formData.theme,
+    theme: resolveThemeColor(formData.theme),
     priority: Number(formData.priority),
     is_active: Boolean(formData.is_active),
     cta_label: isRestaurantOffer ? formData.cta_label : undefined,
@@ -456,8 +480,14 @@ const BannerManagement = () => {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{banner.restaurant_name || '-'}</td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex rounded-full bg-gradient-to-r px-3 py-1 text-xs font-semibold text-white ${themeOptions.find((theme) => theme.value === banner.theme)?.className || themeOptions[0].className}`}>
-                        {banner.theme}
+                      <span
+                        className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700"
+                      >
+                        <span
+                          className="h-3 w-3 rounded-full border border-gray-200"
+                          style={{ backgroundColor: resolveThemeColor(banner.theme) }}
+                        />
+                        {resolveThemeColor(banner.theme)}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -597,13 +627,14 @@ const BannerManagement = () => {
                 {!isRestaurantOffer && (
                   <div>
                     <label className="mb-1 block text-sm font-medium text-gray-700">Offer Tag</label>
-                    <select
+                    <input
+                      type="text"
                       value={formData.offer_tag}
                       onChange={(event) => setFormData((current) => ({ ...current, offer_tag: event.target.value }))}
                       className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                    >
-                      {promotionalTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
-                    </select>
+                      placeholder="HOT DEAL"
+                      maxLength={60}
+                    />
                   </div>
                 )}
 
@@ -672,14 +703,24 @@ const BannerManagement = () => {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">Theme</label>
-                    <select
-                      value={formData.theme}
-                      onChange={(event) => setFormData((current) => ({ ...current, theme: event.target.value }))}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                    >
-                      {themeOptions.map((theme) => <option key={theme.value} value={theme.value}>{theme.label}</option>)}
-                    </select>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Theme Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={selectedThemeColor}
+                        onChange={(event) => setFormData((current) => ({ ...current, theme: event.target.value }))}
+                        className="h-10 w-12 rounded-lg border border-gray-300 bg-white p-1"
+                      />
+                      <input
+                        type="text"
+                        value={formData.theme}
+                        onChange={(event) => setFormData((current) => ({ ...current, theme: event.target.value }))}
+                        onBlur={() => setFormData((current) => ({ ...current, theme: resolveThemeColor(current.theme) }))}
+                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        placeholder="#ec4899"
+                        maxLength={7}
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
@@ -707,10 +748,10 @@ const BannerManagement = () => {
               </div>
 
               <div className="space-y-4">
-                <div className={`rounded-xl bg-gradient-to-br p-5 text-white shadow-sm ${selectedTheme.className}`}>
-                  <p className="text-xs font-bold uppercase tracking-wide">{isRestaurantOffer ? selectedRestaurant?.restaurant_name || 'Restaurant Offer' : formData.offer_tag}</p>
+                <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: selectedThemeColor, color: selectedThemeTextColor }}>
+                  <p className="text-xs font-bold uppercase tracking-wide">{isRestaurantOffer ? selectedRestaurant?.restaurant_name || 'Restaurant Offer' : formData.offer_tag || 'Offer Tag'}</p>
                   <h3 className="mt-3 text-2xl font-bold">{formData.offer_title || 'Offer Title'}</h3>
-                  <p className="mt-2 text-sm text-white/90">{formData.offer_description || 'Offer description appears here'}</p>
+                  <p className="mt-2 text-sm opacity-90">{formData.offer_description || 'Offer description appears here'}</p>
                   {!isRestaurantOffer && formData.coupon_code && (
                     <p className="mt-4 rounded-lg bg-white/20 px-3 py-2 text-sm font-semibold">Coupon: {formData.coupon_code}</p>
                   )}
