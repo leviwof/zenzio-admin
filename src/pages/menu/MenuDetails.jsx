@@ -5,9 +5,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Loader2, AlertCircle, IndianRupee, Tag, Utensils, Calendar, Image as ImageIcon, Power, PowerOff } from 'lucide-react';
-import { getMenuByUid, toggleMenuStatus } from '../../services/api';
+import { getMenuAvailability, getMenuByUid, toggleMenuAvailability, toggleMenuStatus } from '../../services/api';
 import { getImageUrl } from '../../utils/imageUtils';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
+import { getMenuAvailabilityState, mergeMenuAvailability } from '../../utils/menuAvailability';
 
 const MenuDetails = () => {
   const { menuUid } = useParams();
@@ -38,7 +39,10 @@ const MenuDetails = () => {
       
       console.log('📥 Fetching menu details for UID:', menuUid);
       
-      const response = await getMenuByUid(menuUid);
+      const [response, availabilityResponse] = await Promise.all([
+        getMenuByUid(menuUid),
+        getMenuAvailability(menuUid).catch(() => null),
+      ]);
       console.log('📦 Full Response:', response);
       
       const menuData =
@@ -59,10 +63,7 @@ const MenuDetails = () => {
       console.log('✅ Menu data extracted:', menuData);
       
       
-      setMenu({
-        ...menuData,
-        isActive: Boolean(menuData.isActive === 1 || menuData.isActive === true)
-      });
+      setMenu(mergeMenuAvailability(menuData, availabilityResponse?.data));
     } catch (err) {
       console.error('❌ Error fetching menu:', err);
       setError(err.response?.data?.message || err.message || 'Failed to fetch menu details');
@@ -75,11 +76,14 @@ const MenuDetails = () => {
   const handleToggleStatus = async () => {
     try {
       setToggling(true);
-      const newStatus = !menu.isActive;
+      const state = getMenuAvailabilityState(menu);
+      const togglesItemAvailability = restaurantAdmin;
+      const currentStatus = togglesItemAvailability ? state.menuIsAvailable : state.menuStatus;
+      const newStatus = !currentStatus;
       
       console.log('🔄 Toggling menu status:', {
         menuUid,
-        currentStatus: menu.isActive,
+        currentStatus,
         newStatus
       });
       
@@ -89,7 +93,9 @@ const MenuDetails = () => {
         body: { status: newStatus ? 1 : 0, isActive: newStatus ? 1 : 0 }
       });
       
-      const response = await toggleMenuStatus(menuUid, newStatus);
+      const response = togglesItemAvailability
+        ? await toggleMenuAvailability(menuUid, newStatus)
+        : await toggleMenuStatus(menuUid, newStatus);
       
       
       console.log('📥 API Response:', response);
@@ -97,13 +103,13 @@ const MenuDetails = () => {
       
       
       if (response.data?.status === 'success' || response.data?.code === 200) {
+        await fetchMenuDetails();
+        const successLabel = togglesItemAvailability
+          ? (newStatus ? 'available' : 'unavailable')
+          : (newStatus ? 'enabled' : 'disabled');
         
-        setMenu(prev => ({
-          ...prev,
-          isActive: newStatus
-        }));
         
-        alert(`✅ Menu ${newStatus ? 'activated' : 'deactivated'} successfully!`);
+        alert(`Menu ${successLabel} successfully!`);
       } else {
         throw new Error('Toggle failed - unexpected response');
       }
@@ -159,6 +165,16 @@ const MenuDetails = () => {
     );
   }
 
+  const availabilityState = getMenuAvailabilityState(menu);
+  const adminStatusActive = availabilityState.menuStatus;
+  const manualAvailabilityActive = availabilityState.menuIsAvailable;
+  const canOrder = availabilityState.canOrder;
+  const reasonText = availabilityState.reasonText || (canOrder ? 'Can be ordered' : 'Currently unavailable');
+  const toggleActive = restaurantAdmin ? manualAvailabilityActive : adminStatusActive;
+  const toggleLabel = restaurantAdmin
+    ? (manualAvailabilityActive ? 'Mark Unavailable' : 'Mark Available')
+    : (adminStatusActive ? 'Disable' : 'Enable');
+
   return (
     <div className="p-6">
       <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -174,22 +190,30 @@ const MenuDetails = () => {
           {}
           <div className="flex items-center gap-3">
             <span className={`px-4 py-2 rounded-full text-sm font-medium ${
-              menu.isActive 
+              adminStatusActive
                 ? 'bg-green-100 text-green-800' 
                 : 'bg-gray-100 text-gray-800'
             }`}>
-              {menu.isActive ? 'Active' : 'Inactive'}
+              Admin Status: {adminStatusActive ? 'Enabled' : 'Disabled'}
+            </span>
+            <span
+              className={`px-4 py-2 rounded-full text-sm font-medium ${
+                canOrder ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
+              }`}
+              title={reasonText}
+            >
+              {canOrder ? 'Orderable' : 'Blocked'}
             </span>
             
             <button
               onClick={handleToggleStatus}
               disabled={toggling}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                menu.isActive
+                toggleActive
                   ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
                   : 'bg-green-100 text-green-700 hover:bg-green-200'
               } ${toggling ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title={menu.isActive ? 'Deactivate Menu' : 'Activate Menu'}
+              title={restaurantAdmin ? 'Toggle item availability' : 'Toggle admin menu status'}
             >
               {toggling ? (
                 <>
@@ -198,9 +222,9 @@ const MenuDetails = () => {
                 </>
               ) : (
                 <>
-                  {menu.isActive ? <PowerOff size={18} /> : <Power size={18} />}
+                  {toggleActive ? <PowerOff size={18} /> : <Power size={18} />}
                   <span className="text-sm font-medium">
-                    {menu.isActive ? 'Deactivate' : 'Activate'}
+                    {toggleLabel}
                   </span>
                 </>
               )}
@@ -340,6 +364,41 @@ const MenuDetails = () => {
             </div>
           </div>
         )}
+
+        <div className="mb-8 pb-8 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Power size={20} className="text-red-600" />
+            Availability
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Can Order</label>
+              <p className={`text-base font-semibold mt-1 ${canOrder ? 'text-green-700' : 'text-amber-700'}`}>
+                {canOrder ? 'Yes' : 'No'}
+              </p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Current Meal</label>
+              <p className="text-base text-gray-900 mt-1">{availabilityState.currentMeal || '-'}</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Reason</label>
+              <p className="text-base text-gray-900 mt-1">{reasonText}</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Admin Toggle</label>
+              <p className="text-base text-gray-900 mt-1">{adminStatusActive ? 'Enabled' : 'Disabled'}</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Restaurant Availability</label>
+              <p className="text-base text-gray-900 mt-1">{manualAvailabilityActive ? 'Available' : 'Unavailable'}</p>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Restaurant Open</label>
+              <p className="text-base text-gray-900 mt-1">{availabilityState.restaurantAvailable ? 'Yes' : 'No'}</p>
+            </div>
+          </div>
+        </div>
 
         {}
         <div>

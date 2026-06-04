@@ -459,6 +459,7 @@ export const getMenusByRestaurant = (restaurantUid, params) =>
 
 export const getMenuByUid = (menuUid) => api.get(`/restaurant-menu/admin/${menuUid}`);
 export const getPublicMenuByUid = (menuUid) => api.get(`/restaurant-menu/${menuUid}`);
+export const getMenuAvailability = (menuUid) => api.get(`/restaurant-menu/${menuUid}/availability`);
 
 
 export const toggleMenuStatus = (menuUid, newStatus) =>
