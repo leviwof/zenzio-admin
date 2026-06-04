@@ -10,11 +10,11 @@ import {
   Zap, AlertCircle, CheckCircle, XCircle, Info, EyeOff
 } from 'lucide-react'
 import {
-  getRestaurantById, toggleRestaurantActive, toggleRestaurantOff,
+  getRestaurantById, toggleRestaurantActive,
   getRestaurantAdminStats, updateRestaurantProfileAdmin,
   updateRestaurantAddressAdmin, uploadRestaurantLogoAdmin,
   uploadRestaurantSingleDocument, deleteRestaurantDocumentsByType,
-  updateRestaurantOperationalHours
+  updateRestaurantOperationalHours, updateRestaurantStatus
 } from '../../services/api'
 import DocumentUploadCard from '../../components/ui/DocumentUploadCard'
 import { getRestaurantImageUrl, getRestaurantLogoUrl } from '../../utils/imageUtils'
@@ -26,6 +26,7 @@ import Toggle from '../../components/ui/Toggle'
 import TimePicker from '../../components/ui/TimePicker'
 import Button from '../../components/ui/Button'
 import { SkeletonCard } from '../../components/ui/Skeleton'
+import { isRestaurantOnline, normalizeRestaurantAvailability } from '../../utils/restaurantAvailability'
 
 const MEALS = [
   { id: 'breakfast', label: 'Breakfast', icon: Coffee, color: 'amber', time: { start: '07:00', end: '11:00' } },
@@ -44,7 +45,7 @@ const mealColors = {
 const getStatusDisplay = (restaurant) => {
   if (!restaurant) return { label: 'Unknown', className: 'bg-gray-100 text-gray-800', dot: 'bg-gray-400' }
   if (restaurant.isActive === false) return { label: 'Blocked', className: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500' }
-  if (restaurant.isOpen === false) return { label: 'Closed', className: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500' }
+  if (!isRestaurantOnline(restaurant)) return { label: 'Closed', className: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500' }
   return { label: 'Open', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200', dot: 'bg-emerald-500' }
 }
 
@@ -257,8 +258,9 @@ const RestaurantDetails = () => {
       setLoading(true)
       setError('')
       const response = await getRestaurantById(uid)
-      let restaurantData = response.data?.data?.restaurant || response.data?.restaurant || response.data?.data
-      if (!restaurantData) throw new Error('Restaurant data not found')
+      const rawRestaurantData = response.data?.data?.restaurant || response.data?.restaurant || response.data?.data
+      if (!rawRestaurantData) throw new Error('Restaurant data not found')
+      let restaurantData = normalizeRestaurantAvailability(rawRestaurantData)
       setRestaurant(restaurantData)
       const normalizedMeals = buildMealTimesFromRestaurant(restaurantData)
       setMealTimes(normalizedMeals)
@@ -284,7 +286,8 @@ const RestaurantDetails = () => {
     if (!restaurant.uid) return
     try {
       setModerationLoading(true)
-      await toggleRestaurantActive(restaurant.uid)
+      const nextStatus = restaurant.isActive === false
+      await updateRestaurantStatus(restaurant.uid, nextStatus)
       toast.success(restaurant.isActive ? 'Restaurant blocked' : 'Restaurant unblocked')
       setShowModerationConfirm(false)
       fetchRestaurantDetails()
@@ -295,8 +298,12 @@ const RestaurantDetails = () => {
   const handleToggleOpen = async () => {
     if (!restaurant.uid) return
     try {
-      const nextOpen = restaurant.isManuallyOff === true
-      await toggleRestaurantOff(restaurant.uid)
+      const nextOpen = !isRestaurantOnline(restaurant)
+      const response = await toggleRestaurantActive(restaurant.uid)
+      const responseData = response.data?.data || response.data?.restaurant || response.data
+      if (responseData) {
+        setRestaurant(prev => prev ? normalizeRestaurantAvailability({ ...prev, ...responseData }) : prev)
+      }
       toast.success(nextOpen ? 'Restaurant opened' : 'Restaurant closed')
       fetchRestaurantDetails()
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to update status') }
@@ -405,7 +412,7 @@ const RestaurantDetails = () => {
       const savedAt = new Date().toISOString()
       savedMealPayloadRef.current = JSON.stringify(payload.operationalHours)
       setLastSaved(data.lastUpdatedAt || savedAt)
-      setRestaurant(prev => prev ? {
+      setRestaurant(prev => prev ? normalizeRestaurantAvailability({
         ...prev,
         operationalHours: data.operationalHours || response.data?.operationalHours || payload.operationalHours,
         operatingHours: data.operatingHours || response.data?.operatingHours || payload.operatingHours,
@@ -413,7 +420,7 @@ const RestaurantDetails = () => {
         isOpen: data.isOpen ?? response.data?.isOpen ?? prev.isOpen,
         currentMeal: data.currentMeal ?? response.data?.currentMeal ?? prev.currentMeal,
         lastUpdatedAt: data.lastUpdatedAt || savedAt,
-      } : prev)
+      }) : prev)
       setHasUnsavedMeals(false)
       toast.success('Meal timings saved')
     } catch (err) {
@@ -577,21 +584,15 @@ const RestaurantDetails = () => {
                       <span className="font-medium text-gray-700">{activeMeals} Meals</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs">
-                      {restaurant.isOpen !== false ? (
+                      {isRestaurantOnline(restaurant) ? (
                         <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
-                          <Zap size={12} className="fill-emerald-500 text-emerald-500" /> Open Now
+                          <Zap size={12} className="fill-emerald-500 text-emerald-500" /> Online
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-gray-400 font-medium">
                           <EyeOff size={12} /> {nextOpen}
                         </span>
                       )}
-                      <Toggle
-                        enabled={restaurant.isActive !== false && restaurant.isManuallyOff !== true && restaurant.isOpen !== false}
-                        onChange={handleToggleOpen}
-                        disabled={restaurant.isActive === false}
-                        size="sm"
-                      />
                     </div>
                   </div>
                 </div>
@@ -967,11 +968,11 @@ const RestaurantDetails = () => {
                     <div className="border-t border-gray-100 pt-1.5 mt-1.5">
                       <motion.button whileHover={{ x: 2 }} onClick={handleToggleOpen}
                         className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                          restaurant.isManuallyOff === true
-                            ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
-                            : 'text-gray-600 bg-gray-50 hover:bg-gray-100'
+                          isRestaurantOnline(restaurant)
+                            ? 'text-gray-600 bg-gray-50 hover:bg-gray-100'
+                            : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
                         }`}>
-                        {restaurant.isManuallyOff === true ? <><Power size={15} /> Open Restaurant</> : <><Power size={15} /> Close Restaurant</>}
+                        {isRestaurantOnline(restaurant) ? <><Power size={15} /> Close Restaurant</> : <><Power size={15} /> Open Restaurant</>}
                       </motion.button>
                     </div>
                   )}

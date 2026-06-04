@@ -278,7 +278,7 @@ export const getAllRestaurants = (params) => {
 export const getRestaurantById = (uid) => api.get(`/restaurants/${uid}/admin`);
 export const updateRestaurantOperationalHours = (uid, data) =>
   api.put(`/restaurants/${uid}/operational-hours`, data);
-export const toggleRestaurantActive = (id) => api.patch(`/restaurants/${id}/toggle-active`);
+export const toggleRestaurantActive = (id, data) => api.patch(`/restaurants/${id}/toggle-active`, data || {});
 export const toggleRestaurantOff = (id) => api.patch(`/restaurants/${id}/toggle-off`);
 export const getRestaurantStats = () => api.get('/restaurants/stats');
 export const getRestaurantAdminStats = (uid, params) => api.get(`/restaurants/${uid}/admin-stats`, { params });
