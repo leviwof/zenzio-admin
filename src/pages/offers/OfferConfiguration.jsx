@@ -58,8 +58,6 @@ const initialForm = {
   endTime: "",
   termsConditions: "",
   description: "",
-  adminCommission: "15",
-  isCommissionAuto: true,
   rules: emptyRules,
 };
 
@@ -342,8 +340,6 @@ const OfferConfiguration = () => {
       data.append("minOrderValue", String(formData.minOrderValue || formData.rules.minimumCartAmount || 0));
       data.append("startDate", formData.startDate);
       data.append("endDate", formData.endDate);
-      data.append("isCommissionAuto", String(formData.isCommissionAuto));
-      data.append("adminCommission", String(formData.adminCommission || 15));
       data.append("ruleConfig", JSON.stringify({
         type: formData.offerType,
         ...formData.rules,
@@ -594,20 +590,6 @@ const OfferConfiguration = () => {
               <textarea name="termsConditions" value={formData.termsConditions} onChange={handleChange} rows={4} placeholder="One condition per line" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 resize-none" />
             </Field>
           </section>
-
-          {!restaurantAdmin && (
-            <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Commission Calculation">
-                <label className="flex items-center gap-2 h-10 text-sm text-gray-600">
-                  <input type="checkbox" name="isCommissionAuto" checked={formData.isCommissionAuto} onChange={handleChange} className="w-4 h-4 text-indigo-600 rounded" />
-                  Auto calculate commission
-                </label>
-              </Field>
-              <Field label="Admin Commission (%)">
-                <input type="number" name="adminCommission" value={formData.adminCommission} onChange={handleChange} disabled={formData.isCommissionAuto} min="0" max="100" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 disabled:bg-gray-100" />
-              </Field>
-            </section>
-          )}
 
           <section>
             <Field label="Offer Image">

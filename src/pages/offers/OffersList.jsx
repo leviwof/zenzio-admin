@@ -114,6 +114,24 @@ const getOfferValue = (offer) => {
   return formatCurrency(offer.discountValue);
 };
 
+const getOfferItemNames = (offer) => {
+  const names = [
+    offer.discountItemNames?.buyItem,
+    offer.discountItemNames?.freeItem,
+    ...(offer.discountItemNames?.applicableItems || []),
+    ...(offer.applicableItemNames || []),
+  ].filter(Boolean);
+
+  return [...new Set(names)];
+};
+
+const getOfferItemSummary = (offer) => {
+  const names = getOfferItemNames(offer);
+  if (!names.length) return "-";
+  if (names.length <= 2) return names.join(", ");
+  return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+};
+
 const StatusPill = ({ status }) => {
   const styles = {
     ACTIVE: "bg-emerald-50 text-emerald-600 border-emerald-100",
@@ -633,13 +651,14 @@ const OffersList = () => {
   };
 
   const serializeRows = (rows) => [
-    ["Offer Name", "Offer Code", "Restaurant", "Offer Type", "Discount", "Status", "Created By", "Start Date", "End Date", "Redemptions", "Revenue"],
+    ["Offer Name", "Offer Code", "Restaurant", "Offer Type", "Discount", "Offer Items", "Status", "Created By", "Start Date", "End Date", "Redemptions", "Revenue"],
     ...rows.map((offer) => [
       offer.title || "-",
       offer.offerCode || "-",
       getRestaurantName(offer),
       labelFor(OFFER_TYPES, offer.offerType, offer.offerType || offer.discountType),
       getOfferValue(offer),
+      getOfferItemNames(offer).join(", ") || "-",
       offer.lifecycleStatus || offer.status,
       offer.createdByAdmin ? "Zenzio Admin" : "Restaurant Admin",
       formatDate(offer.startDate),
@@ -887,6 +906,9 @@ const OffersList = () => {
                         <td className="px-4 py-3">
                           <p className="text-sm font-bold text-gray-900">{getOfferValue(offer)}</p>
                           <p className="text-xs text-gray-400">Min {formatCurrency(offer.minOrderValue)}</p>
+                          <p className="text-xs text-gray-500 truncate max-w-[180px]" title={getOfferItemNames(offer).join(", ")}>
+                            Items: {getOfferItemSummary(offer)}
+                          </p>
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-sm font-semibold text-gray-700">{offer.totalUses || offer.redemptionCount || 0} uses</p>
@@ -946,6 +968,7 @@ const OffersList = () => {
                   <div>
                     <p className="text-xs text-gray-400">Discount</p>
                     <p className="font-medium text-gray-700">{getOfferValue(offer)}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Items: {getOfferItemSummary(offer)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-400">Uses</p>

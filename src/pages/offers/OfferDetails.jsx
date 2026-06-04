@@ -143,6 +143,157 @@ const JsonSummary = ({ data }) => {
   );
 };
 
+const getOfferItemNames = (offer) => {
+  const names = [
+    offer?.discountItemNames?.buyItem,
+    offer?.discountItemNames?.freeItem,
+    ...(offer?.discountItemNames?.applicableItems || []),
+    ...(offer?.applicableItemNames || []),
+  ].filter(Boolean);
+
+  return [...new Set(names)];
+};
+
+const getRuleData = (offer) => ({
+  ...(offer?.ruleConfig || {}),
+  ...(offer?.conditions || {}),
+  ...(offer?.rewards || {}),
+});
+
+const readRuleValue = (offer, keys) => {
+  const data = getRuleData(offer);
+  for (const key of keys) {
+    const value = data[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+};
+
+const readItemObjectName = (value) => {
+  if (!value || typeof value !== "object") return undefined;
+  return value.name || value.menu_name || value.title || value.menuName;
+};
+
+const getRuleItemName = (offer, kind) => {
+  const isBuy = kind === "buy";
+  const name = readRuleValue(
+    offer,
+    isBuy ? ["buyItemName", "buyProductName"] : ["freeItemName", "freeProductName"],
+  );
+  const detailName = readItemObjectName(
+    readRuleValue(
+      offer,
+      isBuy ? ["buyItemDetails", "buyProductDetails"] : ["freeItemDetails", "freeProductDetails"],
+    ),
+  );
+  const backendName = isBuy ? offer?.discountItemNames?.buyItem : offer?.discountItemNames?.freeItem;
+  const rawRef = readRuleValue(offer, isBuy ? ["buyItem", "buyProduct"] : ["freeItem", "freeProduct"]);
+
+  return name || detailName || backendName || rawRef || "-";
+};
+
+const getRuleNumber = (offer, keys, fallback = 1) => {
+  const value = Number(readRuleValue(offer, keys));
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+
+const getFriendlyOfferType = (offer) =>
+  OFFER_TYPE_LABELS[offer?.offerType] ||
+  String(offer?.offerType || offer?.discountType || "-").replaceAll("_", " ");
+
+const getOfferLogicMessage = (offer) => {
+  const buyName = getRuleItemName(offer, "buy");
+  const freeName = getRuleItemName(offer, "free");
+  const buyQty = getRuleNumber(offer, ["buyQuantity", "quantityRequired", "buyQty", "buyX"], 1);
+  const freeQty = getRuleNumber(offer, ["freeQuantity", "freeQty", "getQty", "getY"], 1);
+  const triggerCategory = readRuleValue(offer, ["triggerCategory", "category", "categoryId"]);
+  const minAmount = Number(readRuleValue(offer, ["minimumCartAmount"]) || offer?.minOrderValue || 0);
+
+  if (["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(offer?.offerType)) {
+    return `Buy ${buyQty} ${buyName}, get ${freeQty} ${freeName} free`;
+  }
+  if (offer?.offerType === "FREE_ITEM_CART_VALUE") {
+    return `Spend ${formatCurrency(minAmount)}, get ${freeQty} ${freeName} free`;
+  }
+  if (offer?.offerType === "FREE_ITEM_CATEGORY") {
+    return `Buy from ${triggerCategory || "selected category"}, get ${freeQty} ${freeName} free`;
+  }
+  if (offer?.discountType === "PERCENTAGE") {
+    return `Get ${Number(offer.discountValue || 0)}% off${Number(offer.minOrderValue || 0) ? ` above ${formatCurrency(offer.minOrderValue)}` : ""}`;
+  }
+  return `Get ${formatCurrency(offer?.discountValue)} off${Number(offer?.minOrderValue || 0) ? ` above ${formatCurrency(offer.minOrderValue)}` : ""}`;
+};
+
+const buildReadableRuleRows = (offer) => {
+  const rows = [{ label: "Type", value: getFriendlyOfferType(offer) }];
+
+  if (["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(offer?.offerType)) {
+    rows.push(
+      { label: "Buy Item", value: getRuleItemName(offer, "buy") },
+      { label: "Free Item", value: getRuleItemName(offer, "free") },
+      { label: "Buy Category", value: readRuleValue(offer, ["buyCategory"]) || "-" },
+      { label: "Free Category", value: readRuleValue(offer, ["freeCategory"]) || "-" },
+      { label: "Buy Quantity", value: getRuleNumber(offer, ["buyQuantity", "quantityRequired", "buyQty", "buyX"], 1) },
+      { label: "Free Quantity", value: getRuleNumber(offer, ["freeQuantity", "freeQty", "getQty", "getY"], 1) },
+    );
+    return rows;
+  }
+
+  if (["FREE_ITEM_CART_VALUE", "FREE_ITEM_CATEGORY", "FREE_ITEM_OFFER"].includes(offer?.offerType)) {
+    rows.push(
+      { label: "Free Item", value: getRuleItemName(offer, "free") },
+      { label: "Free Category", value: readRuleValue(offer, ["freeCategory"]) || "-" },
+      { label: "Free Quantity", value: getRuleNumber(offer, ["freeQuantity", "freeQty", "getQty"], 1) },
+    );
+    if (offer.offerType === "FREE_ITEM_CART_VALUE") {
+      rows.push({ label: "Minimum Cart", value: formatCurrency(readRuleValue(offer, ["minimumCartAmount"]) || offer.minOrderValue) });
+    }
+    if (offer.offerType === "FREE_ITEM_CATEGORY") {
+      rows.push({ label: "Trigger Category", value: readRuleValue(offer, ["triggerCategory", "category"]) || "-" });
+    }
+    return rows;
+  }
+
+  rows.push(
+    { label: "Discount", value: offer?.discountType === "PERCENTAGE" ? `${Number(offer.discountValue || 0)}%` : formatCurrency(offer?.discountValue) },
+    { label: "Minimum Order", value: formatCurrency(offer?.minOrderValue) },
+    { label: "Category", value: offer?.categoryId || "All Categories" },
+  );
+  return rows;
+};
+
+const DiscountLogicSummary = ({ offer }) => {
+  const itemNames = getOfferItemNames(offer);
+  const rows = buildReadableRuleRows(offer);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-orange-100 bg-orange-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-orange-500 mb-2">Offer Rule</p>
+        <p className="text-base font-semibold text-orange-950">{getOfferLogicMessage(offer)}</p>
+        {itemNames.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {itemNames.map((name) => (
+              <span key={name} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-orange-700 border border-orange-100">
+                {name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {rows.map((row) => (
+          <div key={row.label} className="rounded-lg bg-gray-50 border border-gray-100 p-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{row.label}</p>
+            <p className="text-sm font-medium text-gray-800 mt-1 break-words">{row.value || "-"}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const OfferDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -334,7 +485,7 @@ const OfferDetails = () => {
           </DetailBlock>
 
           <DetailBlock title="Discount Logic">
-            <JsonSummary data={offer.ruleConfig || { ...offer.conditions, ...offer.rewards }} />
+            <DiscountLogicSummary offer={offer} />
           </DetailBlock>
 
           <DetailBlock title="Usage Statistics">

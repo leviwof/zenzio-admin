@@ -27,6 +27,24 @@ const Toast = ({ message, type, onClose }) => {
 const PAGE_SIZE = 10;
 const IMAGE_PLACEHOLDER = null;
 
+const getOfferItemNames = (offer) => {
+  const names = [
+    offer.discountItemNames?.buyItem,
+    offer.discountItemNames?.freeItem,
+    ...(offer.discountItemNames?.applicableItems || []),
+    ...(offer.applicableItemNames || []),
+  ].filter(Boolean);
+
+  return [...new Set(names)];
+};
+
+const getOfferItemSummary = (offer) => {
+  const names = getOfferItemNames(offer);
+  if (!names.length) return '-';
+  if (names.length <= 2) return names.join(', ');
+  return `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
+};
+
 const ExistingOffers = () => {
   const navigate = useNavigate();
   const [offers, setOffers] = useState([]);
@@ -66,7 +84,7 @@ const ExistingOffers = () => {
         endDate: offer.endDate?.split('T')[0],
         status: offer.status,
         minOrderValue: offer.minOrderValue,
-        adminCommission: offer.adminCommission,
+        itemSummary: getOfferItemSummary(offer),
         offerImage: offer.offerImage,
         approvalStatus: offer.status, // <--- Fixed: Map status to approvalStatus
         createdBy: offer.createdBy || 'admin'
@@ -237,6 +255,7 @@ const ExistingOffers = () => {
                         <td className="px-4 py-4 text-sm">{offer.categoryName}</td>
                         <td className="px-4 py-4 text-sm font-medium text-red-500">
                           {offer.discountValue}{offer.discountType === 'PERCENTAGE' ? '%' : '₹'} OFF
+                          <p className="mt-1 text-xs font-normal text-gray-500">Items: {offer.itemSummary}</p>
                         </td>
                         <td className="px-4 py-4 text-sm">₹{offer.minOrderValue || 0}</td>
                         <td className="px-4 py-4 text-sm text-gray-600">{offer.endDate}</td>

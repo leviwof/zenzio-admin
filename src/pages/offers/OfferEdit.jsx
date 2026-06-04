@@ -106,8 +106,6 @@ const OfferEdit = () => {
         endTime: offer.endTime || "",
         termsConditions: offer.termsConditions || "",
         description: offer.description || "",
-        adminCommission: offer.adminCommission || "15",
-        isCommissionAuto: offer.isCommissionAuto !== undefined ? offer.isCommissionAuto : true,
       });
 
       if (offer.offerImage) {
@@ -457,41 +455,6 @@ const OfferEdit = () => {
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Commission Calculation
-                  </label>
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <span className="text-sm text-gray-600">Auto Calculate</span>
-                    <input
-                      type="checkbox"
-                      name="isCommissionAuto"
-                      checked={formData.isCommissionAuto}
-                      onChange={handleChange}
-                      className="w-4 h-4 text-red-500 rounded focus:ring-2 focus:ring-red-500"
-                    />
-                  </label>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Admin Commission (%)
-                  </label>
-                  <input
-                    type="number"
-                    name="adminCommission"
-                    value={formData.adminCommission}
-                    onChange={handleChange}
-                    disabled={formData.isCommissionAuto}
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100"
-                  />
-                </div>
-              </div>
-
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Offer Description
                 </label>
@@ -630,12 +593,6 @@ const OfferEdit = () => {
             <div className="bg-gray-50 p-3 rounded-md">
               <p className="text-gray-700 text-sm">
                 Min Order: ₹{formData.minOrderValue || '0'}
-              </p>
-            </div>
-
-            <div className="bg-yellow-50 p-3 rounded-md">
-              <p className="text-yellow-700 font-bold">
-                Admin Commission: {formData.adminCommission || '15'}%
               </p>
             </div>
 
