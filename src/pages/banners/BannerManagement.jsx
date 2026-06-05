@@ -102,6 +102,8 @@ const getReadableTextColor = (theme) => {
   return luminance > 150 ? '#111827' : '#ffffff';
 };
 
+const getBannerImageUrl = (banner) => banner?.image_url || banner?.imageUrl || null;
+
 const ctaOptions = ['View Offer', 'Order Now'];
 
 const getApiErrorMessage = (error, fallback) => {
@@ -138,6 +140,8 @@ const BannerManagement = () => {
   const [saving, setSaving] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [dynamicImageFile, setDynamicImageFile] = useState(null);
+  const [dynamicImagePreview, setDynamicImagePreview] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingBanner, setEditingBanner] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
@@ -235,6 +239,24 @@ const BannerManagement = () => {
     setPreviewUrl(URL.createObjectURL(file));
   };
 
+  const handleDynamicImageChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select a valid image');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size should be less than 5MB');
+      return;
+    }
+
+    setDynamicImageFile(file);
+    setDynamicImagePreview(URL.createObjectURL(file));
+  };
+
   const handleUpload = async () => {
     if (!selectedFile) {
       toast.error('Please select an image first');
@@ -278,6 +300,8 @@ const BannerManagement = () => {
     setFormData(emptyForm);
     setRestaurantSearch('');
     setRestaurants([]);
+    setDynamicImageFile(null);
+    setDynamicImagePreview(null);
     setDeleteConfirmBanner(null);
     setModalOpen(true);
   };
@@ -298,6 +322,8 @@ const BannerManagement = () => {
       is_active: Boolean(banner.is_active),
       cta_label: banner.cta_label || 'View Offer',
     });
+    setDynamicImageFile(null);
+    setDynamicImagePreview(getBannerImageUrl(banner));
     setRestaurantSearch(banner.restaurant_name || banner.restaurant_uid || '');
     if (banner.restaurant_uid) {
       setRestaurants([{ restaurant_uid: banner.restaurant_uid, restaurant_name: banner.restaurant_name }]);
@@ -311,6 +337,8 @@ const BannerManagement = () => {
     setFormData(emptyForm);
     setRestaurantSearch('');
     setRestaurants([]);
+    setDynamicImageFile(null);
+    setDynamicImagePreview(null);
   };
 
   const validateDynamicForm = () => {
@@ -352,17 +380,35 @@ const BannerManagement = () => {
     cta_label: isRestaurantOffer ? formData.cta_label : undefined,
   });
 
+  const buildDynamicFormData = () => {
+    const payload = buildDynamicPayload();
+    const data = new FormData();
+
+    Object.entries(payload).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        data.append(key, String(value));
+      }
+    });
+
+    if (dynamicImageFile) {
+      data.append('image', dynamicImageFile);
+    }
+
+    return data;
+  };
+
   const handleDynamicSubmit = async (event) => {
     event.preventDefault();
     if (!validateDynamicForm()) return;
 
     try {
       setSaving(true);
+      const payload = buildDynamicFormData();
       if (editingBanner) {
-        await updateDynamicBanner(editingBanner.id, buildDynamicPayload());
+        await updateDynamicBanner(editingBanner.id, payload);
         toast.success('Banner updated');
       } else {
-        await createDynamicBanner(buildDynamicPayload());
+        await createDynamicBanner(payload);
         toast.success('Banner created');
       }
       closeModal();
@@ -498,9 +544,10 @@ const BannerManagement = () => {
 
       <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px]">
+          <table className="w-full min-w-[1040px]">
             <thead className="border-b border-gray-200 bg-gray-50">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Image</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Type</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Offer Title</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Restaurant</th>
@@ -513,14 +560,14 @@ const BannerManagement = () => {
             <tbody className="divide-y divide-gray-100">
               {dynamicLoading ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
                     <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-red-500" />
                     Loading banners...
                   </td>
                 </tr>
               ) : dynamicBanners.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
                     <ImageIcon className="mx-auto mb-2 h-8 w-8 text-gray-300" />
                     No dynamic banners found.
                   </td>
@@ -528,6 +575,19 @@ const BannerManagement = () => {
               ) : (
                 dynamicBanners.map((banner) => (
                   <tr key={banner.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      {getBannerImageUrl(banner) ? (
+                        <img
+                          src={getBannerImageUrl(banner)}
+                          alt={banner.offer_title}
+                          className="h-14 w-24 rounded-lg border border-gray-200 object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-14 w-24 items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-gray-300">
+                          <ImageIcon size={20} />
+                        </div>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{banner.banner_type}</td>
                     <td className="px-6 py-4">
                       <p className="font-medium text-gray-900">{banner.offer_title}</p>
@@ -716,6 +776,31 @@ const BannerManagement = () => {
                   />
                 </div>
 
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Banner Image</label>
+                  <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center transition-colors hover:bg-gray-100">
+                    {dynamicImagePreview ? (
+                      <img
+                        src={dynamicImagePreview}
+                        alt="Banner preview"
+                        className="mb-3 h-28 w-full rounded-lg object-cover"
+                      />
+                    ) : (
+                      <ImageIcon className="mb-2 h-8 w-8 text-gray-400" />
+                    )}
+                    <span className="text-sm font-medium text-gray-700">
+                      {dynamicImagePreview ? 'Change banner image' : 'Upload banner image'}
+                    </span>
+                    <span className="mt-1 text-xs text-gray-400">PNG, JPG, JPEG, WEBP up to 5MB</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleDynamicImageChange}
+                    />
+                  </label>
+                </div>
+
                 {!isRestaurantOffer && (
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
@@ -829,6 +914,13 @@ const BannerManagement = () => {
 
               <div className="space-y-4">
                 <div className="rounded-xl p-5 shadow-sm" style={{ background: selectedThemeBackground, color: selectedThemeTextColor }}>
+                  {dynamicImagePreview && (
+                    <img
+                      src={dynamicImagePreview}
+                      alt="Banner preview"
+                      className="mb-4 h-32 w-full rounded-lg border border-white/20 object-cover"
+                    />
+                  )}
                   <p className="text-xs font-bold uppercase tracking-wide">{isRestaurantOffer ? selectedRestaurant?.restaurant_name || 'Restaurant Offer' : formData.offer_tag || 'Offer Tag'}</p>
                   <h3 className="mt-3 text-2xl font-bold">{formData.offer_title || 'Offer Title'}</h3>
                   <p className="mt-2 text-sm opacity-90">{formData.offer_description || 'Offer description appears here'}</p>

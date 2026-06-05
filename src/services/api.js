@@ -568,10 +568,15 @@ export const getDynamicBannersAdmin = (params = {}) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/banners/admin/promotional/list', { params });
 export const getBannerRestaurantOptions = (params = {}) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/banners/admin/restaurants', { params });
+const isMultipartPayload = (data) => typeof FormData !== 'undefined' && data instanceof FormData;
 export const createDynamicBanner = (data) =>
-  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/banners/admin/promotional', data);
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/banners/admin/promotional', data, {
+    headers: isMultipartPayload(data) ? { 'Content-Type': 'multipart/form-data' } : undefined,
+  });
 export const updateDynamicBanner = (id, data) =>
-  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/banners/admin/promotional/${id}`, data);
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/banners/admin/promotional/${id}`, data, {
+    headers: isMultipartPayload(data) ? { 'Content-Type': 'multipart/form-data' } : undefined,
+  });
 export const updateDynamicBannerStatus = (id, isActive) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/banners/admin/promotional/${id}/status`, { is_active: isActive });
 export const deleteDynamicBanner = (id) =>
