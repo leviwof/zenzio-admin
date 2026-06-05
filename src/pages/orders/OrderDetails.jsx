@@ -166,6 +166,27 @@ const formatRelativeTime = (dateStr) => {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 };
 
+const formatCurrency = (value) => `₹${Number(value || 0).toFixed(2)}`;
+
+const getAppliedDiscount = (order) => order?.applied_discount || order?.appliedDiscount || null;
+
+const getFreeOfferItems = (order) => {
+  const appliedDiscount = getAppliedDiscount(order);
+  return Array.isArray(appliedDiscount?.freeItems) ? appliedDiscount.freeItems : [];
+};
+
+const getDeliveryTipAmount = (order, priceSummary = {}) =>
+  Number(
+    priceSummary.deliveryTip ??
+      priceSummary.delivery_tip ??
+      order?.deliveryTip ??
+      order?.delivery_tip ??
+      0,
+  ) || 0;
+
+const getItemDisplayName = (item) =>
+  item?.name || item?.menu_name || item?.menuName || item?.menu_uid || 'Item';
+
 const CopyButton = ({ text }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
@@ -440,15 +461,25 @@ const OrderDetails = () => {
     if (!order) return;
     const receiptWindow = window.open('', '_blank');
     const doc = receiptWindow.document;
+    const ps = order.priceSummary || {};
+    const deliveryTip = getDeliveryTipAmount(order, ps);
+    const appliedDiscount = getAppliedDiscount(order);
+    const freeItems = getFreeOfferItems(order);
     const itemsHtml = (order.items || []).map(item => `
       <tr>
-        <td>${item.name}${item.variant ? ` (${item.variant})` : ''}</td>
+        <td>${getItemDisplayName(item)}${item.variant ? ` (${item.variant})` : ''}</td>
         <td style="text-align:center">x${item.qty}</td>
         <td style="text-align:right">₹${(item.price * item.qty).toFixed(2)}</td>
       </tr>
     `).join('');
+    const freeItemsHtml = freeItems.map(item => `
+      <tr>
+        <td>${item.name || item.menu_name || item.menu_uid || 'Free item'} <span style="font-size:10px;color:#059669;">(Offer free item)</span></td>
+        <td style="text-align:center">x${item.qty || 1}</td>
+        <td style="text-align:right">FREE</td>
+      </tr>
+    `).join('');
 
-    const ps = order.priceSummary || {};
     const content = `
       <html>
       <head><title>Invoice - #${order.orderId}</title>
@@ -476,7 +507,8 @@ const OrderDetails = () => {
         <p><strong>Phone:</strong> ${order.customerInformation?.mobile || ''}</p>
         <p><strong>Address:</strong> ${order.customerInformation?.deliveryAddress || ''}</p>
         <div class="line"></div>
-        <table>${itemsHtml}</table>
+        <table>${itemsHtml}${freeItemsHtml}</table>
+        ${freeItems.length > 0 ? `<p style="font-size:11px;color:#059669;"><strong>Offer:</strong> ${appliedDiscount?.title || appliedDiscount?.code || 'Free item offer applied'}</p>` : ''}
         <div class="line"></div>
         <table>
           ${ps.subtotal ? `<tr><td>Subtotal</td><td class="right">₹${ps.subtotal}</td></tr>` : ''}
@@ -484,6 +516,7 @@ const OrderDetails = () => {
           ${ps.deliveryFee ? `<tr><td>Delivery</td><td class="right">₹${ps.deliveryFee}</td></tr>` : ''}
           ${ps.discount > 0 ? `<tr><td>Discount</td><td class="right">-₹${ps.discount}</td></tr>` : ''}
           <tr class="total"><td>TOTAL</td><td class="right">₹${ps.total || 0}</td></tr>
+          ${deliveryTip > 0 ? `<tr><td>Delivery Tip</td><td class="right">${formatCurrency(deliveryTip)}</td></tr>` : ''}
         </table>
         <div class="line"></div>
         <p><strong>Payment:</strong> ${order.paymentMethod || 'N/A'} - ${order.paymentStatus || 'N/A'}</p>
@@ -498,8 +531,14 @@ const OrderDetails = () => {
   const handleDownloadInvoice = () => {
     if (!order) return;
     const ps = order.priceSummary || {};
+    const deliveryTip = getDeliveryTipAmount(order, ps);
+    const appliedDiscount = getAppliedDiscount(order);
+    const freeItems = getFreeOfferItems(order);
     const items = (order.items || []).map(item =>
       `${item.qty}x ${item.name}${item.addOns?.length ? ' (+ ' + item.addOns.join(', ') + ')' : ''} - ₹${(item.price * item.qty).toFixed(2)}`
+    ).join('\n');
+    const freeItemLines = freeItems.map(item =>
+      `${item.qty || 1}x ${item.name || item.menu_name || item.menu_uid || 'Free item'} - FREE`
     ).join('\n');
     const invoice = [
       `ZENZIO ORDER INVOICE`,
@@ -515,12 +554,17 @@ const OrderDetails = () => {
       `================================`,
       `ITEMS`,
       items,
+      freeItems.length > 0 ? `FREE ITEMS FROM OFFER` : '',
+      freeItemLines,
+      freeItems.length > 0 ? `Offer: ${appliedDiscount?.title || appliedDiscount?.code || 'Free item offer applied'}` : '',
       `================================`,
       `BILLING`,
       `Subtotal: ₹${ps.subtotal || 0}`,
       `Tax: ₹${ps.tax || 0}`,
       `Delivery Fee: ₹${ps.deliveryFee || 0}`,
       ps.discount > 0 ? `Discount: -₹${ps.discount}` : '',
+      `Packaging Charge: ${formatCurrency(ps.packingCharge || 0)}`,
+      deliveryTip > 0 ? `Delivery Tip: ${formatCurrency(deliveryTip)}` : '',
       `--------------------------------`,
       `TOTAL: ₹${ps.total || 0}`,
       `================================`,
@@ -621,6 +665,9 @@ const OrderDetails = () => {
   const isTerminal = TERMINAL_STATUSES.has(currentStatus);
 
   const ps = order.priceSummary || {};
+  const appliedDiscount = getAppliedDiscount(order);
+  const freeItems = getFreeOfferItems(order);
+  const deliveryTip = getDeliveryTipAmount(order, ps);
   const hasJourneyPricing = Boolean(order.delivery_pricing_version);
   const restaurantToCustomerKm = order.restaurant_to_customer_km ?? order.restaurantToCustomerDistance ?? null;
   const totalJourneyKm = order.total_journey_km ?? null;
@@ -1063,6 +1110,41 @@ const OrderDetails = () => {
                 <p className="text-sm text-gray-400">No items data available</p>
               )}
 
+              {freeItems.length > 0 && (
+                <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/70 p-3">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
+                      Free item added from offer
+                    </p>
+                    {(appliedDiscount?.title || appliedDiscount?.code) && (
+                      <span className="text-[11px] font-semibold text-emerald-700 bg-white border border-emerald-100 px-2 py-0.5 rounded-full">
+                        {appliedDiscount.title || appliedDiscount.code}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {freeItems.map((item, idx) => (
+                      <div key={`${item.menu_uid || item.name || 'free'}-${idx}`} className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-emerald-900">
+                            <span className="text-emerald-600 mr-1">{item.qty || 1}x</span>
+                            {item.name || item.menu_name || item.menu_uid || 'Free item'}
+                          </p>
+                          {item.price > 0 && (
+                            <p className="text-[11px] text-emerald-600 mt-0.5">
+                              Display value {formatCurrency(item.price)}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-emerald-700 bg-white border border-emerald-100 px-2 py-1 rounded-full">
+                          FREE
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Pricing Breakdown */}
               {ps.subtotal !== undefined && (
                 <div className="mt-4 pt-4 border-t border-gray-100 space-y-1.5 text-sm">
@@ -1082,6 +1164,12 @@ const OrderDetails = () => {
                     <div className="flex justify-between text-gray-600">
                       <span>Packaging Charge</span>
                       <span>₹{ps.packingCharge}</span>
+                    </div>
+                  )}
+                  {deliveryTip > 0 && (
+                    <div className="flex justify-between text-gray-600">
+                      <span>Delivery Tip</span>
+                      <span>{formatCurrency(deliveryTip)}</span>
                     </div>
                   )}
                   {ps.discount > 0 && (
