@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useCallback, useRef, useMemo } from "react";
+import useAdminNotifications from "../hooks/useAdminNotifications";
 
 const OrderNotificationContext = createContext(null);
 
@@ -6,8 +7,22 @@ export const OrderNotificationProvider = ({ children }) => {
   const [unreadOrderCount, setUnreadOrderCount] = useState(0);
   const [newOrders, setNewOrders] = useState([]);
   const [syntheticNotifs, setSyntheticNotifs] = useState([]);
+  const [socketNotifs, setSocketNotifs] = useState([]);
   const lastResetTime = useRef(Date.now());
   const notifIdCounter = useRef(0);
+
+  const { socketConnected } = useAdminNotifications({
+    onNewNotification: (notif) => {
+      setSocketNotifs(prev => {
+        const exists = prev.some(n => n.id === notif.id);
+        if (exists) return prev;
+        return [{ ...notif, _source: 'socket', isRead: false }, ...prev].slice(0, 100);
+      });
+      if (notif.type === 'NEW_ORDER' || notif.type === 'ORDER_CANCELLED') {
+        setUnreadOrderCount(prev => prev + 1);
+      }
+    },
+  });
 
   const resetUnreadOrders = useCallback(() => {
     setUnreadOrderCount(0);
@@ -52,12 +67,29 @@ export const OrderNotificationProvider = ({ children }) => {
     );
   }, []);
 
+  const allMergedNotifications = useMemo(() => {
+    const socketItems = socketNotifs.map(n => ({ ...n, _source: n._source || 'socket' }));
+    const syntheticItems = syntheticNotifs.map(n => ({ ...n, _source: 'synthetic' }));
+    const combined = [...socketItems, ...syntheticItems].sort((a, b) => {
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+    const seen = new Set();
+    return combined.filter(n => {
+      if (seen.has(n.id)) return false;
+      seen.add(n.id);
+      return true;
+    });
+  }, [socketNotifs, syntheticNotifs]);
+
   return (
     <OrderNotificationContext.Provider
       value={{
         unreadOrderCount,
         newOrders,
         syntheticNotifs,
+        socketNotifs,
+        socketConnected,
+        allMergedNotifications,
         resetUnreadOrders,
         addNewOrders,
         addNewOrderNotification,
@@ -77,6 +109,9 @@ export const useOrderNotifications = () => {
       unreadOrderCount: 0,
       newOrders: [],
       syntheticNotifs: [],
+      socketNotifs: [],
+      socketConnected: false,
+      allMergedNotifications: [],
       resetUnreadOrders: () => {},
       addNewOrders: () => {},
       addNewOrderNotification: () => {},

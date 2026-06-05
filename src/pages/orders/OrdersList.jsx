@@ -17,6 +17,7 @@ import toast from "react-hot-toast";
 import { useOrderNotifications } from "../../context/OrderNotificationContext";
 import { getCurrentRestaurantUid, isRestaurantAdmin, isZenzioAdmin } from "../../utils/auth";
 import { shouldRunSharedPoll } from "../../utils/requestCoordinator";
+import { isAdminSocketConnected } from "../../services/socket";
 
 const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 const loudNotificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
@@ -438,8 +439,9 @@ const OrdersList = () => {
   const [lastUpdatedTime, setLastUpdatedTime] = useState(null);
   const [lastUpdatedAgo, setLastUpdatedAgo] = useState(null);
 
-  const [liveConnected, setLiveConnected] = useState(true);
+  const [liveConnected, setLiveConnected] = useState(false);
   const hasInteracted = useRef(false);
+  const { socketConnected } = useOrderNotifications();
 
   const { resetUnreadOrders, addNewOrders, addNewOrderNotification } = useOrderNotifications();
 
@@ -583,6 +585,10 @@ const OrdersList = () => {
       setHighlightedIds(prev => { const n = new Set(prev); newIds.forEach(i => n.add(i)); return n; });
     }
   }, []);
+
+  useEffect(() => {
+    setLiveConnected(socketConnected);
+  }, [socketConnected]);
 
   useEffect(() => {
     return () => {
@@ -765,10 +771,10 @@ const OrdersList = () => {
       newOrders.forEach(o => knownOrderStatuses.current.set(o.orderId || o.id, (o.restaurantStatus || o.status || '').toUpperCase()));
 
       setLastUpdatedTime(Date.now());
-      setLiveConnected(true);
+      if (!socketConnected) setLiveConnected(true);
       fetchStats();
     } catch {
-      setLiveConnected(false);
+      if (!socketConnected) setLiveConnected(false);
     } finally {
       isPollingRef.current = false;
     }

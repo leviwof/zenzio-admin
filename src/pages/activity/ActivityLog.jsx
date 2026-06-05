@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Bell, Check, Loader2 } from 'lucide-react';
+import { ArrowLeft, Bell, Check, Loader2, Wifi, WifiOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getNotifications, markNotificationAsRead } from '../../services/api';
+import { useOrderNotifications } from '../../context/OrderNotificationContext';
 
 const ActivityLog = () => {
     const navigate = useNavigate();
+    const { socketNotifs, socketConnected } = useOrderNotifications();
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(false);
     const [hasMore, setHasMore] = useState(true);
@@ -18,11 +20,12 @@ const ActivityLog = () => {
             setLoading(true);
             const response = await getNotifications(pageNum, LIMIT);
             const newNotifications = response.data?.data || [];
-
-            setNotifications(prev =>
-                pageNum === 1 ? newNotifications : [...prev, ...newNotifications]
-            );
-
+            const apiIds = new Set(newNotifications.map(n => n.id));
+            const socketOnly = socketNotifs.filter(n => !apiIds.has(n.id));
+            const merged = pageNum === 1
+                ? [...socketOnly, ...newNotifications]
+                : [...newNotifications];
+            setNotifications(merged);
             setHasMore(newNotifications.length === LIMIT);
         } catch (error) {
             console.error('Failed to fetch notifications:', error);
@@ -34,6 +37,17 @@ const ActivityLog = () => {
     useEffect(() => {
         fetchNotifications(1);
     }, []);
+
+    useEffect(() => {
+        if (socketNotifs.length > 0) {
+            setNotifications(prev => {
+                const existingIds = new Set(prev.map(n => n.id));
+                const newFromSocket = socketNotifs.filter(n => !existingIds.has(n.id));
+                if (newFromSocket.length === 0) return prev;
+                return [...newFromSocket, ...prev].slice(0, 100);
+            });
+        }
+    }, [socketNotifs]);
 
     const lastNotificationRef = useCallback(node => {
         if (loading) return;
@@ -74,6 +88,10 @@ const ActivityLog = () => {
                     <Bell className="w-8 h-8 text-red-600" />
                     Activity Log
                 </h1>
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ml-auto ${socketConnected ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-gray-50 text-gray-500 border border-gray-200'}`}>
+                    {socketConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
+                    <span>{socketConnected ? 'Live' : 'Fallback'}</span>
+                </div>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
