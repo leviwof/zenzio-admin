@@ -418,6 +418,18 @@ const MenuManagement = () => {
     return restaurant ? restaurant.name : uid;
   };
 
+  const getAddMenuPath = () => {
+    const targetRestaurantUid = restaurantAdmin ? ownRestaurantUid : (restaurantFilter !== 'all' ? restaurantFilter : '');
+    if (!targetRestaurantUid) return '/menu/add';
+
+    const params = new URLSearchParams({ restaurant: targetRestaurantUid });
+    const restaurantName = getRestaurantName(targetRestaurantUid);
+    if (restaurantName && restaurantName !== targetRestaurantUid) {
+      params.set('name', restaurantName);
+    }
+    return `/menu/add?${params.toString()}`;
+  };
+
   const handleSort = (column) => {
     if (sortBy === column) {
       setSortOrder((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'));
@@ -693,6 +705,10 @@ const MenuManagement = () => {
     return null;
   };
 
+  const activeRestaurantName = restaurantFilter !== 'all'
+    ? getRestaurantName(restaurantFilter)
+    : '';
+
   if (restaurantAdmin && !ownRestaurantUid) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
@@ -764,8 +780,14 @@ const MenuManagement = () => {
 
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">Menu Management</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage menu items, pricing, availability, and categories</p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">
+            {activeRestaurantName ? `${activeRestaurantName} Menu` : 'Menu Management'}
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {activeRestaurantName
+              ? 'Manage menu items, pricing, and availability for this restaurant'
+              : 'Manage menu items, pricing, availability, and categories'}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {!restaurantAdmin && (
@@ -777,7 +799,7 @@ const MenuManagement = () => {
             </button>
           )}
           <button
-            onClick={() => navigate(restaurantAdmin && ownRestaurantUid ? `/menu/add?restaurant=${ownRestaurantUid}` : '/menu/add')}
+            onClick={() => navigate(getAddMenuPath())}
             className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg text-sm font-medium"
           >
             + Add Menu

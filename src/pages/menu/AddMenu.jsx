@@ -7,11 +7,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-    ArrowLeft, Save, Loader2, Upload, X, Plus,
-    UtensilsCrossed, IndianRupee, Percent, Tag,
+    ArrowLeft, Save, Loader2, Upload, X,
+    UtensilsCrossed, IndianRupee, Tag,
     FileText, ImageIcon, CheckCircle, ChevronDown, Search
 } from 'lucide-react';
-import { getAllRestaurants, createMenuByAdminWithImage, createMenuForRestaurant, uploadMenuImages, getMenuCategories, getAllCuisineCategories } from '../../services/api';
+import toast from 'react-hot-toast';
+import { getAllRestaurants, createMenuByAdminWithImage, createMenuForRestaurant, uploadMenuImages, getAllCuisineCategories } from '../../services/api';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 
 const AddMenu = () => {
@@ -25,6 +26,7 @@ const AddMenu = () => {
     const preSelectedRestaurant = searchParams.get('restaurant');
     const preSelectedName = searchParams.get('name');
     const lockedRestaurantUid = restaurantAdmin ? ownRestaurantUid : preSelectedRestaurant;
+    const decodedPreSelectedName = preSelectedName ? decodeURIComponent(preSelectedName) : '';
 
     const [loading, setLoading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -33,14 +35,10 @@ const AddMenu = () => {
     const [cuisines, setCuisines] = useState([]);
     const [imagePreview, setImagePreview] = useState(null);
     const [imageFile, setImageFile] = useState(null);
-    const [success, setSuccess] = useState(false);
-    const [successMessage, setSuccessMessage] = useState('');
-    const [isRestaurantLocked, setIsRestaurantLocked] = useState(Boolean(lockedRestaurantUid));
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [restaurantSearch, setRestaurantSearch] = useState('');
     const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
     const [cuisineDropdownOpen, setCuisineDropdownOpen] = useState(false);
-    const [foodTypeDropdownOpen, setFoodTypeDropdownOpen] = useState(false);
 
     const [formData, setFormData] = useState({
         restaurant_uid: lockedRestaurantUid || '',
@@ -66,23 +64,25 @@ const AddMenu = () => {
     useEffect(() => {
         fetchRestaurants();
         fetchCategoriesAndCuisines();
+    }, []);
 
-
-        if (lockedRestaurantUid) {
-            setIsRestaurantLocked(true);
-        }
+    useEffect(() => {
+        if (!lockedRestaurantUid) return;
+        setFormData(prev => (
+            prev.restaurant_uid === lockedRestaurantUid
+                ? prev
+                : { ...prev, restaurant_uid: lockedRestaurantUid }
+        ));
     }, [lockedRestaurantUid]);
 
     const fetchRestaurants = async () => {
         if (restaurantAdmin) {
-            setRestaurants(ownRestaurantUid ? [{ uid: ownRestaurantUid, name: 'Your Restaurant' }] : []);
+            setRestaurants(ownRestaurantUid ? [{ uid: ownRestaurantUid, name: decodedPreSelectedName || 'Your Restaurant' }] : []);
             return;
         }
 
         try {
             const response = await getAllRestaurants({ limit: 500 });
-            console.log('📤 Full restaurants response:', response.data);
-
 
             let restaurantData = [];
             if (Array.isArray(response.data)) {
@@ -105,8 +105,6 @@ const AddMenu = () => {
                 name: r.profile?.restaurant_name || r.restaurant_name || r.name || `Restaurant ${r.uid?.substring(0, 8) || 'Unknown'}`
             })).filter(r => r.uid).sort((a, b) => a.name.localeCompare(b.name));
 
-            console.log('📥 Restaurants loaded:', formattedRestaurants.length);
-            console.log('📋 Sample restaurant:', formattedRestaurants[0]);
             setRestaurants(formattedRestaurants);
         } catch (error) {
             console.error('Failed to fetch restaurants:', error);
@@ -116,28 +114,20 @@ const AddMenu = () => {
     const fetchCategoriesAndCuisines = async () => {
         try {
             setIsLoading(true);
-            // Fetch all enum items (categories and cuisines with fatherId structure)
             const response = await getAllCuisineCategories();
             const allItems = response.data?.data || response.data || [];
-            
-            console.log('📥 All enum items received:', allItems);
-            
-            // Filter parent items with fatherId = 0
+
             const categoryParent = allItems
                 .find((item) => item.father_id === 0 && item.name === 'Category');
             const cuisineParent = allItems
                 .find((item) => item.father_id === 0 && item.name === 'Cuisine');
             
             if (!categoryParent || !cuisineParent) {
-                console.warn('⚠️ Category or Cuisine parent not found in enum items');
+                console.warn('Category or Cuisine parent not found in enum items');
                 setIsLoading(false);
                 return;
             }
-            
-            console.log('📋 Category Parent ID:', categoryParent.id);
-            console.log('📋 Cuisine Parent ID:', cuisineParent.id);
-            
-            // Filter child items by fatherId
+
             const categoriesData = allItems
                 .filter((item) => item.father_id === categoryParent.id)
                 .map(item => item.name);
@@ -145,10 +135,7 @@ const AddMenu = () => {
             const cuisinesData = allItems
                 .filter((item) => item.father_id === cuisineParent.id)
                 .map(item => item.name);
-            
-            console.log('📥 Categories loaded:', categoriesData);
-            console.log('📥 Cuisines loaded:', cuisinesData);
-            
+
             setCategories(categoriesData);
             setCuisines(cuisinesData);
             setIsLoading(false);
@@ -187,17 +174,18 @@ const AddMenu = () => {
         e.preventDefault();
 
         if (!formData.restaurant_uid) {
-            alert('Please select a restaurant');
+            toast.error('Please select a restaurant');
             return;
         }
 
         if (!formData.menu_name || !formData.price) {
-            alert('Please fill in required fields');
+            toast.error('Please fill in the required fields');
             return;
         }
 
         try {
             setLoading(true);
+            let createdMenuUid = null;
 
 
             if (restaurantAdmin) {
@@ -212,7 +200,8 @@ const AddMenu = () => {
                     isActive: formData.isActive,
                     is_available: true,
                 });
-                const createdMenuUid = response.data?.data?.restaurant_menu?.menu_uid;
+                const createdMenu = response.data?.data?.restaurant_menu || response.data?.restaurant_menu || response.data?.data || response.data;
+                createdMenuUid = createdMenu?.menu_uid;
                 if (imageFile && createdMenuUid) {
                     await uploadMenuImages(createdMenuUid, [imageFile]);
                 }
@@ -232,53 +221,39 @@ const AddMenu = () => {
                     submitData.append('files', imageFile);
                 }
 
-                await createMenuByAdminWithImage(submitData);
+                const response = await createMenuByAdminWithImage(submitData);
+                const createdMenu = response.data?.data?.restaurant_menu || response.data?.restaurant_menu || response.data?.data || response.data;
+                createdMenuUid = createdMenu?.menu_uid;
             }
-            setSuccessMessage('Menu item added successfully!');
-            
-            // Scroll to top using ref
-            if (topRef.current) {
-                topRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-            
-            // Reset form but keep restaurant selected
-            setFormData(prev => ({
-                restaurant_uid: prev.restaurant_uid,
-                menu_name: '',
-                price: '',
-                discount: '',
-                description: '',
-                category: '',
-                food_type: 'Veg',
-                cuisine_type: '',
-                isActive: true,
-            }));
-            
-            // Clear image
-            setImagePreview(null);
-            setImageFile(null);
-            
-            // Show success message for 3 seconds
-            setTimeout(() => {
-                setSuccessMessage('');
-            }, 3000);
+            toast.success('Menu item added successfully');
+            navigate(getMenuListPath(formData.restaurant_uid), {
+                replace: true,
+                state: {
+                    selectedRestaurant: formData.restaurant_uid,
+                    selectedRestaurantName,
+                    updatedMenuUid: createdMenuUid || undefined,
+                },
+            });
 
         } catch (error) {
             console.error('Failed to create menu:', error);
-            alert('Failed to create menu item: ' + (error.response?.data?.message || error.message));
+            toast.error('Failed to create menu item: ' + (error.response?.data?.message || error.message));
         } finally {
             setLoading(false);
         }
     };
 
+    const selectedRestaurant = restaurants.find(restaurant => restaurant.uid === formData.restaurant_uid);
+    const selectedRestaurantName = selectedRestaurant?.name || decodedPreSelectedName || (restaurantAdmin ? 'Your Restaurant' : 'Selected Restaurant');
+    const hasRestaurantSelected = Boolean(formData.restaurant_uid);
+    const isRestaurantLocked = Boolean(lockedRestaurantUid);
+    const getMenuListPath = (restaurantUid = formData.restaurant_uid) => (
+        restaurantUid ? `/menu?restaurant=${encodeURIComponent(restaurantUid)}` : '/menu'
+    );
     const getBackPath = () => {
-        if (restaurantAdmin) {
-            return '/menu';
-        }
-        if (preSelectedRestaurant) {
-            return `/restaurants/${preSelectedRestaurant}`;
-        }
-        return '/menu';
+        if (restaurantAdmin) return getMenuListPath(ownRestaurantUid);
+        if (preSelectedRestaurant) return getMenuListPath(preSelectedRestaurant);
+        return getMenuListPath(formData.restaurant_uid);
     };
 
     const filteredRestaurants = restaurants.filter(restaurant =>
@@ -310,10 +285,10 @@ const AddMenu = () => {
                             </button>
                             <div>
                                 <h1 className="text-2xl font-bold text-gray-900">Add Menu Item</h1>
-                                {preSelectedName ? (
-                                    <p className="text-sm text-gray-500">Adding to <span className="text-red-600 font-medium">{decodeURIComponent(preSelectedName)}</span></p>
+                                {hasRestaurantSelected ? (
+                                    <p className="text-sm text-gray-500">Adding to <span className="text-red-600 font-medium">{selectedRestaurantName}</span></p>
                                 ) : (
-                                    <p className="text-sm text-gray-500">Add a new dish to any restaurant's menu</p>
+                                    <p className="text-sm text-gray-500">Choose a restaurant first, then enter the item details</p>
                                 )}
                             </div>
                         </div>
@@ -323,12 +298,6 @@ const AddMenu = () => {
 
             { }
             <div className="max-w-5xl mx-auto px-6 py-8">
-                {successMessage && (
-                    <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
-                        <CheckCircle className="w-5 h-5 text-green-600" />
-                        <span className="text-green-700 font-medium">{successMessage}</span>
-                    </div>
-                )}
                 <form onSubmit={handleSubmit} className="space-y-6">
 
                     { }
@@ -353,7 +322,7 @@ const AddMenu = () => {
                                 >
                                     <span className={`text-base ${formData.restaurant_uid ? 'text-gray-900' : 'text-gray-500'}`}>
                                         {formData.restaurant_uid
-                                            ? (restaurants.find(r => r.uid === formData.restaurant_uid)?.name || 'Selected Restaurant')
+                                            ? selectedRestaurantName
                                             : '-- Select Restaurant --'}
                                     </span>
                                     <ChevronDown size={20} className={`text-gray-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
@@ -411,21 +380,24 @@ const AddMenu = () => {
                                 </div>
                                 <div>
                                     <h2 className="text-lg font-semibold text-gray-900">Restaurant Selected</h2>
-                                    <p className="text-sm text-green-700 font-medium">{decodeURIComponent(preSelectedName || 'Restaurant')}</p>
+                                    <p className="text-sm text-green-700 font-medium">{selectedRestaurantName}</p>
+                                    <p className="text-xs text-green-600/80 mt-0.5">This item will be saved only under this restaurant.</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     { }
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                    <div className={`bg-white rounded-2xl shadow-sm border border-gray-100 p-6 ${!hasRestaurantSelected ? 'opacity-60' : ''}`}>
                         <div className="flex items-center gap-3 mb-6">
                             <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
                                 <FileText className="w-5 h-5 text-blue-600" />
                             </div>
                             <div>
                                 <h2 className="text-lg font-semibold text-gray-900">Basic Information</h2>
-                                <p className="text-sm text-gray-500">Enter the menu item details</p>
+                                <p className="text-sm text-gray-500">
+                                    {hasRestaurantSelected ? `Fill details for ${selectedRestaurantName}` : 'Select a restaurant to start filling item details'}
+                                </p>
                             </div>
                         </div>
 
@@ -440,8 +412,9 @@ const AddMenu = () => {
                                     value={formData.menu_name}
                                     onChange={handleChange}
                                     required
+                                    disabled={!hasRestaurantSelected}
                                     placeholder="e.g., Chicken Biryani"
-                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all disabled:cursor-not-allowed"
                                 />
                             </div>
 
@@ -453,8 +426,9 @@ const AddMenu = () => {
                                 <div className="relative z-40">
                                     <button
                                         type="button"
+                                        disabled={!hasRestaurantSelected}
                                         onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
-                                        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 transition-all text-left"
+                                        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 transition-all text-left disabled:cursor-not-allowed"
                                     >
                                         <span className={`text-base ${formData.category ? 'text-gray-900' : 'text-gray-500'}`}>
                                             {formData.category || 'Select Category'}
@@ -500,8 +474,9 @@ const AddMenu = () => {
                                         <button
                                             key={type}
                                             type="button"
+                                            disabled={!hasRestaurantSelected}
                                             onClick={() => setFormData(prev => ({ ...prev, food_type: type }))}
-                                            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${formData.food_type === type
+                                            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:cursor-not-allowed ${formData.food_type === type
                                                 ? 'bg-green-500 text-white shadow-lg shadow-green-500/30'
                                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                                 }`}
@@ -520,8 +495,9 @@ const AddMenu = () => {
                                 <div className="relative z-30">
                                     <button
                                         type="button"
+                                        disabled={!hasRestaurantSelected}
                                         onClick={() => setCuisineDropdownOpen(!cuisineDropdownOpen)}
-                                        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 transition-all text-left"
+                                        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 transition-all text-left disabled:cursor-not-allowed"
                                     >
                                         <span className={`text-base ${formData.cuisine_type ? 'text-gray-900' : 'text-gray-500'}`}>
                                             {formData.cuisine_type || 'Select Cuisine'}
@@ -568,8 +544,9 @@ const AddMenu = () => {
                                 value={formData.description}
                                 onChange={handleChange}
                                 rows={3}
+                                disabled={!hasRestaurantSelected}
                                 placeholder="Describe the dish, ingredients, preparation style..."
-                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-none"
+                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-none disabled:cursor-not-allowed"
                             />
                         </div>
                     </div>
@@ -589,20 +566,21 @@ const AddMenu = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Price (₹) <span className="text-red-500">*</span>
+                                    Price (Rs.) <span className="text-red-500">*</span>
                                 </label>
                                 <div className="relative">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">₹</span>
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">Rs.</span>
                                     <input
                                         type="number"
                                         name="price"
                                         value={formData.price}
                                         onChange={handleChange}
                                         required
+                                        disabled={!hasRestaurantSelected}
                                         min="0"
                                         step="0.01"
                                         placeholder="0.00"
-                                        className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                                        className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all disabled:cursor-not-allowed"
                                     />
                                 </div>
                             </div>
@@ -617,10 +595,11 @@ const AddMenu = () => {
                                         name="discount"
                                         value={formData.discount}
                                         onChange={handleChange}
+                                        disabled={!hasRestaurantSelected}
                                         min="0"
                                         max="100"
                                         placeholder="0"
-                                        className="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                                        className="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all disabled:cursor-not-allowed"
                                     />
                                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">%</span>
                                 </div>
@@ -656,7 +635,7 @@ const AddMenu = () => {
                                 </button>
                             </div>
                         ) : (
-                            <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-red-400 hover:bg-red-50/50 transition-all">
+                            <label className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-xl hover:border-red-400 hover:bg-red-50/50 transition-all ${hasRestaurantSelected ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
                                 <Upload className="w-10 h-10 text-gray-400 mb-2" />
                                 <span className="text-sm text-gray-500">Click to upload image</span>
                                 <span className="text-xs text-gray-400 mt-1">PNG, JPG up to 5MB</span>
@@ -664,6 +643,7 @@ const AddMenu = () => {
                                     type="file"
                                     accept="image/*"
                                     onChange={handleImageChange}
+                                    disabled={!hasRestaurantSelected}
                                     className="hidden"
                                 />
                             </label>
@@ -689,6 +669,7 @@ const AddMenu = () => {
                                     name="isActive"
                                     checked={formData.isActive}
                                     onChange={handleChange}
+                                    disabled={!hasRestaurantSelected}
                                     className="sr-only peer"
                                 />
                                 <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-500"></div>
@@ -710,7 +691,7 @@ const AddMenu = () => {
                         </button>
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || !hasRestaurantSelected}
                             className="px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-medium hover:from-red-600 hover:to-red-700 transition-all shadow-lg shadow-red-500/30 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loading ? (
