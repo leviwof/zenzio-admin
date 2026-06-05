@@ -11,6 +11,7 @@ import { getNotifications, getRestaurantById, markNotificationAsRead, getRestaur
 import { useOrderNotifications } from '../../context/OrderNotificationContext';
 import { getAuthUser, getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
+import { isAdminSocketConnected } from '../../services/socket';
 
 const notificationSoundPath = `${import.meta.env.BASE_URL}notification.mp3`;
 
@@ -213,11 +214,12 @@ const Header = ({ onLogout }) => {
   const isInitialLoad = useRef(true);
   const audioRef = useRef(null);
   const audioUnlocked = useRef(false);
-  const { unreadOrderCount, syntheticNotifs, markSyntheticNotifRead } = useOrderNotifications();
+  const { unreadOrderCount, syntheticNotifs, markSyntheticNotifRead, allMergedNotifications: contextNotifs, socketConnected } = useOrderNotifications();
   const [badgeAnim, setBadgeAnim] = useState(false);
   const dropdownRef = useRef(null);
   const searchRef = useRef(null);
   const profileMenuRef = useRef(null);
+  const fallbackPollTimerRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -246,15 +248,21 @@ const Header = ({ onLogout }) => {
 
   const allMergedNotifications = useMemo(() => {
     const apiItems = allNotifications.map(n => ({ ...n, _source: 'api' }));
-    const syntheticItems = syntheticNotifs.map(n => ({ ...n, _source: 'synthetic' }));
-    return [...apiItems, ...syntheticItems].sort((a, b) => {
+    const contextItems = (contextNotifs || []).map(n => ({ ...n }));
+    const combined = [...apiItems, ...contextItems].sort((a, b) => {
       const aToday = isToday(a.createdAt);
       const bToday = isToday(b.createdAt);
       if (aToday && !bToday) return -1;
       if (!aToday && bToday) return 1;
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
-  }, [allNotifications, syntheticNotifs]);
+    const seen = new Set();
+    return combined.filter(n => {
+      if (seen.has(n.id)) return false;
+      seen.add(n.id);
+      return true;
+    });
+  }, [allNotifications, contextNotifs]);
 
   const displayNotifications = useMemo(() => allMergedNotifications.slice(0, 30), [allMergedNotifications]);
   const todayUnreadCount = useMemo(() => allMergedNotifications.filter(n => !n.isRead && isToday(n.createdAt)).length, [allMergedNotifications]);
@@ -295,9 +303,13 @@ const Header = ({ onLogout }) => {
   }, []);
 
   useEffect(() => {
+    isInitialLoad.current = false;
+  }, []);
+
+  useEffect(() => {
     const unreadSynthetic = syntheticNotifs.filter(n => !n.isRead);
     const newSynthIds = unreadSynthetic.map(n => n.id).filter(id => !knownSyntheticIds.current.has(id));
-    if (newSynthIds.length > 0 && !isInitialLoad.current) playNotificationSound();
+    if (newSynthIds.length > 0) playNotificationSound();
     unreadSynthetic.forEach(n => knownSyntheticIds.current.add(n.id));
   }, [syntheticNotifs, playNotificationSound]);
 
@@ -309,22 +321,28 @@ const Header = ({ onLogout }) => {
       else if (Array.isArray(response.data?.notifications)) docs = response.data.notifications;
       else if (Array.isArray(response.data)) docs = response.data;
       const docsList = Array.isArray(docs) ? docs : [];
-      const unreadAll = docsList.filter(n => !n.isRead);
-      const unreadIds = new Set(unreadAll.map(n => n.id));
-      const hasNewUnread = [...unreadIds].some(id => !knownUnreadIds.current.has(id));
-      if (!isInitialLoad.current && hasNewUnread) playNotificationSound();
-      isInitialLoad.current = false;
-      knownUnreadIds.current = unreadIds;
-      setAllNotifications(docsList);
+      const existingIds = new Set(allMergedNotifications.map(n => n.id));
+      const trulyNew = docsList.filter(n => !existingIds.has(n.id));
+      if (trulyNew.length > 0) {
+        setAllNotifications(prev => {
+          const allIds = new Set(prev.map(n => n.id));
+          const add = trulyNew.filter(n => !allIds.has(n.id));
+          return [...add, ...prev];
+        });
+      }
     } catch (error) { console.error('Failed to fetch notifications:', error); }
-  }, [playNotificationSound]);
+  }, [allMergedNotifications]);
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(() => {
-      if (shouldRunSharedPoll('notifications', 14000)) fetchNotifications();
-    }, 15000);
-    return () => clearInterval(interval);
+    fallbackPollTimerRef.current = setInterval(() => {
+      if (!isAdminSocketConnected() && shouldRunSharedPoll('notifications', 40000)) {
+        fetchNotifications();
+      }
+    }, 45000);
+    return () => {
+      if (fallbackPollTimerRef.current) clearInterval(fallbackPollTimerRef.current);
+    };
   }, [fetchNotifications]);
 
   useEffect(() => {
