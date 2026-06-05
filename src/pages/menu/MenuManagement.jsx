@@ -430,6 +430,18 @@ const MenuManagement = () => {
     return `/menu/add?${params.toString()}`;
   };
 
+  const getRestaurantScopedPath = (basePath) => {
+    const targetRestaurantUid = restaurantAdmin ? ownRestaurantUid : (restaurantFilter !== 'all' ? restaurantFilter : '');
+    if (!targetRestaurantUid) return basePath;
+
+    const params = new URLSearchParams({ restaurant: targetRestaurantUid });
+    const restaurantName = getRestaurantName(targetRestaurantUid);
+    if (restaurantName && restaurantName !== targetRestaurantUid) {
+      params.set('name', restaurantName);
+    }
+    return `${basePath}?${params.toString()}`;
+  };
+
   const handleSort = (column) => {
     if (sortBy === column) {
       setSortOrder((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'));
@@ -580,14 +592,22 @@ const MenuManagement = () => {
   };
 
   const handleView = (menu) => {
-    navigate(`/menu/view/${menu.menu_uid}`, {
-      state: { selectedRestaurant: restaurantFilter !== 'all' ? restaurantFilter : undefined }
+    const selectedRestaurant = restaurantFilter !== 'all' ? restaurantFilter : undefined;
+    navigate(getRestaurantScopedPath(`/menu/view/${menu.menu_uid}`), {
+      state: {
+        selectedRestaurant,
+        selectedRestaurantName: selectedRestaurant ? getRestaurantName(selectedRestaurant) : undefined,
+      }
     });
   };
 
   const handleEdit = (menu) => {
-    navigate(`/menu/edit/${menu.menu_uid}`, {
-      state: { selectedRestaurant: restaurantFilter !== 'all' ? restaurantFilter : undefined }
+    const selectedRestaurant = restaurantFilter !== 'all' ? restaurantFilter : undefined;
+    navigate(getRestaurantScopedPath(`/menu/edit/${menu.menu_uid}`), {
+      state: {
+        selectedRestaurant,
+        selectedRestaurantName: selectedRestaurant ? getRestaurantName(selectedRestaurant) : undefined,
+      }
     });
   };
 

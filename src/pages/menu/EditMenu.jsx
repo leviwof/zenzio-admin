@@ -15,6 +15,7 @@ const EditMenu = () => {
     const topRef = useRef(null);
     const restaurantAdmin = isRestaurantAdmin();
     const ownRestaurantUid = getCurrentRestaurantUid();
+    const restaurantFromUrl = new URLSearchParams(location.search).get('restaurant');
 
     const [loading, setLoading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -61,6 +62,19 @@ const EditMenu = () => {
     const [restaurantName, setRestaurantName] = useState('');
 
     const foodTypes = ['Veg', 'Non-Veg', 'Vegan', 'Egg'];
+
+    const getMenuListPath = (restaurantUid = location.state?.selectedRestaurant || restaurantFromUrl || formData.restaurant_uid) => (
+        restaurantUid ? `/menu?restaurant=${encodeURIComponent(restaurantUid)}` : '/menu'
+    );
+
+    const getMenuListState = (restaurantUid = location.state?.selectedRestaurant || restaurantFromUrl || formData.restaurant_uid) => (
+        restaurantUid
+            ? {
+                selectedRestaurant: restaurantUid,
+                selectedRestaurantName: location.state?.selectedRestaurantName || undefined,
+            }
+            : undefined
+    );
 
     useEffect(() => {
         fetchInitialData();
@@ -295,11 +309,12 @@ const EditMenu = () => {
 
             // Show success message for 1 seconds, then go back
             setTimeout(() => {
-                navigate('/menu', {
+                const selectedRestaurant = location.state?.selectedRestaurant || restaurantFromUrl || formData.restaurant_uid;
+                navigate(getMenuListPath(selectedRestaurant), {
                     state: {
-                        selectedRestaurant: location.state?.selectedRestaurant || formData.restaurant_uid,
+                        ...getMenuListState(selectedRestaurant),
                         updatedMenuUid: menuUid,
-                    }
+                    },
                 });
             }, 1000);
 
@@ -330,7 +345,7 @@ const EditMenu = () => {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <button
-                                onClick={() => navigate(formData.restaurant_uid ? `/menu?restaurant=${formData.restaurant_uid}` : '/menu')}
+                                onClick={() => navigate(getMenuListPath(), { state: getMenuListState() })}
                                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                                 <ArrowLeft size={20} />
@@ -697,11 +712,7 @@ const EditMenu = () => {
                     <div className="flex justify-end gap-4">
                         <button
                             type="button"
-                            onClick={() => navigate('/menu', {
-                                state: {
-                                    selectedRestaurant: location.state?.selectedRestaurant || formData.restaurant_uid,
-                                }
-                            })}
+                            onClick={() => navigate(getMenuListPath(), { state: getMenuListState() })}
                             className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
                         >
                             Cancel

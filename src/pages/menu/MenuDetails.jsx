@@ -3,7 +3,7 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, Loader2, AlertCircle, IndianRupee, Tag, Utensils, Calendar, Image as ImageIcon, Power, PowerOff } from 'lucide-react';
 import { getMenuAvailability, getMenuByUid, toggleMenuAvailability, toggleMenuStatus } from '../../services/api';
 import { getImageUrl } from '../../utils/imageUtils';
@@ -12,6 +12,7 @@ import { getMenuAvailabilityState, mergeMenuAvailability } from '../../utils/men
 
 const MenuDetails = () => {
   const { menuUid } = useParams();
+  const location = useLocation();
   const restaurantAdmin = isRestaurantAdmin();
   const ownRestaurantUid = getCurrentRestaurantUid();
   const [loading, setLoading] = useState(true);
@@ -126,6 +127,21 @@ const MenuDetails = () => {
     }
   };
 
+  const restaurantFromUrl = new URLSearchParams(location.search).get('restaurant');
+  const restaurantFromState = location.state?.selectedRestaurant;
+  const selectedRestaurantUid = restaurantAdmin
+    ? ownRestaurantUid
+    : (restaurantFromState || restaurantFromUrl || menu?.restaurant_uid);
+  const menuListPath = selectedRestaurantUid
+    ? `/menu?restaurant=${encodeURIComponent(selectedRestaurantUid)}`
+    : '/menu';
+  const menuListState = selectedRestaurantUid
+    ? {
+        selectedRestaurant: selectedRestaurantUid,
+        selectedRestaurantName: location.state?.selectedRestaurantName || new URLSearchParams(location.search).get('name') || undefined,
+      }
+    : undefined;
+
   if (loading) {
     return (
       <div className="p-6">
@@ -143,7 +159,7 @@ const MenuDetails = () => {
       <div className="p-6">
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-6">
-            <Link to="/menu" className="text-red-600 hover:text-red-700">
+            <Link to={menuListPath} state={menuListState} className="text-red-600 hover:text-red-700">
               <ArrowLeft size={20} />
             </Link>
             <h2 className="text-lg font-bold text-gray-800">Menu Details</h2>
@@ -154,7 +170,8 @@ const MenuDetails = () => {
             <p className="text-gray-600 mb-2 font-medium">{error || 'Menu not found'}</p>
             <p className="text-sm text-gray-400 mb-4">UID: {menuUid}</p>
             <Link
-              to="/menu"
+              to={menuListPath}
+              state={menuListState}
               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
             >
               Back to Menu List
@@ -181,7 +198,7 @@ const MenuDetails = () => {
         {}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <Link to="/menu" className="text-red-600 hover:text-red-700 transition-colors">
+            <Link to={menuListPath} state={menuListState} className="text-red-600 hover:text-red-700 transition-colors">
               <ArrowLeft size={20} />
             </Link>
             <h2 className="text-lg font-bold text-gray-800">Menu Details</h2>
