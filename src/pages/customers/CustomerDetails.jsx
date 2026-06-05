@@ -75,9 +75,14 @@ const normalizeCustomer = (response) => {
     uid: user?.uid,
     personalInfo: {
       uid: user?.uid,
-      name: user?.profile
-        ? `${user.profile.first_name ?? ""} ${user.profile.last_name ?? ""}`.trim()
-        : "N/A",
+      name: (() => {
+        const profileName = user?.profile?.first_name || user?.profile?.last_name
+          ? `${user.profile.first_name ?? ""} ${user.profile.last_name ?? ""}`.trim()
+          : '';
+        if (profileName) return profileName;
+        const email = user?.contact?.encryptedEmail || user?.contact?.email || '';
+        return user?.displayName || user?.name || user?.profile?.name || email.split('@')[0] || "N/A";
+      })(),
       email: user?.contact?.encryptedEmail ?? user?.contact?.email ?? "N/A",
       mobile: user?.contact?.encryptedPhone ?? user?.contact?.phone ?? "N/A",
       birthday: user?.profile?.dob ?? null,

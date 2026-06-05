@@ -28,11 +28,12 @@ import { getCustomerStatus, isCustomerActive } from "../../utils/customerStatus"
 
 const mapUserToCustomer = (user) => {
   const fullName = `${user.profile?.first_name || ""} ${user.profile?.last_name || ""}`.trim();
+  const email = user.contact?.encryptedEmail || user.contact?.email || '';
   const active = isCustomerActive(user);
   return {
     id: user.id,
     customerId: user.uid,
-    name: fullName || "N/A",
+    name: fullName || user.displayName || user.name || user.profile?.name || email.split('@')[0] || "N/A",
     email: user.contact?.encryptedEmail || user.contact?.email || "N/A",
     mobile: user.contact?.encryptedPhone || user.contact?.phone || "N/A",
     createdAt: user.createdAt,
