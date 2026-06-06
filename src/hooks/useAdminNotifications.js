@@ -51,6 +51,7 @@ export default function useAdminNotifications({
   const bcRef = useRef(null);
   const fallbackTimerRef = useRef(null);
   const mountedRef = useRef(true);
+  const socketHandlersRef = useRef(null); // tracks currently registered socket listeners
   const [notifications, setNotifications] = useState([]);
 
   const playSound = useCallback(() => {
@@ -64,8 +65,13 @@ export default function useAdminNotifications({
   }, []);
 
   const handleNewNotification = useCallback(
-    (notif, { alert = true } = {}) => {
+    (rawNotif, { alert = true } = {}) => {
       if (!mountedRef.current) return;
+      // Normalize: backend socket sends 'message' but entity/API uses 'body'
+      const notif = rawNotif && (rawNotif.message !== undefined && !rawNotif.body)
+        ? { ...rawNotif, body: rawNotif.message, type: rawNotif.type || rawNotif.data?.type || 'GENERAL' }
+        : { ...rawNotif, type: rawNotif?.type || rawNotif?.data?.type || 'GENERAL' };
+
       const notificationId = getNotificationId(notif);
       const alreadyLoaded = notificationId
         ? localNotifsRef.current.some((item) => String(getNotificationId(item)) === String(notificationId))
@@ -164,8 +170,12 @@ export default function useAdminNotifications({
       bcRef.current = new BroadcastChannel('admin_notifications');
       bcRef.current.onmessage = (event) => {
         if (event.data?.type === 'new_notif') {
-          const notif = event.data.notification;
-          if (notif) {
+          const rawNotif = event.data.notification;
+          if (rawNotif) {
+            // Same normalization as handleNewNotification
+            const notif = rawNotif.message !== undefined && !rawNotif.body
+              ? { ...rawNotif, body: rawNotif.message, type: rawNotif.type || rawNotif.data?.type || 'GENERAL' }
+              : { ...rawNotif, type: rawNotif.type || rawNotif.data?.type || 'GENERAL' };
             const notificationId = getNotificationId(notif);
             const alreadyLoaded = notificationId
               ? localNotifsRef.current.some((item) => String(getNotificationId(item)) === String(notificationId))
@@ -210,19 +220,17 @@ export default function useAdminNotifications({
     const socket = getAdminSocket();
     if (!socket) return;
 
-    if (socket.connected) {
-      setSocketConnected(true);
+    // Remove previously registered handlers to avoid duplicates on re-run
+    if (socketHandlersRef.current) {
+      const { onConnect, onDisconnect, onNewNotif } = socketHandlersRef.current;
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.off('new_notification', onNewNotif);
     }
 
-    socket.on('connect', () => {
-      if (mountedRef.current) setSocketConnected(true);
-    });
-
-    socket.on('disconnect', () => {
-      if (mountedRef.current) setSocketConnected(false);
-    });
-
-    socket.on('new_notification', (notif) => {
+    const onConnect = () => { if (mountedRef.current) setSocketConnected(true); };
+    const onDisconnect = () => { if (mountedRef.current) setSocketConnected(false); };
+    const onNewNotif = (notif) => {
       handleNewNotification(notif);
       try {
         if (bcRef.current) {
@@ -231,7 +239,14 @@ export default function useAdminNotifications({
       } catch {
         // Cross-tab sync is best-effort.
       }
-    });
+    };
+
+    socketHandlersRef.current = { onConnect, onDisconnect, onNewNotif };
+
+    if (socket.connected) setSocketConnected(true);
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.on('new_notification', onNewNotif);
   }, [handleNewNotification]);
 
   useEffect(() => {
@@ -243,11 +258,14 @@ export default function useAdminNotifications({
     }, FALLBACK_POLL_INTERVAL);
 
     return () => {
-      if (socket) {
-        socket.off('connect');
-        socket.off('disconnect');
-        socket.off('new_notification');
+      if (socket && socketHandlersRef.current) {
+        const { onConnect, onDisconnect, onNewNotif } = socketHandlersRef.current;
+        socket.off('connect', onConnect);
+        socket.off('disconnect', onDisconnect);
+        socket.off('new_notification', onNewNotif);
+        socketHandlersRef.current = null;
       }
+      if (fallbackTimerRef.current) clearInterval(fallbackTimerRef.current);
     };
   }, [connectSocket, fetchNotificationsFallback]);
 

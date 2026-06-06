@@ -3,11 +3,15 @@ import useAdminNotifications from "../hooks/useAdminNotifications";
 
 const OrderNotificationContext = createContext(null);
 
+// Types that bump the order badge counter
+const ORDER_BADGE_TYPES = new Set(['NEW_ORDER', 'ORDER_RECEIVED', 'ORDER_CANCELLED', 'ORDER_CANCELED', 'CANCELLED']);
+
 export const OrderNotificationProvider = ({ children }) => {
   const [unreadOrderCount, setUnreadOrderCount] = useState(0);
   const [newOrders, setNewOrders] = useState([]);
   const [syntheticNotifs, setSyntheticNotifs] = useState([]);
   const [socketNotifs, setSocketNotifs] = useState([]);
+  const [popupQueue, setPopupQueue] = useState([]); // in-app popup notifications
   const lastResetTime = useRef(Date.now());
   const notifIdCounter = useRef(0);
 
@@ -18,11 +22,21 @@ export const OrderNotificationProvider = ({ children }) => {
         if (exists) return prev;
         return [{ ...notif, _source: 'socket', isRead: false }, ...prev].slice(0, 100);
       });
-      if (notif.type === 'NEW_ORDER' || notif.type === 'ORDER_CANCELLED') {
+      if (ORDER_BADGE_TYPES.has(notif.type)) {
         setUnreadOrderCount(prev => prev + 1);
       }
+      // Push to in-app popup queue
+      setPopupQueue(prev => {
+        const exists = prev.some(n => n.id === notif.id);
+        if (exists) return prev;
+        return [notif, ...prev].slice(0, 8);
+      });
     },
   });
+
+  const dismissPopup = useCallback((id) => {
+    setPopupQueue(prev => prev.filter(n => n.id !== id));
+  }, []);
 
   const resetUnreadOrders = useCallback(() => {
     setUnreadOrderCount(0);
@@ -59,6 +73,12 @@ export const OrderNotificationProvider = ({ children }) => {
       _source: "synthetic",
     };
     setSyntheticNotifs(prev => [notif, ...prev].slice(0, 50));
+    // Also push to in-app popup
+    setPopupQueue(prev => {
+      const exists = prev.some(n => n.id === notif.id);
+      if (exists) return prev;
+      return [notif, ...prev].slice(0, 8);
+    });
   }, []);
 
   const markSyntheticNotifRead = useCallback((id) => {
@@ -90,6 +110,8 @@ export const OrderNotificationProvider = ({ children }) => {
         socketNotifs,
         socketConnected,
         allMergedNotifications,
+        popupQueue,
+        dismissPopup,
         resetUnreadOrders,
         addNewOrders,
         addNewOrderNotification,
@@ -112,6 +134,8 @@ export const useOrderNotifications = () => {
       socketNotifs: [],
       socketConnected: false,
       allMergedNotifications: [],
+      popupQueue: [],
+      dismissPopup: () => {},
       resetUnreadOrders: () => {},
       addNewOrders: () => {},
       addNewOrderNotification: () => {},
