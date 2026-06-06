@@ -12,6 +12,7 @@ import { useOrderNotifications } from '../../context/OrderNotificationContext';
 import { getAuthUser, getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
 import { isAdminSocketConnected } from '../../services/socket';
+import { claimNotificationAlert } from '../../services/desktopNotificationService';
 
 const notificationSoundPath = `${import.meta.env.BASE_URL}notification.mp3`;
 
@@ -309,7 +310,10 @@ const Header = ({ onLogout }) => {
   useEffect(() => {
     const unreadSynthetic = syntheticNotifs.filter(n => !n.isRead);
     const newSynthIds = unreadSynthetic.map(n => n.id).filter(id => !knownSyntheticIds.current.has(id));
-    if (newSynthIds.length > 0) playNotificationSound();
+    const shouldPlay = unreadSynthetic
+      .filter(n => newSynthIds.includes(n.id))
+      .some(n => claimNotificationAlert(n));
+    if (shouldPlay) playNotificationSound();
     unreadSynthetic.forEach(n => knownSyntheticIds.current.add(n.id));
   }, [syntheticNotifs, playNotificationSound]);
 

@@ -1,49 +1,39 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { getAdminSocket, onAdminReconnect, isAdminSocketConnected } from '../services/socket';
 import { getNotifications } from '../services/api';
-
-const SOUND_TYPES = new Set([
-  'NEW_ORDER',
-  'ORDER_CANCELLED',
-  'DELIVERY_CANCELLED',
-  'CANCELLED',
-  'ORDER_ASSIGNED',
-  'DELIVERY_ASSIGNED',
-  'DELIVERY_ISSUE',
-  'PAYMENT_FAILURE',
-  'RESTAURANT_ESCALATION',
-  'NEW_DELIVERY',
-  'PARTNER_ACCEPTED',
-  'ORDER_REASSIGNED',
-  'ORDER_PICKED_UP',
-  'STATUS_CHANGED',
-]);
+import {
+  buildDesktopNotificationContent,
+  claimNotificationAlert,
+  getNotificationId,
+  getStoredLastNotificationId,
+  getStoredLastNotificationTime,
+  isImportantAdminNotification,
+  isNotificationNewer,
+  rememberLastNotification,
+  requestDesktopNotificationPermissionOnce,
+  showDesktopNotification,
+} from '../services/desktopNotificationService';
 
 const FALLBACK_POLL_INTERVAL = 35000;
 const RECONNECT_FETCH_DELAY = 2000;
 
-function claimSoundForTab(notificationId) {
-  if (!notificationId) return false;
-  const key = `ntf_sound_${notificationId}`;
-  const existing = localStorage.getItem(key);
-  if (existing) return false;
-  localStorage.setItem(key, Date.now().toString());
-  return true;
+function getNotificationTime(notification = {}) {
+  const time = Date.parse(notification.createdAt || notification.created_at || notification.timestamp || '');
+  return Number.isFinite(time) ? time : 0;
 }
 
-function cleanupSoundClaims() {
-  const now = Date.now();
-  const keysToRemove = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && key.startsWith('ntf_sound_')) {
-      const value = localStorage.getItem(key);
-      if (value && now - Number(value) > 60000) {
-        keysToRemove.push(key);
-      }
-    }
+function compareNotifications(a = {}, b = {}) {
+  const aId = Number(getNotificationId(a));
+  const bId = Number(getNotificationId(b));
+  if (Number.isFinite(aId) && Number.isFinite(bId) && aId !== bId) {
+    return aId - bId;
   }
-  keysToRemove.forEach((key) => localStorage.removeItem(key));
+  return getNotificationTime(a) - getNotificationTime(b);
+}
+
+function getLatestNotification(docs = []) {
+  const sorted = [...docs].sort(compareNotifications);
+  return sorted[sorted.length - 1];
 }
 
 export default function useAdminNotifications({
@@ -52,11 +42,12 @@ export default function useAdminNotifications({
   onNewNotification,
 } = {}) {
   const [socketConnected, setSocketConnected] = useState(false);
-  const lastPlayedIdRef = useRef(null);
+  const initializedRef = useRef(false);
+  const lastNotificationIdRef = useRef(getStoredLastNotificationId());
+  const lastNotificationTimeRef = useRef(getStoredLastNotificationTime());
   const localNotifsRef = useRef([]);
   const audioRef = useRef(null);
   const audioUnlockedRef = useRef(false);
-  const notificationTypesRef = useRef(new Set());
   const bcRef = useRef(null);
   const fallbackTimerRef = useRef(null);
   const mountedRef = useRef(true);
@@ -67,34 +58,19 @@ export default function useAdminNotifications({
     try {
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
-    } catch {}
-  }, []);
-
-  const showBrowserNotification = useCallback((notif) => {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    if (notif.title && notif.message) {
-      try {
-        const n = new Notification(notif.title, {
-          body: notif.message,
-          icon: `${import.meta.env.BASE_URL}logo.png`,
-          tag: `admin-notif-${notif.id}`,
-          silent: true,
-        });
-        n.onclick = () => {
-          window.focus();
-          if (notif.data?.orderId) {
-            window.location.href = `/orders/${notif.data.orderId}`;
-          }
-          n.close();
-        };
-      } catch {}
+    } catch {
+      // Audio failures should never block notification state updates.
     }
   }, []);
 
   const handleNewNotification = useCallback(
-    (notif) => {
+    (notif, { alert = true } = {}) => {
       if (!mountedRef.current) return;
-      const notifType = notif.type || 'GENERAL';
+      const notificationId = getNotificationId(notif);
+      const alreadyLoaded = notificationId
+        ? localNotifsRef.current.some((item) => String(getNotificationId(item)) === String(notificationId))
+        : false;
+      if (alreadyLoaded) return;
 
       localNotifsRef.current = [notif, ...localNotifsRef.current].slice(0, 100);
       setNotifications([...localNotifsRef.current]);
@@ -102,18 +78,22 @@ export default function useAdminNotifications({
       if (onNotification) onNotification(notif);
       if (onNewNotification) onNewNotification(notif);
 
-      const shouldPlaySound = SOUND_TYPES.has(notifType);
-      const isDuplicate = notif.id === lastPlayedIdRef.current;
-
-      if (shouldPlaySound && !isDuplicate && claimSoundForTab(notif.id)) {
-        lastPlayedIdRef.current = notif.id;
+      if (alert && isImportantAdminNotification(notif) && claimNotificationAlert(notif)) {
+        const { title, message } = buildDesktopNotificationContent(notif);
         playSound();
         if (onSoundTrigger) onSoundTrigger(notif);
+        showDesktopNotification(title, message, {
+          notification: notif,
+          notificationId,
+          type: notif.type,
+        });
       }
 
-      showBrowserNotification(notif);
+      rememberLastNotification(notif);
+      lastNotificationIdRef.current = getStoredLastNotificationId();
+      lastNotificationTimeRef.current = getStoredLastNotificationTime();
     },
-    [onNotification, onSoundTrigger, onNewNotification, playSound, showBrowserNotification],
+    [onNotification, onSoundTrigger, onNewNotification, playSound],
   );
 
   const fetchMissedNotifications = useCallback(async () => {
@@ -123,23 +103,34 @@ export default function useAdminNotifications({
       if (Array.isArray(response.data?.data)) docs = response.data.data;
       else if (Array.isArray(response.data?.notifications)) docs = response.data.notifications;
       else if (Array.isArray(response.data)) docs = response.data;
-      const existingIds = new Set(localNotifsRef.current.map((n) => n.id));
-      const missed = docs.filter((n) => !existingIds.has(n.id));
-      if (missed.length > 0) {
-        localNotifsRef.current = [...missed, ...localNotifsRef.current].slice(0, 100);
+      const docsList = Array.isArray(docs) ? docs : [];
+      if (!initializedRef.current) {
+        localNotifsRef.current = docsList.slice(0, 100);
         setNotifications([...localNotifsRef.current]);
-        missed.forEach((n) => {
-          if (onNewNotification) onNewNotification(n);
-        });
-        const anySoundWorthy = missed.some((n) =>
-          SOUND_TYPES.has((n.data?.type) || 'GENERAL'),
-        );
-        if (anySoundWorthy && mountedRef.current) {
-          cleanupSoundClaims();
+        const latest = getLatestNotification(docsList);
+        if (latest) {
+          rememberLastNotification(latest);
+          lastNotificationIdRef.current = getStoredLastNotificationId();
+          lastNotificationTimeRef.current = getStoredLastNotificationTime();
         }
+        initializedRef.current = true;
+        return;
       }
-    } catch {}
-  }, [onNewNotification]);
+
+      const existingIds = new Set(localNotifsRef.current.map((n) => String(getNotificationId(n))));
+      const missed = docsList.filter((n) => {
+        const id = getNotificationId(n);
+        if (id === null || id === undefined || existingIds.has(String(id))) return false;
+        return isNotificationNewer(n, lastNotificationIdRef.current, lastNotificationTimeRef.current);
+      });
+
+      if (missed.length > 0) {
+        [...missed].sort(compareNotifications).forEach((n) => handleNewNotification(n, { alert: true }));
+      }
+    } catch {
+      // Polling errors are non-fatal; the next interval or socket event can recover.
+    }
+  }, [handleNewNotification]);
 
   const fetchNotificationsFallback = useCallback(async () => {
     if (isAdminSocketConnected()) return;
@@ -166,23 +157,33 @@ export default function useAdminNotifications({
     document.addEventListener('click', unlock);
     document.addEventListener('touchstart', unlock);
 
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
-    }
+    requestDesktopNotificationPermissionOnce().catch(() => {});
 
     try {
       bcRef.current = new BroadcastChannel('admin_notifications');
       bcRef.current.onmessage = (event) => {
         if (event.data?.type === 'new_notif') {
           const notif = event.data.notification;
-          if (notif && notif.id !== lastPlayedIdRef.current) {
+          if (notif) {
+            const notificationId = getNotificationId(notif);
+            const alreadyLoaded = notificationId
+              ? localNotifsRef.current.some((item) => String(getNotificationId(item)) === String(notificationId))
+              : false;
+            if (alreadyLoaded) return;
             localNotifsRef.current = [notif, ...localNotifsRef.current].slice(0, 100);
             setNotifications([...localNotifsRef.current]);
             if (onNewNotification) onNewNotification(notif);
+            rememberLastNotification(notif);
+            lastNotificationIdRef.current = getStoredLastNotificationId();
+            lastNotificationTimeRef.current = getStoredLastNotificationTime();
           }
         }
       };
-    } catch {}
+    } catch {
+      // BroadcastChannel is optional and may be unavailable in some browsers.
+    }
+
+    fetchMissedNotifications();
 
     const unsubReconnect = onAdminReconnect(() => {
       setTimeout(() => {
@@ -226,7 +227,9 @@ export default function useAdminNotifications({
         if (bcRef.current) {
           bcRef.current.postMessage({ type: 'new_notif', notification: notif });
         }
-      } catch {}
+      } catch {
+        // Cross-tab sync is best-effort.
+      }
     });
   }, [handleNewNotification]);
 

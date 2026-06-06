@@ -18,6 +18,10 @@ import { useOrderNotifications } from "../../context/OrderNotificationContext";
 import { getCurrentRestaurantUid, isRestaurantAdmin, isZenzioAdmin } from "../../utils/auth";
 import { shouldRunSharedPoll } from "../../utils/requestCoordinator";
 import { isAdminSocketConnected } from "../../services/socket";
+import {
+  claimNotificationAlert,
+  showDesktopNotification as showNativeDesktopNotification,
+} from "../../services/desktopNotificationService";
 
 const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 const loudNotificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
@@ -530,19 +534,29 @@ const OrdersList = () => {
   }, [cancelLoudSoundTimer, playLoudNotificationSound]);
 
   const showDesktopNotification = useCallback((orders) => {
-    if (!("Notification" in window) || Notification.permission !== "granted") return;
-    if (document.visibilityState !== "hidden") return;
     const count = orders.length;
     const first = orders[0];
     const title = count === 1 ? `New Order #${first.orderId}` : `${count} New Orders Received`;
     const body = count === 1
       ? `${first.customer_name || "Guest"} - ${first.restaurant_name || "Unknown"} - ₹${first.price}`
       : `${first.customer_name || "Guest"} and ${count - 1} other${count - 1 > 1 ? 's' : ''}`;
-    try {
-      const notif = new Notification(title, { body, icon: `${import.meta.env.BASE_URL}logo.png`, tag: "new-order", silent: true });
-      notif.onclick = () => { window.focus(); navigate("/orders"); notif.close(); };
-    } catch { /* ignore */ }
-  }, [navigate]);
+    const firstOrderId = first.orderId || first.id;
+    showNativeDesktopNotification(title, body, {
+      notification: {
+        id: `order-${firstOrderId}`,
+        type: 'NEW_ORDER',
+        orderId: firstOrderId,
+        title,
+        body,
+        createdAt: first.createdAt || first.time,
+      },
+      dedupeKey: count === 1
+        ? `NEW_ORDER:order:${firstOrderId}`
+        : `NEW_ORDER:orders:${orders.map(o => o.orderId || o.id).join(',')}`,
+      tag: count === 1 ? `new-order-${firstOrderId}` : 'new-orders',
+      url: count === 1 && firstOrderId ? `/orders/${firstOrderId}` : '/orders',
+    });
+  }, []);
 
   const addToast = useCallback((order) => {
     const id = ++toastIdCounter.current;
@@ -733,8 +747,16 @@ const OrdersList = () => {
         let newlyArrived = [];
         if (hasNewOrder) {
           newlyArrived = newOrders.filter(o => !knownOrderIds.current.has(o.orderId || o.id));
+          const shouldAlertOrders = newlyArrived.some(order =>
+            claimNotificationAlert({
+              id: `order-${order.orderId || order.id}`,
+              type: 'NEW_ORDER',
+              orderId: order.orderId || order.id,
+              createdAt: order.createdAt || order.time,
+            }),
+          );
 
-          if (!soundPlayedThisCycle.current) {
+          if (shouldAlertOrders && !soundPlayedThisCycle.current) {
             playNotificationSound();
             scheduleLoudSound();
             soundPlayedThisCycle.current = true;
@@ -758,7 +780,14 @@ const OrdersList = () => {
           notifiedOrderIds.current.add(order.orderId || order.id);
           addNewOrderNotification(order);
           const prevStatus = knownOrderStatuses.current.get(order.orderId || order.id);
-          if (prevStatus !== undefined && !soundPlayedThisCycle.current) {
+          const status = (order.restaurantStatus || order.status || '').toUpperCase();
+          const shouldAlertStatus = claimNotificationAlert({
+            id: `order-status-${order.orderId || order.id}-${status}`,
+            type: status === 'ACCEPTED' ? 'ORDER_ASSIGNED' : 'NEW_ORDER',
+            orderId: order.orderId || order.id,
+            createdAt: order.createdAt || order.time,
+          });
+          if (prevStatus !== undefined && shouldAlertStatus && !soundPlayedThisCycle.current) {
             playNotificationSound();
             scheduleLoudSound();
             soundPlayedThisCycle.current = true;
