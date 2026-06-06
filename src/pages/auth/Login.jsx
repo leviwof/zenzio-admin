@@ -6,6 +6,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { adminLogin, restaurantLogin, saveAccessToken } from "../../services/api";
 import logo from "../../assets/logoadmin.png";
 import { extractRestaurantUid, persistAuthUser, persistRestaurantUid, ROLES } from "../../utils/auth";
+import { requestDesktopNotificationPermissionOnce } from "../../services/desktopNotificationService";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -53,6 +54,11 @@ const handleSubmit = async (e) => {
 
     const restaurantUid = extractRestaurantUid(data.user);
     persistRestaurantUid(restaurantUid);
+
+    // 🔔 Request desktop notification permission inside this user-gesture context
+    // (form submit). Chrome requires a user gesture to show the permission prompt;
+    // doing it here guarantees the dialog appears right after login.
+    requestDesktopNotificationPermissionOnce({ fromUserGesture: true }).catch(() => {});
 
     window.location.href = "/dashboard";
   } catch (err) {
