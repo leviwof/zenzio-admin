@@ -2,6 +2,7 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 import { Outlet } from 'react-router-dom';
 import NotificationPopup from '../ui/NotificationPopup';
+import NotificationPermissionBanner from '../ui/NotificationPermissionBanner';
 import { useOrderNotifications } from '../../context/OrderNotificationContext';
 
 const Layout = ({ onLogout }) => {
@@ -12,6 +13,9 @@ const Layout = ({ onLogout }) => {
       <Sidebar isOpen={true} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Permission denied warning — shown when browser notifications are blocked */}
+        <NotificationPermissionBanner />
+
         <Header onLogout={onLogout} />
 
         <main className="flex-1 overflow-y-auto">

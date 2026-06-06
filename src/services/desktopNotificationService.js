@@ -1,273 +1,254 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// desktopNotificationService.js
-// Handles:
-//   • Browser Notification API (Windows Notification Center)
-//   • Notification deduplication (ID-first, composite-key fallback)
+// =============================================================================
+// desktopNotificationService.js — Production-grade notification service
+//
+// Responsibilities:
+//   • Browser Notification API + Windows Notification Center
+//   • ID-based deduplication (persists across refresh via localStorage)
 //   • Sound deduplication per notification ID
-//   • Permission management
+//   • Multi-tab audio lock (prevents duplicate sounds across tabs)
+//   • Permission management + denied-state export for UI banner
 //   • Route resolution for notification click → navigate
-// ─────────────────────────────────────────────────────────────────────────────
+//
+// Storage keys:
+//   admin_notif_alerted_ids   — IDs that already triggered sound + popup
+//   admin_notif_sound_ids     — IDs whose sound was played
+//   admin_notif_desktop_ids   — IDs that got an OS desktop notification
+//   admin_notif_last_id       — highest notification ID seen
+//   admin_notif_last_time     — createdAt of highest notification seen
+//   admin_notif_audio_lock    — multi-tab leader lock { tabId, ts }
+//   admin_notif_perm_asked    — whether permission was already requested
+// =============================================================================
 
-const PERMISSION_REQUESTED_KEY       = 'admin_desktop_notification_permission_requested';
-const ALERTED_KEYS_STORAGE           = 'admin_alerted_notification_keys';
-const NOTIFIED_IDS_STORAGE           = 'admin_notified_notification_ids';  // desktop popup dedupe
-const SOUND_IDS_STORAGE              = 'admin_sound_notification_ids';     // sound dedupe
-const LAST_NOTIFICATION_ID_KEY       = 'admin_last_notification_id';
-const LAST_NOTIFICATION_TIME_KEY     = 'admin_last_notification_time';
-const MAX_STORED_KEYS                = 500;
+const ALERTED_IDS_KEY   = 'admin_notif_alerted_ids';
+const SOUND_IDS_KEY     = 'admin_notif_sound_ids';
+const DESKTOP_IDS_KEY   = 'admin_notif_desktop_ids';
+const LAST_ID_KEY       = 'admin_notif_last_id';
+const LAST_TIME_KEY     = 'admin_notif_last_time';
+const AUDIO_LOCK_KEY    = 'admin_notif_audio_lock';
+const PERM_ASKED_KEY    = 'admin_notif_perm_asked';
 
-// ─── Notification type sets ───────────────────────────────────────────────────
+const MAX_STORED        = 1000;   // Req #12: max 1000 cached IDs
+const AUDIO_LOCK_TTL    = 3000;   // Lock expires after 3s
+const AUDIO_LOCK_JITTER = 120;    // Random delay (ms) to reduce race conditions
 
-/**
- * All notification types that should trigger desktop popups + sound.
- */
+// ─── Notification type config ─────────────────────────────────────────────────
+
 export const IMPORTANT_NOTIFICATION_TYPES = new Set([
-  'NEW_ORDER',
-  'ORDER_RECEIVED',
-  'ORDER_CANCELLED',
-  'ORDER_CANCELED',
-  'CANCELLED',
-  'ORDER_ASSIGNED',
-  'DELIVERY_ASSIGNED',
-  'DELIVERY_ISSUE',
-  'DELIVERY_FAILED',
-  'PAYMENT_FAILURE',
-  'PAYMENT_FAILED',
+  'NEW_ORDER', 'ORDER_RECEIVED',
+  'ORDER_CANCELLED', 'ORDER_CANCELED', 'CANCELLED',
+  'ORDER_ASSIGNED', 'DELIVERY_ASSIGNED',
+  'DELIVERY_ISSUE', 'DELIVERY_FAILED',
+  'PAYMENT_FAILURE', 'PAYMENT_FAILED',
   'RESTAURANT_ESCALATION',
-  'HIGH_PRIORITY_ADMIN_ALERT',
-  'HIGH_PRIORITY_ALERT',
-  'ADMIN_ALERT',
-  'ORDER_DELIVERED',
-  'STATUS_CHANGED',
-  'ORDER_REASSIGNED',
-  'ORDER_OUT_FOR_DELIVERY',
-  'ORDER_PICKED_UP',
-  'PARTNER_ACCEPTED',
-  'DELIVERY_CANCELLED',
-  'DELIVERY_CANCELLED_ADMIN',
-  'DELIVERY_STATUS_CHANGED_ADMIN',
-  'NEW_DELIVERY_ASSIGNED',
-  'NEW_RESTAURANT_REGISTRATION',
-  'NEW_PARTNER_REGISTRATION',
+  'HIGH_PRIORITY_ADMIN_ALERT', 'HIGH_PRIORITY_ALERT', 'ADMIN_ALERT',
+  'ORDER_DELIVERED', 'STATUS_CHANGED', 'ORDER_REASSIGNED',
+  'ORDER_OUT_FOR_DELIVERY', 'ORDER_PICKED_UP', 'PARTNER_ACCEPTED',
+  'DELIVERY_CANCELLED', 'DELIVERY_CANCELLED_ADMIN', 'DELIVERY_STATUS_CHANGED_ADMIN',
+  'NEW_DELIVERY_ASSIGNED', 'NEW_RESTAURANT_REGISTRATION', 'NEW_PARTNER_REGISTRATION',
 ]);
 
-/**
- * Critical types use requireInteraction=true so the notification stays in
- * Windows Notification Center until the admin explicitly dismisses it.
- */
+// Critical types → requireInteraction: true (stays pinned in Notification Center)
 const REQUIRE_INTERACTION_TYPES = new Set([
-  'NEW_ORDER',
-  'ORDER_RECEIVED',
-  'ORDER_CANCELLED',
-  'ORDER_CANCELED',
-  'CANCELLED',
-  'DELIVERY_ISSUE',
-  'DELIVERY_FAILED',
-  'PAYMENT_FAILURE',
-  'PAYMENT_FAILED',
-  'HIGH_PRIORITY_ADMIN_ALERT',
-  'HIGH_PRIORITY_ALERT',
-  'ADMIN_ALERT',
+  'NEW_ORDER', 'ORDER_RECEIVED',
+  'ORDER_CANCELLED', 'ORDER_CANCELED', 'CANCELLED',
+  'DELIVERY_ISSUE', 'DELIVERY_FAILED',
+  'PAYMENT_FAILURE', 'PAYMENT_FAILED',
+  'HIGH_PRIORITY_ADMIN_ALERT', 'HIGH_PRIORITY_ALERT', 'ADMIN_ALERT',
   'RESTAURANT_ESCALATION',
 ]);
-
-// ─── Icon ─────────────────────────────────────────────────────────────────────
 
 const appIcon = `${import.meta.env.BASE_URL}logo.png`;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── localStorage helpers ─────────────────────────────────────────────────────
 
-const normalizeType = (value) => String(value || '').trim().toUpperCase();
-
-function readKeyList(storageKey) {
+function readList(key) {
   try {
-    const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+    const v = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch { return []; }
 }
 
-function hasStoredKey(storageKey, key) {
-  if (key === null || key === undefined) return false;
-  return readKeyList(storageKey).includes(String(key));
+function hasList(key, val) {
+  if (val == null) return false;
+  return readList(key).includes(String(val));
 }
 
-function storeKey(storageKey, key) {
-  if (key === null || key === undefined) return;
-  const sKey = String(key);
-  const keys = readKeyList(storageKey).filter((k) => k !== sKey);
-  keys.unshift(sKey);
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(keys.slice(0, MAX_STORED_KEYS)));
-  } catch {
-    // localStorage full — not fatal
-  }
+function addList(key, val) {
+  if (val == null) return;
+  const s = String(val);
+  const list = readList(key).filter(v => v !== s);
+  list.unshift(s);
+  try { localStorage.setItem(key, JSON.stringify(list.slice(0, MAX_STORED))); } catch {}
 }
 
-// ─── Public getters / setters ─────────────────────────────────────────────────
+// ─── Field extractors ─────────────────────────────────────────────────────────
 
-export function getNotificationType(notification = {}) {
+const normalizeType = v => String(v || '').trim().toUpperCase();
+
+export function getNotificationType(n = {}) {
   return normalizeType(
-    notification.type ||
-      notification.eventType ||
-      notification.category ||
-      notification.data?.type ||
-      notification.data?.eventType,
+    n.type || n.eventType || n.category || n.data?.type || n.data?.eventType
   );
 }
 
-export function getNotificationId(notification = {}) {
-  return (
-    notification.id ||
-    notification.notificationId ||
-    notification.notification_id ||
-    notification.data?.id ||
-    notification.data?.notificationId ||
-    null
-  );
+export function getNotificationId(n = {}) {
+  const id = n.id ?? n.notificationId ?? n.notification_id
+    ?? n.data?.id ?? n.data?.notificationId;
+  return id != null ? id : null;
 }
 
-export function getNotificationOrderId(notification = {}) {
-  return (
-    notification.orderId ||
-    notification.order_id ||
-    notification.targetId ||
-    notification.targetUid ||
-    notification.data?.orderId ||
-    notification.data?.order_id ||
-    notification.data?.targetId ||
-    null
-  );
+export function getNotificationOrderId(n = {}) {
+  return n.orderId ?? n.order_id ?? n.targetId ?? n.targetUid
+    ?? n.data?.orderId ?? n.data?.order_id ?? n.data?.targetId ?? null;
 }
 
-export function getNotificationMessage(notification = {}) {
-  return (
-    notification.message ||
-    notification.body ||
-    notification.description ||
-    notification.data?.message ||
-    notification.data?.body ||
-    ''
-  );
+export function getNotificationMessage(n = {}) {
+  return n.message || n.body || n.description || n.data?.message || n.data?.body || '';
 }
+
+export function getNotificationCreatedAt(n = {}) {
+  return n.createdAt || n.created_at || n.timestamp || null;
+}
+
+// ─── Last-seen tracking ───────────────────────────────────────────────────────
 
 export function getStoredLastNotificationId() {
-  return localStorage.getItem(LAST_NOTIFICATION_ID_KEY);
+  return localStorage.getItem(LAST_ID_KEY);
 }
 
 export function getStoredLastNotificationTime() {
-  return localStorage.getItem(LAST_NOTIFICATION_TIME_KEY);
+  return localStorage.getItem(LAST_TIME_KEY);
 }
 
-export function rememberLastNotification(notification = {}) {
-  const id = getNotificationId(notification);
-  if (id !== null && id !== undefined) {
-    localStorage.setItem(LAST_NOTIFICATION_ID_KEY, String(id));
-  }
-  const createdAt = notification.createdAt || notification.created_at || notification.timestamp;
-  if (createdAt) {
-    localStorage.setItem(LAST_NOTIFICATION_TIME_KEY, String(createdAt));
-  }
+export function rememberLastNotification(n = {}) {
+  const id = getNotificationId(n);
+  if (id != null) localStorage.setItem(LAST_ID_KEY, String(id));
+  const t = getNotificationCreatedAt(n);
+  if (t) localStorage.setItem(LAST_TIME_KEY, String(t));
 }
 
-export function isNotificationNewer(notification = {}, lastId, lastTime) {
-  const id = getNotificationId(notification);
-  if (id === null || id === undefined) return false;
+export function isNotificationNewer(n = {}, lastId, lastTime) {
+  const id = getNotificationId(n);
+  if (id == null) return false;
 
-  const currentNumeric = Number(id);
-  const lastNumeric = Number(lastId);
-  if (Number.isFinite(currentNumeric) && Number.isFinite(lastNumeric)) {
-    return currentNumeric > lastNumeric;
+  // Numeric ID comparison (most reliable)
+  const currNum = Number(id);
+  const lastNum = Number(lastId);
+  if (Number.isFinite(currNum) && Number.isFinite(lastNum)) {
+    return currNum > lastNum;
   }
 
-  const currentTime = Date.parse(
-    notification.createdAt || notification.created_at || notification.timestamp || '',
-  );
-  const previousTime = Date.parse(lastTime || '');
-  if (Number.isFinite(currentTime) && Number.isFinite(previousTime)) {
-    return currentTime > previousTime;
+  // Timestamp fallback
+  const currMs = Date.parse(getNotificationCreatedAt(n) || '');
+  const lastMs = Date.parse(lastTime || '');
+  if (Number.isFinite(currMs) && Number.isFinite(lastMs)) {
+    return currMs > lastMs;
   }
 
   return String(id) !== String(lastId);
 }
 
-// ─── Sound deduplication ──────────────────────────────────────────────────────
-
+// ─── First-load seeding ───────────────────────────────────────────────────────
 /**
- * Returns true if sound has already been played for this notification ID.
- * Checks localStorage so duplicates survive page refresh.
- */
-export function hasSoundPlayed(notifId) {
-  if (notifId === null || notifId === undefined) return false;
-  return hasStoredKey(SOUND_IDS_STORAGE, String(notifId));
-}
-
-/**
- * Record that sound was played for this notification ID.
- */
-export function markSoundPlayed(notifId) {
-  if (notifId === null || notifId === undefined) return;
-  storeKey(SOUND_IDS_STORAGE, String(notifId));
-}
-
-// ─── Alert claiming (sound + desktop) ────────────────────────────────────────
-
-function getDedupeKey(notification = {}, data = {}) {
-  if (data.dedupeKey) return String(data.dedupeKey);
-
-  const type = getNotificationType(notification) || normalizeType(data.type) || 'GENERAL';
-  const orderId = getNotificationOrderId(notification) || data.orderId;
-  if (orderId) return `${type}:order:${orderId}`;
-
-  const restaurantId =
-    notification.restaurantId ||
-    notification.restaurant_id ||
-    notification.data?.restaurantId ||
-    data.restaurantId;
-  if (restaurantId) return `${type}:restaurant:${restaurantId}`;
-
-  const id = getNotificationId(notification) || data.notificationId || data.id;
-  return id ? `${type}:id:${id}` : null;
-}
-
-/**
- * "Claim" the right to alert (play sound + show desktop notification) for this
- * notification. Returns true the first time, false on subsequent calls.
+ * Called ONCE after the initial API fetch on page load.
+ * Pre-marks all existing notification IDs as already-alerted so that:
+ *   1. Socket "catchup" events for historical notifications won't re-trigger
+ *   2. Polling won't re-alert for notifications loaded during initial seed
+ *   3. Works correctly on first-ever login (cold localStorage)
  *
- * Deduplication priority:
- *   1. notification.id  (most precise — survives re-render & page refresh)
- *   2. composite key   (type + orderId / restaurantId — fallback when ID absent)
+ * @param {Array} notifications - notification list from initial API fetch
  */
-export function claimNotificationAlert(notification = {}, data = {}) {
-  const id = getNotificationId(notification);
+export function seedAlertedIds(notifications = []) {
+  if (!Array.isArray(notifications)) return;
+  notifications.forEach(n => {
+    const id = getNotificationId(n);
+    if (id == null) return;
+    const s = String(id);
+    // Mark in all three dedup stores
+    addList(ALERTED_IDS_KEY, s);
+    addList(SOUND_IDS_KEY,   s);
+    addList(DESKTOP_IDS_KEY, s);
+  });
+}
 
-  if (id !== null && id !== undefined) {
-    const idKey = `id:${String(id)}`;
-    if (hasStoredKey(ALERTED_KEYS_STORAGE, idKey)) return false;
-    storeKey(ALERTED_KEYS_STORAGE, idKey);
-    return true;
-  }
-
-  // Fallback to composite key
-  const key = getDedupeKey(notification, data);
-  if (!key || hasStoredKey(ALERTED_KEYS_STORAGE, key)) return false;
-  storeKey(ALERTED_KEYS_STORAGE, key);
+// ─── Alert deduplication ──────────────────────────────────────────────────────
+/**
+ * "Claim" the right to alert for this notification (sound + desktop popup).
+ * Returns true the FIRST time for this notification ID, false thereafter.
+ * Stored in localStorage so it survives page refresh.
+ */
+export function claimAlert(n = {}) {
+  const id = getNotificationId(n);
+  if (id == null) return true; // no ID → can't dedup, allow
+  const s = String(id);
+  if (hasList(ALERTED_IDS_KEY, s)) return false;
+  addList(ALERTED_IDS_KEY, s);
   return true;
 }
 
-// ─── isImportantAdminNotification ────────────────────────────────────────────
+// Legacy name kept for backwards compat
+export { claimAlert as claimNotificationAlert };
 
-export function isImportantAdminNotification(notification = {}) {
-  if (!notification || notification.isRead) return false;
+// ─── Sound deduplication ──────────────────────────────────────────────────────
 
-  const type = getNotificationType(notification);
+export function hasSoundPlayed(id) {
+  if (id == null) return false;
+  return hasList(SOUND_IDS_KEY, String(id));
+}
+
+export function markSoundPlayed(id) {
+  if (id == null) return;
+  addList(SOUND_IDS_KEY, String(id));
+}
+
+// ─── Multi-tab audio lock ─────────────────────────────────────────────────────
+// Prevents multiple tabs from playing sound for the same event.
+// Uses a localStorage lock with TTL + random jitter to reduce race conditions.
+
+let _tabId = null;
+function getTabId() {
+  if (!_tabId) _tabId = `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  return _tabId;
+}
+
+/**
+ * Try to acquire the audio lock for this tab.
+ * Returns a Promise<boolean>: true = this tab should play sound, false = skip.
+ *
+ * Random jitter (0–AUDIO_LOCK_JITTER ms) reduces the probability of two tabs
+ * reading an empty lock simultaneously and both winning.
+ */
+export async function tryAcquireAudioLock() {
+  // Random delay to desync concurrent tab reads
+  await new Promise(r => setTimeout(r, Math.floor(Math.random() * AUDIO_LOCK_JITTER)));
+
+  try {
+    const raw = localStorage.getItem(AUDIO_LOCK_KEY);
+    if (raw) {
+      const lock = JSON.parse(raw);
+      const age = Date.now() - (lock.ts || 0);
+      // Another tab has a fresh lock — skip
+      if (age < AUDIO_LOCK_TTL && lock.tabId !== getTabId()) return false;
+    }
+    // Claim the lock
+    localStorage.setItem(AUDIO_LOCK_KEY, JSON.stringify({ tabId: getTabId(), ts: Date.now() }));
+    return true;
+  } catch {
+    return true; // localStorage error — allow sound
+  }
+}
+
+// ─── Importance check ─────────────────────────────────────────────────────────
+
+export function isImportantAdminNotification(n = {}) {
+  if (!n || n.isRead) return false;
+  const type = getNotificationType(n);
   if (IMPORTANT_NOTIFICATION_TYPES.has(type)) return true;
 
-  const priority = normalizeType(notification.priority || notification.data?.priority);
+  const priority = normalizeType(n.priority || n.data?.priority);
   if (priority === 'HIGH' || priority === 'CRITICAL') return true;
 
-  const text = `${notification.title || ''} ${getNotificationMessage(notification)}`.toLowerCase();
+  const text = `${n.title || ''} ${getNotificationMessage(n)}`.toLowerCase();
   return (
     text.includes('new order') ||
     text.includes('order received') ||
@@ -283,38 +264,37 @@ export function isImportantAdminNotification(notification = {}) {
 // ─── Permission management ────────────────────────────────────────────────────
 
 /**
- * Request browser notification permission.
- *
- * - Must be called inside a user-gesture handler (click/submit) to reliably
- *   show the browser permission prompt.
- * - Stores a flag so we don't prompt again after the user has already decided.
- * - Safe to call multiple times; only prompts once unless permission was reset.
- *
- * Returns a Promise<NotificationPermission | 'unsupported'>
+ * Returns current browser notification permission state.
+ * 'granted' | 'denied' | 'default' | 'unsupported'
+ */
+export function getPermissionState() {
+  if (!('Notification' in window)) return 'unsupported';
+  return Notification.permission;
+}
+
+/**
+ * Request permission once. Must be called inside a user-gesture handler
+ * (click / form submit) to reliably show the browser permission prompt.
  */
 export function requestDesktopNotificationPermissionOnce({ fromUserGesture = false } = {}) {
-  // Not supported or not secure
   if (!('Notification' in window) || !window.isSecureContext) {
     return Promise.resolve('unsupported');
   }
 
-  // Already decided — nothing to do
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return Promise.resolve(Notification.permission);
   }
 
-  const requestState = localStorage.getItem(PERMISSION_REQUESTED_KEY);
-
-  // Avoid prompting again from a non-gesture context if we've already tried
-  if (requestState === 'interaction' || (requestState === 'load' && !fromUserGesture)) {
+  const prev = localStorage.getItem(PERM_ASKED_KEY);
+  // Don't re-prompt from a non-gesture context if we already tried
+  if (prev === 'interaction' || (prev === 'load' && !fromUserGesture)) {
     return Promise.resolve(Notification.permission);
   }
 
-  localStorage.setItem(PERMISSION_REQUESTED_KEY, fromUserGesture ? 'interaction' : 'load');
+  localStorage.setItem(PERM_ASKED_KEY, fromUserGesture ? 'interaction' : 'load');
 
   try {
     const result = Notification.requestPermission();
-    // Older browsers return the result synchronously (not a Promise)
     return result && typeof result.then === 'function'
       ? result
       : Promise.resolve(result);
@@ -325,178 +305,122 @@ export function requestDesktopNotificationPermissionOnce({ fromUserGesture = fal
 
 // ─── Route resolution ─────────────────────────────────────────────────────────
 
-function getNotificationRoute(notification = {}, data = {}) {
+function getRoute(n = {}, data = {}) {
   if (data.url) return data.url;
+  const type    = getNotificationType(n) || normalizeType(data.type);
+  const orderId = getNotificationOrderId(n) || data.orderId;
+  const restId  = n.restaurantId || n.restaurant_id || n.data?.restaurantId || data.restaurantId;
 
-  const type = getNotificationType(notification) || normalizeType(data.type);
-  const orderId = getNotificationOrderId(notification) || data.orderId;
-  const restaurantId =
-    notification.restaurantId ||
-    notification.restaurant_id ||
-    notification.data?.restaurantId ||
-    data.restaurantId;
-
-  if (type === 'DELIVERY_ISSUE' || type === 'DELIVERY_FAILED') {
-    return orderId
-      ? `/live-tracking?orderId=${encodeURIComponent(orderId)}`
-      : '/live-tracking';
-  }
-
-  if (type === 'RESTAURANT_ESCALATION') {
-    return restaurantId ? `/restaurants/${restaurantId}` : '/restaurants';
-  }
-
+  if (type === 'DELIVERY_ISSUE' || type === 'DELIVERY_FAILED')
+    return orderId ? `/live-tracking?orderId=${encodeURIComponent(orderId)}` : '/live-tracking';
+  if (type === 'RESTAURANT_ESCALATION')
+    return restId ? `/restaurants/${restId}` : '/restaurants';
   if (type === 'NEW_RESTAURANT_REGISTRATION') return '/restaurants';
-  if (type === 'NEW_PARTNER_REGISTRATION')    return '/delivery-partners';
-  if (type === 'NEW_DELIVERY_ASSIGNED')       return '/delivery-partners';
-
-  if (
-    type === 'ORDER_CANCELLED' ||
-    type === 'ORDER_CANCELED'  ||
-    type === 'CANCELLED'       ||
-    type === 'ORDER_DELIVERED' ||
-    type === 'DELIVERY_CANCELLED' ||
-    type === 'DELIVERY_CANCELLED_ADMIN'
-  ) {
+  if (type === 'NEW_PARTNER_REGISTRATION' || type === 'NEW_DELIVERY_ASSIGNED')
+    return '/delivery-partners';
+  if (['ORDER_CANCELLED','ORDER_CANCELED','CANCELLED',
+       'ORDER_DELIVERED','DELIVERY_CANCELLED','DELIVERY_CANCELLED_ADMIN'].includes(type))
     return orderId ? `/orders/${orderId}` : '/orders';
-  }
-
-  if (
-    type === 'HIGH_PRIORITY_ADMIN_ALERT' ||
-    type === 'HIGH_PRIORITY_ALERT'       ||
-    type === 'ADMIN_ALERT'
-  ) {
+  if (['HIGH_PRIORITY_ADMIN_ALERT','HIGH_PRIORITY_ALERT','ADMIN_ALERT'].includes(type))
     return '/activity-log';
-  }
 
   return orderId ? `/orders/${orderId}` : '/orders';
 }
 
 // ─── Content builder ──────────────────────────────────────────────────────────
 
-export function buildDesktopNotificationContent(notification = {}) {
-  const type = getNotificationType(notification);
-  const orderId = getNotificationOrderId(notification);
+export function buildDesktopNotificationContent(n = {}) {
+  const type    = getNotificationType(n);
+  const orderId = getNotificationOrderId(n);
 
-  const title =
-    notification.title ||
-    (() => {
+  // Req #5: title is always "Zenzio Admin"; body = actual notification message
+  const body = n.title
+    || getNotificationMessage(n)
+    || (() => {
       switch (type) {
         case 'NEW_ORDER':
-        case 'ORDER_RECEIVED':             return '🛒 New Order Received';
+        case 'ORDER_RECEIVED':              return orderId ? `🛒 New Order #${orderId}` : '🛒 New Order Received';
         case 'ORDER_ASSIGNED':
-        case 'DELIVERY_ASSIGNED':          return 'Order Assigned';
-        case 'ORDER_DELIVERED':            return 'Order Delivered';
+        case 'DELIVERY_ASSIGNED':           return `Order Assigned${orderId ? ` #${orderId}` : ''}`;
+        case 'ORDER_DELIVERED':             return `Order Delivered${orderId ? ` #${orderId}` : ''}`;
         case 'ORDER_CANCELLED':
         case 'ORDER_CANCELED':
-        case 'CANCELLED':                  return 'Order Cancelled';
+        case 'CANCELLED':                   return `Order Cancelled${orderId ? ` #${orderId}` : ''}`;
         case 'DELIVERY_ISSUE':
-        case 'DELIVERY_FAILED':            return '⚠️ Delivery Issue';
+        case 'DELIVERY_FAILED':             return `⚠️ Delivery Issue${orderId ? ` — Order #${orderId}` : ''}`;
         case 'PAYMENT_FAILURE':
-        case 'PAYMENT_FAILED':             return '⚠️ Payment Failed';
-        case 'RESTAURANT_ESCALATION':      return 'Restaurant Escalation';
+        case 'PAYMENT_FAILED':              return `⚠️ Payment Failed${orderId ? ` — Order #${orderId}` : ''}`;
+        case 'RESTAURANT_ESCALATION':       return 'Restaurant Escalation';
         case 'NEW_RESTAURANT_REGISTRATION': return 'New Restaurant Registration';
-        case 'NEW_PARTNER_REGISTRATION':   return 'New Partner Registration';
+        case 'NEW_PARTNER_REGISTRATION':    return 'New Delivery Partner Registered';
         case 'STATUS_CHANGED':
-        case 'ORDER_REASSIGNED':           return 'Status Updated';
-        case 'ORDER_OUT_FOR_DELIVERY':     return 'Out for Delivery';
-        case 'ORDER_PICKED_UP':            return 'Order Picked Up';
-        case 'PARTNER_ACCEPTED':           return 'Partner Accepted Order';
+        case 'ORDER_REASSIGNED':            return `Status Updated${orderId ? ` — Order #${orderId}` : ''}`;
+        case 'ORDER_OUT_FOR_DELIVERY':      return `Out for Delivery${orderId ? ` — #${orderId}` : ''}`;
+        case 'ORDER_PICKED_UP':             return `Order Picked Up${orderId ? ` — #${orderId}` : ''}`;
+        case 'PARTNER_ACCEPTED':            return `Partner Accepted Order${orderId ? ` #${orderId}` : ''}`;
         case 'DELIVERY_CANCELLED':
-        case 'DELIVERY_CANCELLED_ADMIN':   return 'Delivery Cancelled';
-        default:                           return 'Admin Alert';
+        case 'DELIVERY_CANCELLED_ADMIN':    return `Delivery Cancelled${orderId ? ` — #${orderId}` : ''}`;
+        case 'HIGH_PRIORITY_ADMIN_ALERT':
+        case 'HIGH_PRIORITY_ALERT':
+        case 'ADMIN_ALERT':                 return 'Admin Alert — Action Required';
+        default:                            return 'You have a new notification';
       }
     })();
 
-  const message =
-    getNotificationMessage(notification) ||
-    (orderId
-      ? `Order #${orderId} needs your attention`
-      : 'A new admin notification needs your attention');
-
-  return { title, message };
+  return { title: 'Zenzio Admin', body };
 }
 
-// ─── Show desktop notification ────────────────────────────────────────────────
-
+// ─── Show OS desktop notification ─────────────────────────────────────────────
 /**
- * Fire a native OS desktop notification.
+ * Fire a native OS notification (appears in Windows Notification Center).
  *
- * Deduplication:
- *   • Uses notification.id as primary key (stored in localStorage).
- *   • Falls back to composite type:order/restaurant:id key.
+ * Requirements satisfied:
+ *   #4  — requireInteraction: true for critical types
+ *   #5  — title always "Zenzio Admin", body = actual content
+ *   #6  — ID-based dedup via DESKTOP_IDS_KEY
+ *   tag — stable per notification ID → replaces instead of stacking
  *
- * Windows Notification Center behaviour:
- *   • REQUIRE_INTERACTION_TYPES → requireInteraction:true, notification stays
- *     visible until dismissed.
- *   • tag uses the notification ID so repeated events for the same notification
- *     replace rather than stack.
- *   • renotify:true on REQUIRE_INTERACTION types so the sound/banner re-fires
- *     if the tag already exists (e.g. real-time socket duplicate).
- *
- * Click behaviour:
- *   • window.focus() brings the admin tab to the foreground.
- *   • window.location.href navigates to the relevant page.
- *
- * Returns true if the notification was fired, false otherwise.
+ * Returns true if the notification was fired, false if blocked/duped.
  */
-export function showDesktopNotification(title, message, data = {}) {
-  // Guard: API available + permission granted
+export function showDesktopNotification(body, data = {}) {
   if (!('Notification' in window)) return false;
   if (Notification.permission !== 'granted') return false;
 
-  const notification = data.notification || {};
-  const id = getNotificationId(notification) || data.notificationId || data.id;
+  const n  = data.notification || {};
+  const id = getNotificationId(n) ?? data.notificationId ?? data.id;
 
-  // ── Deduplication ──────────────────────────────────────────────────────────
-  if (id !== null && id !== undefined) {
-    if (hasStoredKey(NOTIFIED_IDS_STORAGE, String(id))) return false;
-    storeKey(NOTIFIED_IDS_STORAGE, String(id));
-  } else {
-    // No ID — fall back to composite key
-    const key = getDedupeKey(notification, data);
-    if (key && hasStoredKey(ALERTED_KEYS_STORAGE, key)) return false;
-    if (key) storeKey(ALERTED_KEYS_STORAGE, key);
+  // Dedup: never show the same notification ID twice
+  if (id != null) {
+    if (hasList(DESKTOP_IDS_KEY, String(id))) return false;
+    addList(DESKTOP_IDS_KEY, String(id));
   }
 
-  // ── Notification options ───────────────────────────────────────────────────
-  const type = getNotificationType(notification) || normalizeType(data.type);
+  const type = getNotificationType(n) || normalizeType(data.type);
   const isRequireInteraction = REQUIRE_INTERACTION_TYPES.has(type);
-
-  // Stable tag: same notification.id → replace, not stack; avoids flood
-  const tag = id
-    ? `zenzio-notif-${id}`
-    : (getDedupeKey(notification, data) || `zenzio-notif-${Date.now()}`);
+  const tag  = id ? `zenzio-${id}` : `zenzio-${Date.now()}`;
 
   try {
-    const popup = new Notification(title || 'Zenzio Admin', {
-      body:               message || '',
-      icon:               data.icon  || appIcon,
-      badge:              data.badge || appIcon,
+    const popup = new Notification('Zenzio Admin', {
+      body:               body || 'You have a new notification',
+      icon:               appIcon,
+      badge:              appIcon,
       tag,
-      // renotify only for critical types so each real new order re-fires the banner
-      renotify:           isRequireInteraction,
-      requireInteraction: isRequireInteraction,
-      // silent:true because we play notification.mp3 ourselves; avoids double-sound
-      silent:             true,
+      renotify:           isRequireInteraction,  // re-fire banner on same tag for critical types
+      requireInteraction: isRequireInteraction,  // stays in Notification Center until dismissed
+      silent:             true,                  // own mp3 handles sound — avoids double-sound
       data,
     });
 
     popup.onclick = () => {
       try {
-        // Bring the admin browser tab to the foreground
         window.focus();
-        const route = getNotificationRoute(notification, data);
+        const route = getRoute(n, data);
         if (route && window.location.pathname + window.location.search !== route) {
           window.location.href = route;
         }
-      } finally {
-        popup.close();
-      }
+      } finally { popup.close(); }
     };
 
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }

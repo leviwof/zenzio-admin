@@ -1,9 +1,28 @@
+// =============================================================================
+// useAdminNotifications.js — Production-grade notification hook
+//
+// Architecture:
+//   • WebSocket = primary source (real-time)
+//   • Polling   = fallback (runs only when socket is disconnected)
+//   • BroadcastChannel = cross-tab list sync (no re-alerting)
+//
+// Deduplication layers:
+//   1. In-memory Set (localSeenIds)  — fastest, resets on unmount
+//   2. localStorage claimAlert      — persists across refresh (primary gate)
+//   3. seedAlertedIds on first load — pre-marks historical IDs so they never replay
+//
+// Multi-tab:
+//   • Tab receiving socket event broadcasts to others via BroadcastChannel
+//   • Other tabs update list state ONLY — no sound, no popup
+//   • tryAcquireAudioLock() prevents simultaneous sound when both tabs have socket
+// =============================================================================
+
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { getAdminSocket, onAdminReconnect, isAdminSocketConnected } from '../services/socket';
 import { getNotifications } from '../services/api';
 import {
   buildDesktopNotificationContent,
-  claimNotificationAlert,
+  claimAlert,
   getNotificationId,
   getStoredLastNotificationId,
   getStoredLastNotificationTime,
@@ -13,40 +32,44 @@ import {
   markSoundPlayed,
   rememberLastNotification,
   requestDesktopNotificationPermissionOnce,
+  seedAlertedIds,
   showDesktopNotification,
+  tryAcquireAudioLock,
+  getPermissionState,
 } from '../services/desktopNotificationService';
 
-const FALLBACK_POLL_INTERVAL  = 35000;
-const RECONNECT_FETCH_DELAY   = 2000;
+const FALLBACK_POLL_INTERVAL = 35_000;  // ms — only runs when socket is disconnected
+const RECONNECT_FETCH_DELAY  = 2_000;   // ms — wait after socket reconnect before re-fetch
 
-// ─── tiny helpers ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getNotificationTime(notification = {}) {
-  const time = Date.parse(
-    notification.createdAt || notification.created_at || notification.timestamp || '',
-  );
-  return Number.isFinite(time) ? time : 0;
+function getNotifTime(n = {}) {
+  const t = Date.parse(n.createdAt || n.created_at || n.timestamp || '');
+  return Number.isFinite(t) ? t : 0;
 }
 
-function compareNotifications(a = {}, b = {}) {
+function compareNotifs(a, b) {
   const aId = Number(getNotificationId(a));
   const bId = Number(getNotificationId(b));
   if (Number.isFinite(aId) && Number.isFinite(bId) && aId !== bId) return aId - bId;
-  return getNotificationTime(a) - getNotificationTime(b);
+  return getNotifTime(a) - getNotifTime(b);
 }
 
-function getLatestNotification(docs = []) {
-  const sorted = [...docs].sort(compareNotifications);
-  return sorted[sorted.length - 1];
+function getLatestNotif(list = []) {
+  return [...list].sort(compareNotifs).at(-1);
 }
 
-// ─── normalize raw socket/API payload ────────────────────────────────────────
-// Backend socket sends { message, type } but entity uses { body, type }.
+/**
+ * Normalize raw socket/API payload.
+ * Backend sends { message, type } but entity has { body, type }.
+ */
 function normalizeNotif(raw = {}) {
   if (!raw) return raw;
-  return raw.message !== undefined && !raw.body
-    ? { ...raw, body: raw.message, type: raw.type || raw.data?.type || 'GENERAL' }
-    : { ...raw, type: raw.type || raw.data?.type || 'GENERAL' };
+  const base = raw.message !== undefined && !raw.body
+    ? { ...raw, body: raw.message }
+    : { ...raw };
+  base.type = base.type || base.data?.type || 'GENERAL';
+  return base;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,248 +79,286 @@ export default function useAdminNotifications({
   onSoundTrigger,
   onNewNotification,
 } = {}) {
-  const [socketConnected, setSocketConnected]   = useState(false);
-  const initializedRef         = useRef(false);
-  const lastNotificationIdRef  = useRef(getStoredLastNotificationId());
-  const lastNotificationTimeRef= useRef(getStoredLastNotificationTime());
-  const localNotifsRef         = useRef([]);
-  const audioRef               = useRef(null);
-  const audioUnlockedRef       = useRef(false);
-  const bcRef                  = useRef(null);
-  const fallbackTimerRef       = useRef(null);
-  const mountedRef             = useRef(true);
-  const socketHandlersRef      = useRef(null);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [permissionState, setPermissionState] = useState(() => getPermissionState());
+
+  // Refs — survive re-renders, reset on unmount
+  const initializedRef       = useRef(false);
+  const lastIdRef            = useRef(getStoredLastNotificationId());
+  const lastTimeRef          = useRef(getStoredLastNotificationTime());
+  const localSeenIds         = useRef(new Set());  // fast in-memory dedup
+  const localNotifsRef       = useRef([]);          // list state cache
+  const audioRef             = useRef(null);
+  const audioUnlockedRef     = useRef(false);
+  const pendingSoundRef      = useRef(null);        // sound queued before audio unlocked
+  const bcRef                = useRef(null);        // BroadcastChannel
+  const fallbackTimerRef     = useRef(null);
+  const mountedRef           = useRef(true);
+  const socketHandlersRef    = useRef(null);
+
   const [notifications, setNotifications] = useState([]);
 
-  // ─── Sound ─────────────────────────────────────────────────────────────────
+  // ─── Sound ──────────────────────────────────────────────────────────────────
   /**
    * Play notification.mp3 once per unique notification ID.
-   *
-   * @param {string|number|null} notifId - notification.id for dedup.
-   *   Pass null to always play (synthetic notifications with no persistent ID).
+   * Guards:
+   *   1. hasSoundPlayed(id)      — localStorage dedup (survives refresh)
+   *   2. tryAcquireAudioLock()   — multi-tab lock (one tab plays at a time)
+   *   3. audioUnlockedRef        — browser autoplay policy gate
    */
-  const playSound = useCallback((notifId = null) => {
-    if (!audioRef.current || !audioUnlockedRef.current) return;
+  const playSound = useCallback(async (notifId = null) => {
+    if (!audioRef.current) return;
 
-    // ID-based dedup: don't replay sound for the same notification after refresh
-    if (notifId !== null && notifId !== undefined) {
+    // localStorage dedup — never replay sound for the same ID
+    if (notifId != null) {
       if (hasSoundPlayed(notifId)) return;
-      markSoundPlayed(notifId);
+    }
+
+    // Multi-tab lock — only one tab plays at a time
+    const hasLock = await tryAcquireAudioLock();
+    if (!hasLock) return;
+
+    // Mark as played BEFORE attempting play to prevent race
+    if (notifId != null) markSoundPlayed(notifId);
+
+    // Audio not yet unlocked (browser requires user gesture first)
+    if (!audioUnlockedRef.current) {
+      pendingSoundRef.current = notifId;
+      return;
     }
 
     try {
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(() => {});
+      await audioRef.current.play();
     } catch {
-      // Audio failures must never block notification state updates.
+      // Autoplay blocked — nothing we can do without user gesture
     }
   }, []);
 
-  // ─── Core notification handler ────────────────────────────────────────────
+  // ─── Core notification handler ───────────────────────────────────────────────
+  /**
+   * Process a single incoming notification.
+   *
+   * @param {object}  rawNotif
+   * @param {object}  opts
+   * @param {boolean} opts.alert      — false = list-only update (no sound/popup)
+   * @param {boolean} opts.fromBroadcast — came from another tab; never alert
+   */
   const handleNewNotification = useCallback(
-    (rawNotif, { alert = true } = {}) => {
+    (rawNotif, { alert = true, fromBroadcast = false } = {}) => {
       if (!mountedRef.current) return;
 
       const notif = normalizeNotif(rawNotif);
-      const notificationId = getNotificationId(notif);
+      const id    = getNotificationId(notif);
+      const idStr = id != null ? String(id) : null;
 
-      // In-memory dedup (prevents same notification processed twice in same session)
-      const alreadyLoaded = notificationId
-        ? localNotifsRef.current.some(
-            (item) => String(getNotificationId(item)) === String(notificationId),
-          )
-        : false;
-      if (alreadyLoaded) return;
+      // In-memory dedup (fastest gate — prevents double-processing in same session)
+      if (idStr && localSeenIds.current.has(idStr)) return;
+      if (idStr) localSeenIds.current.add(idStr);
 
+      // Update list state
       localNotifsRef.current = [notif, ...localNotifsRef.current].slice(0, 100);
       setNotifications([...localNotifsRef.current]);
 
       if (onNotification)    onNotification(notif);
       if (onNewNotification) onNewNotification(notif);
 
-      // Alert (sound + desktop popup) — only once per notification ID
-      if (alert && isImportantAdminNotification(notif) && claimNotificationAlert(notif)) {
-        const { title, message } = buildDesktopNotificationContent(notif);
+      // Alert path: sound + OS desktop notification
+      // Skipped if: alert=false, fromBroadcast, not important, or already claimed
+      if (alert && !fromBroadcast && isImportantAdminNotification(notif) && claimAlert(notif)) {
+        const { body } = buildDesktopNotificationContent(notif);
 
-        // Sound — deduped by notification ID
-        playSound(notificationId);
+        // Sound — deduped by ID + multi-tab lock
+        playSound(idStr);
         if (onSoundTrigger) onSoundTrigger(notif);
 
-        // Native OS desktop notification (Windows Notification Center)
-        showDesktopNotification(title, message, {
+        // OS notification (Windows Notification Center)
+        showDesktopNotification(body, {
           notification:   notif,
-          notificationId,
+          notificationId: id,
           type:           notif.type,
         });
+
+        // Update permission state in case it changed
+        setPermissionState(getPermissionState());
       }
 
       rememberLastNotification(notif);
-      lastNotificationIdRef.current  = getStoredLastNotificationId();
-      lastNotificationTimeRef.current= getStoredLastNotificationTime();
+      lastIdRef.current   = getStoredLastNotificationId();
+      lastTimeRef.current = getStoredLastNotificationTime();
     },
     [onNotification, onSoundTrigger, onNewNotification, playSound],
   );
 
-  // ─── Polling / missed-notification fetch ──────────────────────────────────
-  const fetchMissedNotifications = useCallback(async () => {
+  // ─── Fetch / polling ─────────────────────────────────────────────────────────
+  const fetchAndProcess = useCallback(async () => {
     try {
       const response = await getNotifications();
       let docs = [];
-      if (Array.isArray(response.data?.data))          docs = response.data.data;
+      if      (Array.isArray(response.data?.data))          docs = response.data.data;
       else if (Array.isArray(response.data?.notifications)) docs = response.data.notifications;
-      else if (Array.isArray(response.data))           docs = response.data;
+      else if (Array.isArray(response.data))                docs = response.data;
 
-      const docsList = Array.isArray(docs) ? docs : [];
+      if (!Array.isArray(docs)) docs = [];
 
       if (!initializedRef.current) {
-        // First load: seed local list, record last-seen notification, don't alert
-        localNotifsRef.current = docsList.slice(0, 100);
+        // ── FIRST LOAD ──────────────────────────────────────────────────────
+        // 1. Seed in-memory dedup so socket catchup events don't re-alert
+        // 2. Pre-mark ALL fetched IDs in localStorage so they never replay
+        //    even on cold start (first-ever login)
+        docs.forEach(n => {
+          const id = getNotificationId(n);
+          if (id != null) localSeenIds.current.add(String(id));
+        });
+
+        seedAlertedIds(docs); // Critical: prevents historical replay
+
+        localNotifsRef.current = docs.slice(0, 100);
         setNotifications([...localNotifsRef.current]);
-        const latest = getLatestNotification(docsList);
+
+        const latest = getLatestNotif(docs);
         if (latest) {
           rememberLastNotification(latest);
-          lastNotificationIdRef.current  = getStoredLastNotificationId();
-          lastNotificationTimeRef.current= getStoredLastNotificationTime();
+          lastIdRef.current   = getStoredLastNotificationId();
+          lastTimeRef.current = getStoredLastNotificationTime();
         }
+
         initializedRef.current = true;
+
+        // Check permission state after first load
+        setPermissionState(getPermissionState());
         return;
       }
 
-      // Subsequent polls: only surface notifications newer than last-seen
-      const existingIds = new Set(
-        localNotifsRef.current.map((n) => String(getNotificationId(n))),
-      );
-      const missed = docsList.filter((n) => {
+      // ── SUBSEQUENT POLLS ────────────────────────────────────────────────
+      // Only process notifications genuinely newer than last-seen
+      const missed = docs.filter(n => {
         const id = getNotificationId(n);
-        if (id === null || id === undefined || existingIds.has(String(id))) return false;
-        return isNotificationNewer(n, lastNotificationIdRef.current, lastNotificationTimeRef.current);
+        if (id == null) return false;
+        if (localSeenIds.current.has(String(id))) return false;
+        return isNotificationNewer(n, lastIdRef.current, lastTimeRef.current);
       });
 
       if (missed.length > 0) {
-        [...missed].sort(compareNotifications).forEach((n) =>
-          handleNewNotification(n, { alert: true }),
-        );
+        [...missed]
+          .sort(compareNotifs)
+          .forEach(n => handleNewNotification(n, { alert: true }));
       }
     } catch {
-      // Polling errors are non-fatal; next interval or socket event will recover.
+      // Polling errors are non-fatal — next interval or socket event recovers
     }
   }, [handleNewNotification]);
 
-  // Only poll when socket is disconnected (WebSocket = primary, polling = fallback)
-  const fetchNotificationsFallback = useCallback(async () => {
+  // Fallback polling — only when socket is disconnected
+  const pollFallback = useCallback(async () => {
     if (isAdminSocketConnected()) return;
-    await fetchMissedNotifications();
-  }, [fetchMissedNotifications]);
+    await fetchAndProcess();
+  }, [fetchAndProcess]);
 
-  // ─── Setup: audio, BroadcastChannel, permission, initial fetch ────────────
+  // ─── Setup: audio, BroadcastChannel, permission, initial fetch ─────────────
   useEffect(() => {
     mountedRef.current = true;
 
-    // ── Audio setup ──────────────────────────────────────────────────────────
+    // ── Audio ──────────────────────────────────────────────────────────────
     const soundPath = `${import.meta.env.BASE_URL}notification.mp3`;
     audioRef.current = new Audio(soundPath);
     audioRef.current.preload = 'auto';
 
-    const unlockAudioAndPermission = () => {
-      // Request notification permission inside user-gesture context
-      requestDesktopNotificationPermissionOnce({ fromUserGesture: true }).catch(() => {});
+    const unlockAudio = async () => {
+      // Req #1: request permission inside user-gesture context
+      requestDesktopNotificationPermissionOnce({ fromUserGesture: true })
+        .then(() => setPermissionState(getPermissionState()))
+        .catch(() => {});
 
-      // Unlock audio autoplay (browser policy requires a gesture)
       if (!audioUnlockedRef.current) {
-        audioRef.current
-          .play()
-          .then(() => {
-            audioRef.current.pause();
-            audioRef.current.currentTime = 0;
-            audioUnlockedRef.current = true;
-          })
-          .catch(() => {});
+        try {
+          await audioRef.current.play();
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+          audioUnlockedRef.current = true;
+
+          // Play any sound that was queued before audio was unlocked
+          if (pendingSoundRef.current !== undefined && pendingSoundRef.current !== null) {
+            const queuedId = pendingSoundRef.current;
+            pendingSoundRef.current = null;
+            // Check the lock again before playing the queued sound
+            const hasLock = await tryAcquireAudioLock();
+            if (hasLock && !hasSoundPlayed(queuedId)) {
+              audioRef.current.currentTime = 0;
+              audioRef.current.play().catch(() => {});
+            }
+          }
+        } catch { /* autoplay blocked — need gesture */ }
       }
     };
 
-    document.addEventListener('click',      unlockAudioAndPermission);
-    document.addEventListener('touchstart', unlockAudioAndPermission);
+    document.addEventListener('click',      unlockAudio, { passive: true });
+    document.addEventListener('touchstart', unlockAudio, { passive: true });
 
-    // Passive request (will be a no-op if permission already decided)
-    requestDesktopNotificationPermissionOnce().catch(() => {});
+    // Passive permission check (no-op if already decided)
+    requestDesktopNotificationPermissionOnce()
+      .then(() => setPermissionState(getPermissionState()))
+      .catch(() => {});
 
-    // ── BroadcastChannel — cross-tab sync ────────────────────────────────────
-    // When multiple admin tabs are open, only the receiving tab fires the
-    // socket listener; BroadcastChannel propagates to other tabs so they also
-    // update their notification list (but don't double-play sound/show popups).
+    // ── BroadcastChannel — cross-tab list sync ─────────────────────────────
     try {
       bcRef.current = new BroadcastChannel('admin_notifications');
       bcRef.current.onmessage = (event) => {
         if (event.data?.type !== 'new_notif') return;
-        const rawNotif = event.data.notification;
-        if (!rawNotif) return;
+        const raw = event.data.notification;
+        if (!raw || !mountedRef.current) return;
 
-        const notif = normalizeNotif(rawNotif);
-        const notificationId = getNotificationId(notif);
-
-        const alreadyLoaded = notificationId
-          ? localNotifsRef.current.some(
-              (item) => String(getNotificationId(item)) === String(notificationId),
-            )
-          : false;
-        if (alreadyLoaded) return;
-
-        // Cross-tab: update list state only — sound/desktop already fired in
-        // the original tab that received the socket event.
-        localNotifsRef.current = [notif, ...localNotifsRef.current].slice(0, 100);
-        setNotifications([...localNotifsRef.current]);
-        if (onNewNotification) onNewNotification(notif);
-        rememberLastNotification(notif);
-        lastNotificationIdRef.current  = getStoredLastNotificationId();
-        lastNotificationTimeRef.current= getStoredLastNotificationTime();
+        // fromBroadcast=true: update list ONLY — no sound, no popup
+        // The tab that broadcast this already handled alert
+        handleNewNotification(raw, { alert: true, fromBroadcast: true });
       };
     } catch {
-      // BroadcastChannel optional; unavailable in some browsers / private mode.
+      // BroadcastChannel unavailable in some contexts (private mode, older browsers)
     }
 
-    // ── Initial data fetch ───────────────────────────────────────────────────
-    fetchMissedNotifications();
+    // ── Initial fetch ──────────────────────────────────────────────────────
+    fetchAndProcess();
 
-    // Re-fetch after socket reconnects to catch any missed events
+    // Re-fetch after socket reconnect to catch events missed during disconnect
     const unsubReconnect = onAdminReconnect(() => {
-      setTimeout(() => fetchMissedNotifications(), RECONNECT_FETCH_DELAY);
+      setTimeout(() => fetchAndProcess(), RECONNECT_FETCH_DELAY);
     });
 
     return () => {
       mountedRef.current = false;
-      document.removeEventListener('click',      unlockAudioAndPermission);
-      document.removeEventListener('touchstart', unlockAudioAndPermission);
+      document.removeEventListener('click',      unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
       unsubReconnect();
-      if (bcRef.current) bcRef.current.close();
+      if (bcRef.current) { bcRef.current.close(); bcRef.current = null; }
       if (fallbackTimerRef.current) clearInterval(fallbackTimerRef.current);
     };
-  }, [fetchMissedNotifications, onNewNotification]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty — runs once on mount
 
   // ─── Socket connection ────────────────────────────────────────────────────
   const connectSocket = useCallback(() => {
     const socket = getAdminSocket();
     if (!socket) return;
 
-    // Remove any previously registered listeners to prevent duplicate handlers
+    // Remove old handlers to prevent duplicates on re-connect
     if (socketHandlersRef.current) {
       const { onConnect, onDisconnect, onNewNotif } = socketHandlersRef.current;
-      socket.off('connect',           onConnect);
-      socket.off('disconnect',        onDisconnect);
-      socket.off('new_notification',  onNewNotif);
+      socket.off('connect',          onConnect);
+      socket.off('disconnect',       onDisconnect);
+      socket.off('new_notification', onNewNotif);
     }
 
     const onConnect    = () => { if (mountedRef.current) setSocketConnected(true); };
     const onDisconnect = () => { if (mountedRef.current) setSocketConnected(false); };
-    const onNewNotif   = (rawNotif) => {
-      handleNewNotification(rawNotif);
-      // Broadcast to other admin tabs
+
+    const onNewNotif = (rawNotif) => {
+      // This tab received the socket event — it handles alert
+      handleNewNotification(rawNotif, { alert: true });
+
+      // Broadcast to other admin tabs so they sync their list
       try {
-        if (bcRef.current) {
-          bcRef.current.postMessage({ type: 'new_notif', notification: rawNotif });
-        }
-      } catch {
-        // Cross-tab sync is best-effort.
-      }
+        bcRef.current?.postMessage({ type: 'new_notif', notification: rawNotif });
+      } catch { /* cross-tab sync is best-effort */ }
     };
 
     socketHandlersRef.current = { onConnect, onDisconnect, onNewNotif };
@@ -308,14 +369,13 @@ export default function useAdminNotifications({
     socket.on('new_notification', onNewNotif);
   }, [handleNewNotification]);
 
+  // Register socket + start fallback polling
   useEffect(() => {
     connectSocket();
-    const socket = getAdminSocket();
-
-    // Fallback polling — only runs when socket is disconnected
-    fallbackTimerRef.current = setInterval(fetchNotificationsFallback, FALLBACK_POLL_INTERVAL);
+    fallbackTimerRef.current = setInterval(pollFallback, FALLBACK_POLL_INTERVAL);
 
     return () => {
+      const socket = getAdminSocket();
       if (socket && socketHandlersRef.current) {
         const { onConnect, onDisconnect, onNewNotif } = socketHandlersRef.current;
         socket.off('connect',          onConnect);
@@ -325,7 +385,7 @@ export default function useAdminNotifications({
       }
       if (fallbackTimerRef.current) clearInterval(fallbackTimerRef.current);
     };
-  }, [connectSocket, fetchNotificationsFallback]);
+  }, [connectSocket, pollFallback]);
 
-  return { notifications, socketConnected, playSound };
+  return { notifications, socketConnected, playSound, permissionState };
 }
