@@ -1268,7 +1268,7 @@ const MenuManagement = () => {
                         <td className="px-4 py-3">
                           <div className="text-sm font-semibold text-gray-900">
                             <span className="text-xs text-gray-500">₹</span>
-                            {menu.finalPrice || menu.price}
+                            {menu.price}
                           </div>
                           {menu.discount > 0 && (
                             <div className="text-[10px] text-green-600 font-medium">{menu.discount}% off</div>

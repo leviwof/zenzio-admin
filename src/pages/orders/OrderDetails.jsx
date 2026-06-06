@@ -184,15 +184,6 @@ const getDeliveryTipAmount = (order, priceSummary = {}) =>
       0,
   ) || 0;
 
-const getPlatformFeeAmount = (priceSummary = {}) =>
-  Number(priceSummary.platformFee ?? priceSummary.platform_fee ?? priceSummary.adminCommission ?? 0) || 0;
-
-const getBaseSubtotalAmount = (priceSummary = {}) => {
-  const explicitBase = priceSummary.baseSubtotal ?? priceSummary.base_subtotal;
-  if (explicitBase !== undefined && explicitBase !== null) return Number(explicitBase) || 0;
-  return null;
-};
-
 const getItemDisplayName = (item) =>
   item?.name || item?.menu_name || item?.menuName || item?.menu_uid || 'Item';
 
@@ -472,18 +463,8 @@ const OrderDetails = () => {
     const doc = receiptWindow.document;
     const ps = order.priceSummary || {};
     const deliveryTip = getDeliveryTipAmount(order, ps);
-    const platformFee = getPlatformFeeAmount(ps);
-    const baseSubtotal = getBaseSubtotalAmount(ps);
     const appliedDiscount = getAppliedDiscount(order);
     const freeItems = getFreeOfferItems(order);
-    const billingBreakdownRows = [
-      baseSubtotal !== null && platformFee > 0
-        ? `<tr><td>Base Price</td><td class="right">${formatCurrency(baseSubtotal)}</td></tr>`
-        : '',
-      baseSubtotal !== null && platformFee > 0
-        ? `<tr><td>Platform Fee</td><td class="right">${formatCurrency(platformFee)}</td></tr>`
-        : '',
-    ].filter(Boolean).join('');
     const itemsHtml = (order.items || []).map(item => `
       <tr>
         <td>${getItemDisplayName(item)}${item.variant ? ` (${item.variant})` : ''}</td>
@@ -530,7 +511,6 @@ const OrderDetails = () => {
         ${freeItems.length > 0 ? `<p style="font-size:11px;color:#059669;"><strong>Offer:</strong> ${appliedDiscount?.title || appliedDiscount?.code || 'Free item offer applied'}</p>` : ''}
         <div class="line"></div>
         <table>
-          ${billingBreakdownRows}
           ${ps.subtotal ? `<tr><td>Subtotal</td><td class="right">₹${ps.subtotal}</td></tr>` : ''}
           ${ps.tax ? `<tr><td>Tax</td><td class="right">₹${ps.tax}</td></tr>` : ''}
           ${ps.deliveryFee ? `<tr><td>Delivery</td><td class="right">₹${ps.deliveryFee}</td></tr>` : ''}
@@ -552,8 +532,6 @@ const OrderDetails = () => {
     if (!order) return;
     const ps = order.priceSummary || {};
     const deliveryTip = getDeliveryTipAmount(order, ps);
-    const platformFee = getPlatformFeeAmount(ps);
-    const baseSubtotal = getBaseSubtotalAmount(ps);
     const appliedDiscount = getAppliedDiscount(order);
     const freeItems = getFreeOfferItems(order);
     const items = (order.items || []).map(item =>
@@ -581,8 +559,6 @@ const OrderDetails = () => {
       freeItems.length > 0 ? `Offer: ${appliedDiscount?.title || appliedDiscount?.code || 'Free item offer applied'}` : '',
       `================================`,
       `BILLING`,
-      baseSubtotal !== null && platformFee > 0 ? `Base Price: ${formatCurrency(baseSubtotal)}` : '',
-      baseSubtotal !== null && platformFee > 0 ? `Platform Fee: ${formatCurrency(platformFee)}` : '',
       `Subtotal: ₹${ps.subtotal || 0}`,
       `Tax: ₹${ps.tax || 0}`,
       `Delivery Fee: ₹${ps.deliveryFee || 0}`,
@@ -692,8 +668,6 @@ const OrderDetails = () => {
   const appliedDiscount = getAppliedDiscount(order);
   const freeItems = getFreeOfferItems(order);
   const deliveryTip = getDeliveryTipAmount(order, ps);
-  const platformFee = getPlatformFeeAmount(ps);
-  const baseSubtotal = getBaseSubtotalAmount(ps);
   const hasJourneyPricing = Boolean(order.delivery_pricing_version);
   const restaurantToCustomerKm = order.restaurant_to_customer_km ?? order.restaurantToCustomerDistance ?? null;
   const totalJourneyKm = order.total_journey_km ?? null;
@@ -1174,18 +1148,6 @@ const OrderDetails = () => {
               {/* Pricing Breakdown */}
               {ps.subtotal !== undefined && (
                 <div className="mt-4 pt-4 border-t border-gray-100 space-y-1.5 text-sm">
-                  {baseSubtotal !== null && platformFee > 0 && (
-                    <>
-                      <div className="flex justify-between text-gray-600">
-                        <span>Base Price</span>
-                        <span>{formatCurrency(baseSubtotal)}</span>
-                      </div>
-                      <div className="flex justify-between text-gray-600">
-                        <span>Platform Fee</span>
-                        <span>{formatCurrency(platformFee)}</span>
-                      </div>
-                    </>
-                  )}
                   <div className="flex justify-between text-gray-600">
                     <span>Subtotal</span>
                     <span>₹{ps.subtotal || 0}</span>
