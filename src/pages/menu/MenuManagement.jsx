@@ -264,6 +264,7 @@ const MenuManagement = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [availFilter, setAvailFilter] = useState('all');
   const [bestsellerFilter, setBestsellerFilter] = useState('all');
+  const [mealTypeFilter, setMealTypeFilter] = useState('all');
   const [priceMinFilter, setPriceMinFilter] = useState('');
   const [priceMaxFilter, setPriceMaxFilter] = useState('');
   const [ratingFilter, setRatingFilter] = useState('all');
@@ -276,7 +277,7 @@ const MenuManagement = () => {
   const hasActiveFilters = debouncedSearch ||
     restaurantFilter !== 'all' || categoryFilter !== 'all' || cuisineFilter !== 'all' ||
     foodTypeFilter !== 'all' || statusFilter !== 'all' || availFilter !== 'all' ||
-    bestsellerFilter !== 'all' || priceMinFilter || priceMaxFilter ||
+    bestsellerFilter !== 'all' || mealTypeFilter !== 'all' || priceMinFilter || priceMaxFilter ||
     ratingFilter !== 'all' || fromDateFilter || toDateFilter;
 
   useEffect(() => {
@@ -358,6 +359,7 @@ const MenuManagement = () => {
         ...(statusFilter !== 'all' && { status: statusFilter }),
         ...(availFilter !== 'all' && { availability: availFilter }),
         ...(bestsellerFilter !== 'all' && { bestseller: bestsellerFilter === 'true' ? 'true' : 'false' }),
+        ...(mealTypeFilter !== 'all' && { meal_type: mealTypeFilter }),
         ...(priceMinFilter && { minPrice: priceMinFilter }),
         ...(priceMaxFilter && { maxPrice: priceMaxFilter }),
         ...(ratingFilter !== 'all' && { rating: ratingFilter }),
@@ -406,7 +408,7 @@ const MenuManagement = () => {
     }
   }, [currentPage, itemsPerPage, debouncedSearch, sortBy, sortOrder,
       restaurantFilter, categoryFilter, cuisineFilter, foodTypeFilter,
-      statusFilter, availFilter, bestsellerFilter, priceMinFilter, priceMaxFilter,
+      statusFilter, availFilter, bestsellerFilter, mealTypeFilter, priceMinFilter, priceMaxFilter,
       ratingFilter, fromDateFilter, toDateFilter]);
 
   useEffect(() => {
@@ -630,6 +632,7 @@ const MenuManagement = () => {
         ...(statusFilter !== 'all' && { status: statusFilter }),
         ...(availFilter !== 'all' && { availability: availFilter }),
         ...(bestsellerFilter !== 'all' && { bestseller: bestsellerFilter }),
+        ...(mealTypeFilter !== 'all' && { meal_type: mealTypeFilter }),
         ...(priceMinFilter && { minPrice: priceMinFilter }),
         ...(priceMaxFilter && { maxPrice: priceMaxFilter }),
         ...(ratingFilter !== 'all' && { rating: ratingFilter }),
@@ -681,6 +684,7 @@ const MenuManagement = () => {
     setStatusFilter('all');
     setAvailFilter('all');
     setBestsellerFilter('all');
+    setMealTypeFilter('all');
     setPriceMinFilter('');
     setPriceMaxFilter('');
     setRatingFilter('all');
@@ -1060,6 +1064,21 @@ const MenuManagement = () => {
               ]}
               onChange={(v) => { setBestsellerFilter(v); setCurrentPage(1); }}
               onClear={() => setBestsellerFilter('all')}
+            />
+
+            <FilterDropdown
+              label="Meal Slot"
+              icon={Clock}
+              value={mealTypeFilter}
+              options={[
+                { label: 'All Slots', value: 'all' },
+                { label: 'Breakfast', value: 'breakfast' },
+                { label: 'Lunch', value: 'lunch' },
+                { label: 'Snacks', value: 'snacks' },
+                { label: 'Dinner', value: 'dinner' },
+              ]}
+              onChange={(v) => { setMealTypeFilter(v); setCurrentPage(1); }}
+              onClear={() => setMealTypeFilter('all')}
             />
 
             <div className="flex items-center gap-1">
