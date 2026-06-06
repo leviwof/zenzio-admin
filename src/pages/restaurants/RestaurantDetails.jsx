@@ -26,7 +26,12 @@ import Toggle from '../../components/ui/Toggle'
 import TimePicker from '../../components/ui/TimePicker'
 import Button from '../../components/ui/Button'
 import { SkeletonCard } from '../../components/ui/Skeleton'
-import { isRestaurantOnline, normalizeRestaurantAvailability } from '../../utils/restaurantAvailability'
+import {
+  isRestaurantCurrentlyServiceable,
+  isRestaurantOnline,
+  isRestaurantOutsideOperationalHours,
+  normalizeRestaurantAvailability,
+} from '../../utils/restaurantAvailability'
 
 const MEALS = [
   { id: 'breakfast', label: 'Breakfast', icon: Coffee, color: 'amber', time: { start: '07:00', end: '11:00' } },
@@ -45,8 +50,9 @@ const mealColors = {
 const getStatusDisplay = (restaurant) => {
   if (!restaurant) return { label: 'Unknown', className: 'bg-gray-100 text-gray-800', dot: 'bg-gray-400' }
   if (restaurant.isActive === false) return { label: 'Blocked', className: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500' }
-  if (!isRestaurantOnline(restaurant)) return { label: 'Closed', className: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500' }
-  return { label: 'Open', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200', dot: 'bg-emerald-500' }
+  if (isRestaurantOutsideOperationalHours(restaurant)) return { label: 'Not serving right now', className: 'bg-amber-50 text-amber-700 border border-amber-200', dot: 'bg-amber-500' }
+  if (!isRestaurantCurrentlyServiceable(restaurant)) return { label: 'Closed', className: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500' }
+  return { label: 'Serving now', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200', dot: 'bg-emerald-500' }
 }
 
 const getLiveStatus = (mealTime) => {
@@ -584,9 +590,13 @@ const RestaurantDetails = () => {
                       <span className="font-medium text-gray-700">{activeMeals} Meals</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs">
-                      {isRestaurantOnline(restaurant) ? (
+                      {isRestaurantCurrentlyServiceable(restaurant) ? (
                         <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
-                          <Zap size={12} className="fill-emerald-500 text-emerald-500" /> Online
+                          <Zap size={12} className="fill-emerald-500 text-emerald-500" /> Serving now
+                        </span>
+                      ) : isRestaurantOutsideOperationalHours(restaurant) ? (
+                        <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+                          <EyeOff size={12} /> Not serving right now
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-gray-400 font-medium">
