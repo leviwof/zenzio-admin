@@ -14,7 +14,7 @@ import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
 import { isAdminSocketConnected } from '../../services/socket';
 import { claimNotificationAlert } from '../../services/desktopNotificationService';
 
-const notificationSoundPath = `${import.meta.env.BASE_URL}notification.mp3`;
+const notificationSoundPath = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
 
 const isToday = (dateStr) => {
   if (!dateStr) return false;
@@ -215,6 +215,7 @@ const Header = ({ onLogout }) => {
   const isInitialLoad = useRef(true);
   const audioRef = useRef(null);
   const audioUnlocked = useRef(false);
+  const pendingSoundRef = useRef(false);
   const { unreadOrderCount, syntheticNotifs, markSyntheticNotifRead, allMergedNotifications: contextNotifs, socketConnected } = useOrderNotifications();
   const [badgeAnim, setBadgeAnim] = useState(false);
   const dropdownRef = useRef(null);
@@ -271,9 +272,27 @@ const Header = ({ onLogout }) => {
   useEffect(() => {
     audioRef.current = new Audio(notificationSoundPath);
     audioRef.current.preload = 'auto';
-    const unlock = () => {
-      if (!audioUnlocked.current) {
-        audioRef.current.play().then(() => { audioRef.current.pause(); audioRef.current.currentTime = 0; audioUnlocked.current = true; }).catch(() => {});
+    const unlock = async () => {
+      if (audioUnlocked.current || !audioRef.current) return;
+      const previousVolume = audioRef.current.volume;
+      try {
+        audioRef.current.volume = 0;
+        await audioRef.current.play();
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioUnlocked.current = true;
+        document.removeEventListener('click', unlock);
+        document.removeEventListener('touchstart', unlock);
+
+        if (pendingSoundRef.current) {
+          pendingSoundRef.current = false;
+          audioRef.current.play().catch(() => {
+            pendingSoundRef.current = true;
+          });
+        }
+      } catch { /* still blocked */ }
+      finally {
+        audioRef.current.volume = previousVolume;
       }
     };
     document.addEventListener('click', unlock);
@@ -300,7 +319,11 @@ const Header = ({ onLogout }) => {
   }, []);
 
   const playNotificationSound = useCallback(() => {
-    if (audioRef.current && audioUnlocked.current) { audioRef.current.currentTime = 0; audioRef.current.play().catch(() => {}); }
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = 0;
+    audioRef.current.play()
+      .then(() => { audioUnlocked.current = true; pendingSoundRef.current = false; })
+      .catch(() => { pendingSoundRef.current = true; });
   }, []);
 
   useEffect(() => {

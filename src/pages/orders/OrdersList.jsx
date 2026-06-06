@@ -23,7 +23,7 @@ import {
   showDesktopNotification as showNativeDesktopNotification,
 } from "../../services/desktopNotificationService";
 
-const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
+const notificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
 const loudNotificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
 const ORDER_POLL_INTERVAL = 15000;
 const TOAST_DURATION = 9000;
@@ -428,6 +428,7 @@ const OrdersList = () => {
   const audioRef = useRef(null);
   const loudAudioRef = useRef(null);
   const audioUnlocked = useRef(false);
+  const pendingSoundRef = useRef(false);
   const loudSoundTimerRef = useRef(null);
   const loudSoundPlayedRef = useRef(false);
   const pollOrdersRef = useRef(null);
@@ -481,15 +482,39 @@ const OrdersList = () => {
     audioRef.current.preload = 'auto';
     loudAudioRef.current = new Audio(loudNotificationSound);
     loudAudioRef.current.preload = 'auto';
-    const unlock = () => {
-      if (!audioUnlocked.current) {
-        Promise.all([
-          audioRef.current.play().then(() => { audioRef.current.pause(); audioRef.current.currentTime = 0; }).catch(() => {}),
-          loudAudioRef.current.play().then(() => { loudAudioRef.current.pause(); loudAudioRef.current.currentTime = 0; }).catch(() => {})
-        ]).then(() => {
-          audioUnlocked.current = true;
-          document.removeEventListener('click', unlock);
-          document.removeEventListener('touchstart', unlock);
+    const primeAudio = async (audio) => {
+      if (!audio) return false;
+      const previousVolume = audio.volume;
+      try {
+        audio.volume = 0;
+        await audio.play();
+        audio.pause();
+        audio.currentTime = 0;
+        return true;
+      } catch {
+        return false;
+      } finally {
+        audio.volume = previousVolume;
+      }
+    };
+
+    const unlock = async () => {
+      if (audioUnlocked.current) return;
+      const unlocked = await Promise.all([
+        primeAudio(audioRef.current),
+        primeAudio(loudAudioRef.current),
+      ]);
+      if (!unlocked.some(Boolean)) return;
+
+      audioUnlocked.current = true;
+      document.removeEventListener('click', unlock);
+      document.removeEventListener('touchstart', unlock);
+
+      if (pendingSoundRef.current && audioRef.current) {
+        pendingSoundRef.current = false;
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(() => {
+          pendingSoundRef.current = true;
         });
       }
     };
@@ -509,15 +534,26 @@ const OrdersList = () => {
   }, []);
 
   const playNotificationSound = useCallback(() => {
-    if (audioRef.current && audioUnlocked.current) {
-      try { audioRef.current.currentTime = 0; audioRef.current.play().catch(() => {}); } catch { /* ignore */ }
+    if (!audioRef.current) return;
+    try {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play()
+        .then(() => { audioUnlocked.current = true; pendingSoundRef.current = false; })
+        .catch(() => { pendingSoundRef.current = true; });
+    } catch {
+      pendingSoundRef.current = true;
     }
   }, []);
 
   const playLoudNotificationSound = useCallback(() => {
-    if (loudAudioRef.current && audioUnlocked.current && !loudSoundPlayedRef.current) {
-      try { loudAudioRef.current.currentTime = 0; loudAudioRef.current.play().catch(() => {}); loudSoundPlayedRef.current = true; } catch { /* ignore */ }
-    }
+    if (!loudAudioRef.current || loudSoundPlayedRef.current) return;
+    try {
+      loudAudioRef.current.currentTime = 0;
+      loudAudioRef.current.play()
+        .then(() => { audioUnlocked.current = true; })
+        .catch(() => {});
+      loudSoundPlayedRef.current = true;
+    } catch { /* ignore */ }
   }, []);
 
   const cancelLoudSoundTimer = useCallback(() => {
@@ -541,7 +577,7 @@ const OrdersList = () => {
       ? `${first.customer_name || "Guest"} - ${first.restaurant_name || "Unknown"} - ₹${first.price}`
       : `${first.customer_name || "Guest"} and ${count - 1} other${count - 1 > 1 ? 's' : ''}`;
     const firstOrderId = first.orderId || first.id;
-    showNativeDesktopNotification(title, body, {
+    showNativeDesktopNotification(body, {
       notification: {
         id: `order-${firstOrderId}`,
         type: 'NEW_ORDER',
@@ -555,6 +591,7 @@ const OrdersList = () => {
         : `NEW_ORDER:orders:${orders.map(o => o.orderId || o.id).join(',')}`,
       tag: count === 1 ? `new-order-${firstOrderId}` : 'new-orders',
       url: count === 1 && firstOrderId ? `/orders/${firstOrderId}` : '/orders',
+      silent: audioUnlocked.current,
     });
   }, []);
 
