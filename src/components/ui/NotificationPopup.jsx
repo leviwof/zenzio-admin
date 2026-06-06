@@ -7,7 +7,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 const AUTO_DISMISS_MS = 6000;
-const MAX_VISIBLE = 4;
+const MAX_VISIBLE = 1; // show only the latest notification popup at a time
 
 function getPopupMeta(type = '', title = '', body = '') {
   const t = type.toUpperCase();

@@ -25,11 +25,11 @@ export const OrderNotificationProvider = ({ children }) => {
       if (ORDER_BADGE_TYPES.has(notif.type)) {
         setUnreadOrderCount(prev => prev + 1);
       }
-      // Push to in-app popup queue
+      // Replace popup queue with only the latest notification (one popup at a time)
       setPopupQueue(prev => {
         const exists = prev.some(n => n.id === notif.id);
         if (exists) return prev;
-        return [notif, ...prev].slice(0, 8);
+        return [notif]; // replace — never stack
       });
     },
   });
@@ -73,11 +73,11 @@ export const OrderNotificationProvider = ({ children }) => {
       _source: "synthetic",
     };
     setSyntheticNotifs(prev => [notif, ...prev].slice(0, 50));
-    // Also push to in-app popup
+    // Replace popup queue with only the latest notification (one popup at a time)
     setPopupQueue(prev => {
       const exists = prev.some(n => n.id === notif.id);
       if (exists) return prev;
-      return [notif, ...prev].slice(0, 8);
+      return [notif];
     });
   }, []);
 
