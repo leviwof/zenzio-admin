@@ -122,14 +122,14 @@ export default function useAdminNotifications({
    *   3. autoplay policy        — if blocked, queues for next user gesture
    */
   const playSound = useCallback(async (notifId = null) => {
-    if (!audioRef.current) return;
+    if (!audioRef.current) return false;
 
     // localStorage dedup — never replay sound for the same ID
-    if (notifId != null && hasSoundPlayed(notifId)) return;
+    if (notifId != null && hasSoundPlayed(notifId)) return true;
 
     // Multi-tab lock — only one tab plays at a time
     const hasLock = await tryAcquireAudioLock();
-    if (!hasLock) return;
+    if (!hasLock) return true;
 
     try {
       audioRef.current.currentTime = 0;
@@ -138,9 +138,11 @@ export default function useAdminNotifications({
       // so unlockAudio can retry it on the next user gesture
       if (notifId != null) markSoundPlayed(notifId);
       audioUnlockedRef.current = true;
+      return true;
     } catch {
       // Autoplay blocked — queue for next user gesture (NOT marked as played)
       pendingSoundRef.current = notifId;
+      return false;
     }
   }, []); // stable — no external deps
 
@@ -179,15 +181,15 @@ export default function useAdminNotifications({
         const { body } = buildDesktopNotificationContent(notif);
 
         // Sound — deduped by ID + multi-tab lock
-        playSound(idStr);
-        if (onSoundTriggerRef.current) onSoundTriggerRef.current(notif);
-
-        // OS notification — fires even when browser is minimized
-        showDesktopNotification(body, {
-          notification:   notif,
-          notificationId: id,
-          type:           notif.type,
+        playSound(idStr).then((didPlaySound) => {
+          showDesktopNotification(body, {
+            notification:   notif,
+            notificationId: id,
+            type:           notif.type,
+            silent:         didPlaySound,
+          });
         });
+        if (onSoundTriggerRef.current) onSoundTriggerRef.current(notif);
 
         setPermissionState(getPermissionState());
       }
@@ -268,7 +270,7 @@ export default function useAdminNotifications({
     mountedRef.current = true;
 
     // ── Audio ──────────────────────────────────────────────────────────────
-    const soundPath = `${import.meta.env.BASE_URL}notification.mp3`;
+    const soundPath = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
     audioRef.current = new Audio(soundPath);
     audioRef.current.preload = 'auto';
 

@@ -407,7 +407,7 @@ export function showDesktopNotification(body, data = {}) {
       tag,
       renotify:           isRequireInteraction,  // re-fire banner on same tag for critical types
       requireInteraction: isRequireInteraction,  // stays in Notification Center until dismissed
-      silent:             true,                  // own mp3 handles sound — avoids double-sound
+      silent:             data.silent === true,
       data,
     });
 
