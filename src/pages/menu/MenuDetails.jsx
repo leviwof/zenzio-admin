@@ -64,7 +64,12 @@ const MenuDetails = () => {
       console.log('✅ Menu data extracted:', menuData);
       
       
-      setMenu(mergeMenuAvailability(menuData, availabilityResponse?.data));
+      const normalizedMenu = mergeMenuAvailability(menuData, availabilityResponse?.data);
+      setMenu({
+        ...normalizedMenu,
+        price: normalizedMenu.basePrice ?? normalizedMenu.price,
+        finalPrice: normalizedMenu.finalPrice ?? normalizedMenu.price,
+      });
     } catch (err) {
       console.error('❌ Error fetching menu:', err);
       setError(err.response?.data?.message || err.message || 'Failed to fetch menu details');
@@ -191,6 +196,9 @@ const MenuDetails = () => {
   const toggleLabel = restaurantAdmin
     ? (manualAvailabilityActive ? 'Mark Unavailable' : 'Mark Available')
     : (adminStatusActive ? 'Disable' : 'Enable');
+  const basePrice = Number(menu.basePrice ?? menu.price ?? 0);
+  const finalPrice = Number(menu.finalPrice ?? menu.price ?? 0);
+  const discount = Number(menu.discount || 0);
 
   return (
     <div className="p-6">
@@ -326,19 +334,19 @@ const MenuDetails = () => {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Price</label>
-              <p className="text-2xl font-bold text-gray-900 mt-1">₹{menu.price}</p>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Base Price</label>
+              <p className="text-2xl font-bold text-gray-900 mt-1">₹{basePrice}</p>
             </div>
             
             <div>
               <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Discount</label>
-              <p className="text-2xl font-bold text-green-600 mt-1">{menu.discount}%</p>
+              <p className="text-2xl font-bold text-green-600 mt-1">{discount}%</p>
             </div>
             
             <div>
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Final Price</label>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Customer Price</label>
               <p className="text-2xl font-bold text-gray-900 mt-1">
-                ₹{(menu.price - (menu.price * menu.discount / 100)).toFixed(2)}
+                ₹{finalPrice}
               </p>
             </div>
 
