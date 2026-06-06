@@ -19,6 +19,7 @@ import Card, { CardContent, CardHeader } from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import {
   isRestaurantCurrentlyServiceable,
+  isRestaurantNoHoursConfigured,
   isRestaurantOnline,
   isRestaurantOutsideOperationalHours,
   normalizeRestaurantAvailability,
@@ -79,34 +80,19 @@ const RatingStars = ({ rating }) => {
 };
 
 const StatusPill = ({ restaurant }) => {
-  if (restaurant.isActive === false) {
+  const operational = isRestaurantCurrentlyServiceable(restaurant);
+  if (operational) {
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-        Blocked
-      </span>
-    );
-  }
-  if (isRestaurantOutsideOperationalHours(restaurant)) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-        Not active
-      </span>
-    );
-  }
-  if (!isRestaurantCurrentlyServiceable(restaurant)) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-        Not active
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+        Operational
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-600 border border-emerald-100">
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-      Active
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
+      <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+      Non-operational
     </span>
   );
 };

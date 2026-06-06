@@ -225,5 +225,43 @@ export const isRestaurantCurrentlyServiceable = (restaurant = {}) => {
 
 export const isRestaurantOutsideOperationalHours = (restaurant = {}) => {
   const state = getRestaurantAvailabilityState(restaurant);
-  return state.accountIsActive && !state.isManuallyOff && state.isOpen === false;
+  // Only "outside hours" if hours ARE configured but current time is outside them
+  const noHours = isRestaurantNoHoursConfigured(restaurant);
+  return !noHours && state.accountIsActive && !state.isManuallyOff && state.isOpen === false;
+};
+
+/**
+ * Returns true when the restaurant is active but has NO operational hours
+ * configured at all — treated as permanently closed until hours are set.
+ */
+export const isRestaurantNoHoursConfigured = (restaurant = {}) => {
+  const availability = restaurant.availability || {};
+  const flags = availability.flags || {};
+  const reasons = availability.reasons || {};
+
+  // Prefer the explicit flag from the API response
+  if (flags.noHoursConfigured === true || reasons.noHoursConfigured === true) return true;
+  if (flags.hasOperationalHours === false) return true;
+
+  // Fallback: check locally if there are no hours in the response
+  const operationalHours = restaurant.operationalHours || restaurant.operational_hours;
+  const operatingHours = restaurant.operatingHours || restaurant.operating_hours;
+  const state = getRestaurantAvailabilityState(restaurant);
+
+  if (!state.accountIsActive || state.isManuallyOff) return false;
+
+  const hasMealHours =
+    operationalHours &&
+    typeof operationalHours === 'object' &&
+    !Array.isArray(operationalHours) &&
+    Object.values(operationalHours).some((v) => v && v.enabled);
+
+  const hasRowHours = Array.isArray(operationalHours) && operationalHours.length > 0;
+  const hasOpeningHours =
+    operatingHours &&
+    typeof operatingHours === 'object' &&
+    operatingHours.opening &&
+    operatingHours.closing;
+
+  return !hasMealHours && !hasRowHours && !hasOpeningHours && state.isOpen === false;
 };
