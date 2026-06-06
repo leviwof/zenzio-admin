@@ -29,7 +29,7 @@ const PERM_ASKED_KEY    = 'admin_notif_perm_asked';
 
 const MAX_STORED        = 1000;   // Req #12: max 1000 cached IDs
 const AUDIO_LOCK_TTL    = 3000;   // Lock expires after 3s
-const AUDIO_LOCK_JITTER = 120;    // Random delay (ms) to reduce race conditions
+const AUDIO_LOCK_JITTER = 0;      // No delay — single-tab is the common case; dedup prevents doubles
 
 // ─── Notification type config ─────────────────────────────────────────────────
 
