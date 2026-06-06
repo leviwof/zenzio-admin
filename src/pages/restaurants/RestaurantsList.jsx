@@ -17,7 +17,12 @@ import toast from "react-hot-toast";
 import { getCurrentRestaurantUid, isRestaurantAdmin } from "../../utils/auth";
 import Card, { CardContent, CardHeader } from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
-import { isRestaurantOnline, normalizeRestaurantAvailability } from "../../utils/restaurantAvailability";
+import {
+  isRestaurantCurrentlyServiceable,
+  isRestaurantOnline,
+  isRestaurantOutsideOperationalHours,
+  normalizeRestaurantAvailability,
+} from "../../utils/restaurantAvailability";
 
 const MIN_RATING_THRESHOLD = 50;
 const DEFAULT_RATING = 4.0;
@@ -33,6 +38,15 @@ const getRestaurantDisplayRating = (restaurant) => {
 };
 
 const getRestaurantRatingCount = (restaurant) => Number(restaurant?.rating_count || 0);
+
+const isRestaurantBlocked = (restaurant = {}) =>
+  restaurant.isActive === false || restaurant.accountIsActive === false;
+
+const isRestaurantWorking = (restaurant = {}) =>
+  !isRestaurantBlocked(restaurant) && isRestaurantCurrentlyServiceable(restaurant);
+
+const isRestaurantNotWorking = (restaurant = {}) =>
+  !isRestaurantBlocked(restaurant) && !isRestaurantCurrentlyServiceable(restaurant);
 
 // ─── Helpers ──────────────────────────────────────────
 const formatDate = (d) =>
@@ -73,18 +87,26 @@ const StatusPill = ({ restaurant }) => {
       </span>
     );
   }
-  if (!isRestaurantOnline(restaurant)) {
+  if (isRestaurantOutsideOperationalHours(restaurant)) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+        Not active
+      </span>
+    );
+  }
+  if (!isRestaurantCurrentlyServiceable(restaurant)) {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-100">
         <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-        Closed
+        Not active
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-600 border border-emerald-100">
       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-      Open
+      Active
     </span>
   );
 };
@@ -513,9 +535,9 @@ const RestaurantsList = () => {
 
     // Status filter
     if (statusFilter === "active") {
-      filtered = filtered.filter((r) => isRestaurantOnline(r));
+      filtered = filtered.filter((r) => isRestaurantWorking(r));
     } else if (statusFilter === "inactive") {
-      filtered = filtered.filter((r) => !isRestaurantOnline(r));
+      filtered = filtered.filter((r) => isRestaurantNotWorking(r));
     } else if (statusFilter === "pending") {
       filtered = filtered.filter((r) => r.statusLabel === "pending");
     }
@@ -564,8 +586,8 @@ const RestaurantsList = () => {
         case "rating":
           return (restaurantDetails[b.uid]?.rating || 0) - (restaurantDetails[a.uid]?.rating || 0);
         case "status": {
-          const aActive = isRestaurantOnline(a);
-          const bActive = isRestaurantOnline(b);
+          const aActive = isRestaurantWorking(a);
+          const bActive = isRestaurantWorking(b);
           return (aActive === bActive ? 0 : aActive ? -1 : 1);
         }
         default:
@@ -585,8 +607,8 @@ const RestaurantsList = () => {
   // Stats
   const stats = useMemo(() => {
     const total = restaurants.length;
-    const active = restaurants.filter((r) => isRestaurantOnline(r)).length;
-    const inactive = restaurants.filter((r) => !isRestaurantOnline(r)).length;
+    const active = restaurants.filter((r) => isRestaurantWorking(r)).length;
+    const inactive = restaurants.filter((r) => isRestaurantNotWorking(r)).length;
     const pending = restaurants.filter((r) => r.statusLabel === "pending").length;
     const qualified = Object.values(restaurantDetails).filter((d) => (d.ratingCount || 0) >= MIN_RATING_THRESHOLD);
     const avgRating = qualified.length ? (qualified.reduce((a, b) => a + b.rating, 0) / qualified.length) : 0;
