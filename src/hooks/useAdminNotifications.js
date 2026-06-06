@@ -143,6 +143,7 @@ export default function useAdminNotifications({
     audioRef.current.preload = 'auto';
 
     const unlock = () => {
+      requestDesktopNotificationPermissionOnce({ fromUserGesture: true }).catch(() => {});
       if (!audioUnlockedRef.current) {
         audioRef.current
           .play()

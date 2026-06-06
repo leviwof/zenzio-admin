@@ -150,16 +150,18 @@ export function isNotificationNewer(notification = {}, lastId, lastTime) {
   return String(id) !== String(lastId);
 }
 
-export function requestDesktopNotificationPermissionOnce() {
-  if (!('Notification' in window)) return Promise.resolve('unsupported');
+export function requestDesktopNotificationPermissionOnce({ fromUserGesture = false } = {}) {
+  if (!('Notification' in window) || !window.isSecureContext) return Promise.resolve('unsupported');
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return Promise.resolve(Notification.permission);
   }
-  if (localStorage.getItem(PERMISSION_REQUESTED_KEY) === 'true') {
+
+  const requestState = localStorage.getItem(PERMISSION_REQUESTED_KEY);
+  if (requestState === 'interaction' || (requestState === 'load' && !fromUserGesture)) {
     return Promise.resolve(Notification.permission);
   }
 
-  localStorage.setItem(PERMISSION_REQUESTED_KEY, 'true');
+  localStorage.setItem(PERMISSION_REQUESTED_KEY, fromUserGesture ? 'interaction' : 'load');
   try {
     return Notification.requestPermission();
   } catch {
