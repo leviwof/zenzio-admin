@@ -663,7 +663,7 @@ export const deleteRestaurantDocumentsByType = (uid, documentType) =>
 export const getGlobalSettings = () => api.get('/global-settings');
 export const updateGlobalSettings = (data) => api.patch('/global-settings', data);
 
-
-
+export const reconcilePayment = (razorpayOrderId) =>
+  api.post('/payments/reconcile', { razorpayOrderId });
 
 export default api;

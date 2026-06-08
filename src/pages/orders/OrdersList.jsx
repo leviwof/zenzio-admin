@@ -83,12 +83,15 @@ const StatusBadge = ({ status }) => {
 const PaymentStatusBadge = ({ status }) => {
   const map = {
     PAID: { label: "Paid", color: "bg-emerald-50 text-emerald-700" },
+    SUCCESS: { label: "Paid", color: "bg-emerald-50 text-emerald-700" },
+    CAPTURED: { label: "Paid", color: "bg-emerald-50 text-emerald-700" },
     PENDING: { label: "Pending", color: "bg-amber-50 text-amber-700" },
+    PENDING_PAYMENT: { label: "Awaiting Payment", color: "bg-amber-50 text-amber-700" },
     FAILED: { label: "Failed", color: "bg-red-50 text-red-700" },
     REFUNDED: { label: "Refunded", color: "bg-rose-50 text-rose-700" },
   };
   const s = (status || "").toUpperCase();
-  const info = map[s] || { label: s, color: "bg-gray-50 text-gray-600" };
+  const info = map[s] || { label: s || "—", color: "bg-gray-50 text-gray-600" };
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${info.color}`}>{info.label}</span>;
 };
 
@@ -1008,8 +1011,8 @@ const OrdersList = () => {
           o.restaurant_name || "N/A",
           o.price || o.totalAmount || 0,
           o.restaurantStatus || o.status || "N/A",
-          o.paymentStatus || "N/A",
-          o.paymentMethod || "N/A",
+          o.payment_status || o.paymentStatus || "N/A",
+          o.payment_mode || o.paymentMethod || "N/A",
           formatDateTime(o.createdAt),
           o.deliveryPartnerStatus || "N/A",
         ]),
@@ -1596,8 +1599,8 @@ const OrdersList = () => {
                         {/* Payment */}
                         <td className="px-4 py-3 hidden 2xl:table-cell">
                           <div className="flex flex-col gap-1">
-                            <PaymentStatusBadge status={order.paymentStatus} />
-                            <span className="text-[10px] text-gray-400">{order.paymentMethod || "—"}</span>
+                            <PaymentStatusBadge status={order.payment_status || order.paymentStatus} />
+                            <span className="text-[10px] text-gray-400">{order.payment_mode || order.paymentMethod || "—"}</span>
                           </div>
                         </td>
 
