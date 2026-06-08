@@ -168,6 +168,25 @@ const formatRelativeTime = (dateStr) => {
 
 const formatCurrency = (value) => `₹${Number(value || 0).toFixed(2)}`;
 
+const toNullableNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const formatMinutes = (value) => {
+  const minutes = toNullableNumber(value);
+  if (minutes === null) return '—';
+  if (minutes <= 0) return '0 mins';
+  return `${minutes} min${minutes === 1 ? '' : 's'}`;
+};
+
+const formatVariance = (value) => {
+  const minutes = toNullableNumber(value);
+  if (minutes === null) return '—';
+  if (minutes === 0) return 'On time';
+  return `${minutes > 0 ? '+' : ''}${minutes} mins`;
+};
+
 const getAppliedDiscount = (order) => order?.applied_discount || order?.appliedDiscount || null;
 
 const getFreeOfferItems = (order) => {
@@ -672,6 +691,15 @@ const OrderDetails = () => {
   const restaurantToCustomerKm = order.restaurant_to_customer_km ?? order.restaurantToCustomerDistance ?? null;
   const totalJourneyKm = order.total_journey_km ?? null;
   const chargedDeliveryFee = order.delivery_charge ?? ps.deliveryFee ?? ps.deliveryCharge ?? 0;
+  const eta = order.eta || {};
+  const estimatedMinutes = eta.estimatedMinutes ?? order.estimatedMinutes ?? order.estimatedTotalMinutes;
+  const remainingMinutes = eta.remainingMinutes ?? order.remainingMinutes;
+  const estimatedDeliveryAt = eta.estimatedDeliveryAt ?? order.estimatedDeliveryAt;
+  const actualMinutes = eta.actualMinutes ?? order.actualMinutes;
+  const varianceMinutes = eta.varianceMinutes ?? order.varianceMinutes;
+  const etaDisplay = estimatedMinutes != null
+    ? (remainingMinutes != null && !isTerminal ? formatMinutes(remainingMinutes) : formatMinutes(estimatedMinutes))
+    : order.deliveryTime;
 
   const lifecycleSteps = buildLifecycleTimeline();
   const statusConfig = ORDER_ACTION_CONFIG[currentStatus];
@@ -747,7 +775,7 @@ const OrderDetails = () => {
                 </div>
                 <div>
                   <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider">Delivery Time</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-0.5">{order.deliveryTime || '—'}</p>
+                  <p className="text-sm font-semibold text-gray-900 mt-0.5">{etaDisplay || '—'}</p>
                 </div>
                 <div>
                   <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider">Payment</p>
@@ -1260,6 +1288,36 @@ const OrderDetails = () => {
                     <span className="text-xs font-mono font-semibold text-gray-700">#{order.orderId}</span>
                   </div>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">ETA Performance</h4>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-600">ETA</span>
+                  <span className="text-xs font-semibold text-gray-900">{formatMinutes(estimatedMinutes)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-600">Remaining</span>
+                  <span className="text-xs font-semibold text-gray-900">{formatMinutes(remainingMinutes)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-600">Delivery At</span>
+                  <span className="text-xs font-semibold text-gray-700 text-right">{estimatedDeliveryAt ? formatDateTime(estimatedDeliveryAt) : '—'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-600">Actual</span>
+                  <span className="text-xs font-semibold text-gray-900">{formatMinutes(actualMinutes)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-600">Difference</span>
+                  <span className={`text-xs font-semibold ${Number(varianceMinutes) > 0 ? 'text-red-600' : Number(varianceMinutes) < 0 ? 'text-emerald-600' : 'text-gray-700'}`}>
+                    {formatVariance(varianceMinutes)}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
