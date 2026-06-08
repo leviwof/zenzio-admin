@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useMemo } from "react";
 import useAdminNotifications from "../hooks/useAdminNotifications";
+import { isRecentNotification } from "../utils/notifications";
 
 const OrderNotificationContext = createContext(null);
 
@@ -34,6 +35,8 @@ export const OrderNotificationProvider = ({ children }) => {
 
   const { socketConnected, permissionState } = useAdminNotifications({
     onNewNotification: (notif) => {
+      if (!isRecentNotification(notif)) return;
+
       const id   = notif.id ?? notif.notificationId ?? notif.notification_id;
       const type = (notif.type || '').toUpperCase();
 
@@ -85,6 +88,8 @@ export const OrderNotificationProvider = ({ children }) => {
 
   const addNewOrderNotification = useCallback((order) => {
     if (!order) return;
+    if (!isRecentNotification(order)) return;
+
     const synId = `syn_${++notifIdCounter.current}_${order.orderId || order.id}`;
     const notif = {
       id:             synId,
@@ -126,6 +131,7 @@ export const OrderNotificationProvider = ({ children }) => {
 
     const seen = new Set();
     return items.filter(n => {
+      if (!isRecentNotification(n)) return false;
       if (seen.has(n.id)) return false;
       seen.add(n.id);
       return true;

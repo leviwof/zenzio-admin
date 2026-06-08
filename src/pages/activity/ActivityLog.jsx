@@ -3,6 +3,7 @@ import { ArrowLeft, Bell, Check, Loader2, Wifi, WifiOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getNotifications, markNotificationAsRead } from '../../services/api';
 import { useOrderNotifications } from '../../context/OrderNotificationContext';
+import { filterRecentNotifications } from '../../utils/notifications';
 
 const ActivityLog = () => {
     const navigate = useNavigate();
@@ -19,9 +20,9 @@ const ActivityLog = () => {
         try {
             setLoading(true);
             const response = await getNotifications(pageNum, LIMIT);
-            const newNotifications = response.data?.data || [];
+            const newNotifications = filterRecentNotifications(response.data?.data || []);
             const apiIds = new Set(newNotifications.map(n => n.id));
-            const socketOnly = socketNotifs.filter(n => !apiIds.has(n.id));
+            const socketOnly = filterRecentNotifications(socketNotifs.filter(n => !apiIds.has(n.id)));
             const merged = pageNum === 1
                 ? [...socketOnly, ...newNotifications]
                 : [...newNotifications];
@@ -42,7 +43,7 @@ const ActivityLog = () => {
         if (socketNotifs.length > 0) {
             setNotifications(prev => {
                 const existingIds = new Set(prev.map(n => n.id));
-                const newFromSocket = socketNotifs.filter(n => !existingIds.has(n.id));
+                const newFromSocket = filterRecentNotifications(socketNotifs.filter(n => !existingIds.has(n.id)));
                 if (newFromSocket.length === 0) return prev;
                 return [...newFromSocket, ...prev].slice(0, 100);
             });
