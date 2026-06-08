@@ -7,7 +7,7 @@ import {
   IndianRupee, Clock, RefreshCw, Download, Ban, RotateCcw,
   Copy, Check, CreditCard, ShoppingBag, FileText, Eye, Loader2,
 } from 'lucide-react';
-import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder, updateOrderStatus } from '../../services/api';
+import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder, updateOrderStatus, reconcilePayment } from '../../services/api';
 import DeliveryMap from '../../components/DeliveryMap';
 import Card, { CardContent, CardHeader } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -302,6 +302,29 @@ const OrderDetails = () => {
   const reassignPanelRef = useRef(null);
 
   const [lifecycleUpdating, setLifecycleUpdating] = useState(false);
+  const [syncingPayment, setSyncingPayment] = useState(false);
+
+  const handleSyncPayment = async () => {
+    const razorpayOrderId = order?.razorpay_order_id;
+    if (!razorpayOrderId) return;
+    setSyncingPayment(true);
+    try {
+      const res = await reconcilePayment(razorpayOrderId);
+      const data = res?.data;
+      if (data?.reconciled) {
+        toast.success('Payment synced — order marked as paid.');
+      } else if (data?.paymentStatus === 'success') {
+        toast.success('Payment was already captured.');
+      } else {
+        toast.error(`Payment not yet captured (status: ${data?.paymentStatus || 'unknown'})`);
+      }
+      await fetchOrderDetails({ silent: true });
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to sync payment status.');
+    } finally {
+      setSyncingPayment(false);
+    }
+  };
 
   useEffect(() => {
     if (showReassignModal && reassignPanelRef.current) {
@@ -707,10 +730,39 @@ const OrderDetails = () => {
   const currentActions = restaurantAdmin
     ? [...(statusConfig?.restaurant || []), ...(statusConfig?.rollback || [])]
     : (statusConfig?.admin || statusConfig?.restaurant || []);
-  const showActionCenter = !isTerminal && (currentActions.length > 0 || (restaurantAdmin && isAfterAssign));
+
+  // Online order not yet paid — block all actions until payment confirmed
+  const isAwaitingPayment =
+    (order.payment_mode || '').toUpperCase() === 'ONLINE' &&
+    (order.restaurantStatus || '').toLowerCase() === 'pending_payment';
+
+  const showActionCenter = !isTerminal && (currentActions.length > 0 || (restaurantAdmin && isAfterAssign) || isAwaitingPayment);
 
   return (
     <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+      {/* Awaiting Payment Banner */}
+      {isAwaitingPayment && (
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle size={18} className="text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">Awaiting Payment Confirmation</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              This online order has not been paid yet. It will appear in the restaurant queue and allow status changes only after payment is confirmed.
+            </p>
+          </div>
+          {order.razorpay_order_id && (
+            <button
+              onClick={handleSyncPayment}
+              disabled={syncingPayment}
+              className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:opacity-50 transition-colors border border-amber-300"
+            >
+              {syncingPayment ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {syncingPayment ? 'Checking…' : 'Check Payment'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -825,7 +877,7 @@ const OrderDetails = () => {
       {/* ── Order Action Center ── */}
       {showActionCenter && (
         <div className="mb-6">
-          <Card>
+          <Card className={isAwaitingPayment ? 'opacity-50 pointer-events-none select-none' : ''}>
             <CardContent className="p-5">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
@@ -834,7 +886,7 @@ const OrderDetails = () => {
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Order Action Center</h3>
                   <p className="text-[11px] text-gray-400">
-                    {restaurantAdmin ? 'Restaurant Controls' : 'Delivery Controls'}
+                    {isAwaitingPayment ? 'Locked — awaiting payment' : restaurantAdmin ? 'Restaurant Controls' : 'Delivery Controls'}
                   </p>
                 </div>
               </div>
@@ -866,7 +918,12 @@ const OrderDetails = () => {
                 </div>
               )}
 
-              {restaurantAdmin && isAfterAssign ? (
+              {isAwaitingPayment ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                  <p className="text-sm font-semibold text-amber-800">Actions locked until payment is confirmed.</p>
+                  <p className="text-xs text-amber-600 mt-1">Once the customer completes payment, this order will become active automatically.</p>
+                </div>
+              ) : restaurantAdmin && isAfterAssign ? (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
                   <p className="text-sm font-semibold text-amber-800">Waiting for delivery executive to accept this order.</p>
                 </div>
@@ -1251,7 +1308,22 @@ const OrderDetails = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-400 font-medium">Payment Status</p>
-                  <p className="mt-0.5"><StatusBadge status={order.paymentStatus || 'PENDING'} /></p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <StatusBadge status={order.paymentStatus || 'PENDING'} />
+                    {order.razorpay_order_id && (order.paymentStatus || '').toLowerCase() !== 'success' && (
+                      <button
+                        onClick={handleSyncPayment}
+                        disabled={syncingPayment}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                        title="Check Razorpay and mark as paid if captured"
+                      >
+                        {syncingPayment
+                          ? <Loader2 size={11} className="animate-spin" />
+                          : <RefreshCw size={11} />}
+                        {syncingPayment ? 'Syncing…' : 'Sync'}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <p className="text-xs text-gray-400 font-medium">Refund Status</p>
@@ -1280,7 +1352,9 @@ const OrderDetails = () => {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Payment</span>
-                  <span className="text-xs font-semibold text-gray-700">{order.paymentStatus || 'Pending'}</span>
+                  <span className={`text-xs font-semibold ${(order.paymentStatus || '').toLowerCase() === 'success' ? 'text-emerald-700' : 'text-gray-700'}`}>
+                    {(order.paymentStatus || '').toLowerCase() === 'success' ? 'Paid' : order.paymentStatus || 'Pending'}
+                  </span>
                 </div>
                 {order.orderId && (
                   <div className="flex items-center justify-between">
