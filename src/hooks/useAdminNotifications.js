@@ -37,6 +37,7 @@ import {
   tryAcquireAudioLock,
   getPermissionState,
 } from '../services/desktopNotificationService';
+import { filterRecentNotifications, isRecentNotification } from '../utils/notifications';
 
 // Safety-net poll — even if socket works, this catches anything missed.
 // Dedup ensures no duplicate alerts. 5s = max possible delay if socket fails.
@@ -160,6 +161,8 @@ export default function useAdminNotifications({
       if (!mountedRef.current) return;
 
       const notif = normalizeNotif(rawNotif);
+      if (!isRecentNotification(notif)) return;
+
       const id    = getNotificationId(notif);
       const idStr = id != null ? String(id) : null;
 
@@ -211,6 +214,7 @@ export default function useAdminNotifications({
       else if (Array.isArray(response.data))                docs = response.data;
 
       if (!Array.isArray(docs)) docs = [];
+      const recentDocs = filterRecentNotifications(docs);
 
       if (!initializedRef.current) {
         // ── FIRST LOAD ──────────────────────────────────────────────────────
@@ -224,7 +228,7 @@ export default function useAdminNotifications({
 
         seedAlertedIds(docs); // marks all 3 localStorage stores
 
-        localNotifsRef.current = docs.slice(0, 100);
+        localNotifsRef.current = recentDocs.slice(0, 100);
         setNotifications([...localNotifsRef.current]);
 
         const latest = getLatestNotif(docs);
@@ -242,7 +246,7 @@ export default function useAdminNotifications({
       // ── SUBSEQUENT POLLS ────────────────────────────────────────────────
       // Only process notifications genuinely newer than last-seen.
       // claimAlert + localSeenIds ensure no duplicate alerts even at 5s poll.
-      const missed = docs.filter(n => {
+      const missed = recentDocs.filter(n => {
         const id = getNotificationId(n);
         if (id == null) return false;
         if (localSeenIds.current.has(String(id))) return false;

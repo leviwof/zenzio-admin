@@ -17,6 +17,7 @@ import toast from "react-hot-toast";
 import { useOrderNotifications } from "../../context/OrderNotificationContext";
 import { getCurrentRestaurantUid, isRestaurantAdmin, isZenzioAdmin } from "../../utils/auth";
 import { shouldRunSharedPoll } from "../../utils/requestCoordinator";
+import { isRecentNotification } from "../../utils/notifications";
 import { isAdminSocketConnected } from "../../services/socket";
 import {
   claimNotificationAlert,
@@ -527,6 +528,8 @@ const OrdersList = () => {
   }, []);
 
   const shouldNotifyByStatus = useCallback((order) => {
+    if (!isRecentNotification(order)) return false;
+
     const id = order.orderId || order.id;
     if (notifiedOrderIds.current.has(id)) return false;
     const status = (order.restaurantStatus || order.status || '').toUpperCase();
@@ -570,8 +573,11 @@ const OrdersList = () => {
   }, [cancelLoudSoundTimer, playLoudNotificationSound]);
 
   const showDesktopNotification = useCallback((orders) => {
-    const count = orders.length;
-    const first = orders[0];
+    const recentOrders = orders.filter(isRecentNotification);
+    const count = recentOrders.length;
+    const first = recentOrders[0];
+    if (!first) return;
+
     const title = count === 1 ? `New Order #${first.orderId}` : `${count} New Orders Received`;
     const body = count === 1
       ? `${first.customer_name || "Guest"} - ${first.restaurant_name || "Unknown"} - ₹${first.price}`
@@ -588,7 +594,7 @@ const OrdersList = () => {
       },
       dedupeKey: count === 1
         ? `NEW_ORDER:order:${firstOrderId}`
-        : `NEW_ORDER:orders:${orders.map(o => o.orderId || o.id).join(',')}`,
+        : `NEW_ORDER:orders:${recentOrders.map(o => o.orderId || o.id).join(',')}`,
       tag: count === 1 ? `new-order-${firstOrderId}` : 'new-orders',
       url: count === 1 && firstOrderId ? `/orders/${firstOrderId}` : '/orders',
       silent: audioUnlocked.current,
@@ -596,6 +602,8 @@ const OrdersList = () => {
   }, []);
 
   const addToast = useCallback((order) => {
+    if (!isRecentNotification(order)) return;
+
     const id = ++toastIdCounter.current;
     const t = {
       id, orderId: order.orderId,
@@ -619,7 +627,7 @@ const OrdersList = () => {
 
   const highlightNewOrders = useCallback((newOrderList) => {
     const newIds = [];
-    newOrderList.forEach(order => {
+    newOrderList.filter(isRecentNotification).forEach(order => {
       const id = order.orderId || order.id;
       if (!highlightedOrderIds.current.has(id)) {
         highlightedOrderIds.current.add(id);
@@ -783,7 +791,7 @@ const OrdersList = () => {
 
         let newlyArrived = [];
         if (hasNewOrder) {
-          newlyArrived = newOrders.filter(o => !knownOrderIds.current.has(o.orderId || o.id));
+          newlyArrived = newOrders.filter(o => !knownOrderIds.current.has(o.orderId || o.id) && isRecentNotification(o));
           const shouldAlertOrders = newlyArrived.some(order =>
             claimNotificationAlert({
               id: `order-${order.orderId || order.id}`,
@@ -801,15 +809,15 @@ const OrdersList = () => {
 
           if (newlyArrived.length > 0) {
             addToast(newlyArrived[0]);
+            newlyArrived.forEach(order => {
+              addNewOrderNotification(order);
+              notifiedOrderIds.current.add(order.orderId || order.id);
+            });
+            addNewOrders(newlyArrived);
+            highlightNewOrders(newlyArrived);
+            showDesktopNotification(newlyArrived);
+            fetchOrders(true);
           }
-          newlyArrived.forEach(order => {
-            addNewOrderNotification(order);
-            notifiedOrderIds.current.add(order.orderId || order.id);
-          });
-          addNewOrders(newlyArrived);
-          highlightNewOrders(newlyArrived);
-          showDesktopNotification(newlyArrived);
-          fetchOrders(true);
         }
 
         const statusBasedNew = newOrders.filter(o => shouldNotifyByStatus(o));

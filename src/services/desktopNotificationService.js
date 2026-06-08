@@ -1,4 +1,6 @@
 // =============================================================================
+
+import { isRecentNotification } from '../utils/notifications';
 // desktopNotificationService.js — Production-grade notification service
 //
 // Responsibilities:
@@ -178,6 +180,8 @@ export function seedAlertedIds(notifications = []) {
  * Stored in localStorage so it survives page refresh.
  */
 export function claimAlert(n = {}) {
+  if (!isRecentNotification(n)) return false;
+
   const id = getNotificationId(n);
   if (id == null) return true; // no ID → can't dedup, allow
   const s = String(id);
@@ -387,6 +391,8 @@ export function showDesktopNotification(body, data = {}) {
   if (Notification.permission !== 'granted') return false;
 
   const n  = data.notification || {};
+  if (!isRecentNotification(n)) return false;
+
   const id = getNotificationId(n) ?? data.notificationId ?? data.id;
 
   // Dedup: never show the same notification ID twice

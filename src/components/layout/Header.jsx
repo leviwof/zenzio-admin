@@ -11,6 +11,7 @@ import { getNotifications, getRestaurantById, markNotificationAsRead, getRestaur
 import { useOrderNotifications } from '../../context/OrderNotificationContext';
 import { getAuthUser, getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
+import { filterRecentNotifications, isRecentNotification } from '../../utils/notifications';
 import { isAdminSocketConnected } from '../../services/socket';
 import { claimNotificationAlert } from '../../services/desktopNotificationService';
 
@@ -260,6 +261,7 @@ const Header = ({ onLogout }) => {
     });
     const seen = new Set();
     return combined.filter(n => {
+      if (!isRecentNotification(n)) return false;
       if (seen.has(n.id)) return false;
       seen.add(n.id);
       return true;
@@ -347,7 +349,7 @@ const Header = ({ onLogout }) => {
       if (Array.isArray(response.data?.data)) docs = response.data.data;
       else if (Array.isArray(response.data?.notifications)) docs = response.data.notifications;
       else if (Array.isArray(response.data)) docs = response.data;
-      const docsList = Array.isArray(docs) ? docs : [];
+      const docsList = filterRecentNotifications(Array.isArray(docs) ? docs : []);
       const existingIds = new Set(allMergedNotifications.map(n => n.id));
       const trulyNew = docsList.filter(n => !existingIds.has(n.id));
       if (trulyNew.length > 0) {
