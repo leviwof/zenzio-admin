@@ -21,13 +21,14 @@ import { isRecentNotification } from '../utils/notifications';
 //   admin_notif_perm_asked    — whether permission was already requested
 // =============================================================================
 
-const ALERTED_IDS_KEY   = 'admin_notif_alerted_ids';
-const SOUND_IDS_KEY     = 'admin_notif_sound_ids';
-const DESKTOP_IDS_KEY   = 'admin_notif_desktop_ids';
-const LAST_ID_KEY       = 'admin_notif_last_id';
-const LAST_TIME_KEY     = 'admin_notif_last_time';
-const AUDIO_LOCK_KEY    = 'admin_notif_audio_lock';
-const PERM_ASKED_KEY    = 'admin_notif_perm_asked';
+const ALERTED_IDS_KEY       = 'admin_notif_alerted_ids';
+const SOUND_IDS_KEY         = 'admin_notif_sound_ids';
+const DESKTOP_IDS_KEY       = 'admin_notif_desktop_ids';
+const DESKTOP_ORDER_IDS_KEY = 'admin_notif_desktop_order_ids';
+const LAST_ID_KEY           = 'admin_notif_last_id';
+const LAST_TIME_KEY         = 'admin_notif_last_time';
+const AUDIO_LOCK_KEY        = 'admin_notif_audio_lock';
+const PERM_ASKED_KEY        = 'admin_notif_perm_asked';
 
 const MAX_STORED        = 1000;   // Req #12: max 1000 cached IDs
 const AUDIO_LOCK_TTL    = 3000;   // Lock expires after 3s
@@ -172,6 +173,7 @@ export function seedAlertedIds(notifications = []) {
   const now = Date.now();
   let seededCount = 0;
   let skippedCount = 0;
+  let orderSeededCount = 0;
   notifications.forEach(n => {
     const id = getNotificationId(n);
     if (id == null) return;
@@ -192,8 +194,15 @@ export function seedAlertedIds(notifications = []) {
       addList(DESKTOP_IDS_KEY, s);
       seededCount++;
     }
+
+    // Seed order IDs into DESKTOP_ORDER_IDS_KEY to prevent stale re-alerts
+    const orderId = getNotificationOrderId(n);
+    if (orderId != null) {
+      addList(DESKTOP_ORDER_IDS_KEY, String(orderId));
+      orderSeededCount++;
+    }
   });
-  console.log(`[NotifDebug] seedAlertedIds: seeded ${seededCount}, skipped-recent ${skippedCount} (will be handled by socket)`);
+  console.log(`[NotifDebug] seedAlertedIds: seeded ${seededCount}, skipped-recent ${skippedCount}, orders ${orderSeededCount}`);
 }
 
 // ─── Alert deduplication ──────────────────────────────────────────────────────
@@ -480,6 +489,17 @@ export async function showDesktopNotification(body, data = {}) {
       return false;
     }
     addList(DESKTOP_IDS_KEY, s);
+  }
+
+  // Cross-path dedup via orderId — prevents duplicates between socket & polling paths
+  const orderId = getNotificationOrderId(n) || data.orderId;
+  if (orderId != null) {
+    const orderKey = String(orderId);
+    if (hasList(DESKTOP_ORDER_IDS_KEY, orderKey)) {
+      console.log(`[NotifDebug] showDesktopNotification SKIPPED (order already notified): orderId=${orderKey}, type=${getNotificationType(n)}`);
+      return false;
+    }
+    addList(DESKTOP_ORDER_IDS_KEY, orderKey);
   }
 
   const type = getNotificationType(n) || normalizeType(data.type);

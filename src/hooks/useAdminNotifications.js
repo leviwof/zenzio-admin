@@ -237,27 +237,31 @@ export default function useAdminNotifications(opts) {
     console.log(`[NotifDebug] handleNewNotification: important=${important}, claimed=${claimed}, shouldAlert=${shouldAlert}`);
 
     if (shouldAlert) {
-      var content = buildDesktopNotificationContent(notif);
-      var body    = content.body;
+      var isNewOrder = NEW_ORDER_TYPES.has(String(notif.type || '').toUpperCase());
 
-      console.log(`[NotifDebug] handleNewNotification TRIGGERING playSound + desktop: id=${idStr}, body="${body?.slice(0, 60)}"`);
+      // NEW_ORDER notifications are handled by the polling path in OrdersList.jsx
+      // (sound + desktop notification). The socket path should NOT duplicate them.
+      // Other notification types (cancellations, payment failures, etc.) are still
+      // handled by the socket path since polling doesn't cover those.
+      if (!isNewOrder) {
+        var content = buildDesktopNotificationContent(notif);
+        var body    = content.body;
 
-      playSound(idStr).then(function(soundPlayed) {
-        console.log(`[NotifDebug] handleNewNotification playSound resolved: soundPlayed=${soundPlayed}, now firing desktop notification`);
-        showDesktopNotification(body, {
-          notification:   notif,
-          notificationId: id,
-          type:           notif.type,
+        console.log(`[NotifDebug] handleNewNotification TRIGGERING playSound + desktop: id=${idStr}, body="${body?.slice(0, 60)}"`);
+
+        playSound(idStr).then(function(soundPlayed) {
+          console.log(`[NotifDebug] handleNewNotification playSound resolved: soundPlayed=${soundPlayed}, now firing desktop notification`);
+          showDesktopNotification(body, {
+            notification:   notif,
+            notificationId: id,
+            type:           notif.type,
+          });
         });
-      });
 
-      if (onSoundTriggerRef.current) onSoundTriggerRef.current(notif);
-      setPermissionState(getPermissionState());
-
-      // Sound escalation — new orders are business critical
-      if (NEW_ORDER_TYPES.has(String(notif.type || '').toUpperCase())) {
-        console.log(`[NotifDebug] handleNewNotification starting sound escalation for NEW_ORDER: id=${idStr}`);
-        startEscalation(notif);
+        if (onSoundTriggerRef.current) onSoundTriggerRef.current(notif);
+        setPermissionState(getPermissionState());
+      } else {
+        console.log(`[NotifDebug] handleNewNotification SKIPPING socket sound+desktop for NEW_ORDER (polling handles it): id=${idStr}`);
       }
     } else {
       console.log(`[NotifDebug] handleNewNotification NO ALERT (alert=${alert}, fromBroadcast=${fromBroadcast}, important=${important}, claimed=${claimed})`);
