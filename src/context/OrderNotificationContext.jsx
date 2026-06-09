@@ -33,42 +33,57 @@ export const OrderNotificationProvider = ({ children }) => {
   // Track which IDs have already been added to popupQueue this session
   const popupSeenIds     = useRef(new Set());
 
-  const { socketConnected, permissionState } = useAdminNotifications({
+  const { socketConnected, permissionState, acknowledgeNotification } = useAdminNotifications({
     onNewNotification: (notif) => {
-      if (!isRecentNotification(notif)) return;
+      if (!isRecentNotification(notif)) {
+        console.log(`[NotifDebug] OrderNotificationContext.onNewNotification SKIPPED (not recent): type=${notif?.type}, id=${notif?.id}`);
+        return;
+      }
 
       const id   = notif.id ?? notif.notificationId ?? notif.notification_id;
       const type = (notif.type || '').toUpperCase();
+      console.log(`[NotifDebug] OrderNotificationContext.onNewNotification: id=${id}, type=${type}, body="${(notif.body || notif.message || '').slice(0, 60)}"`);
 
       // Update socket notification list
       setSocketNotifs(prev => {
-        if (prev.some(n => n.id === id)) return prev;
+        if (prev.some(n => n.id === id)) {
+          console.log(`[NotifDebug] OrderNotificationContext socketNotifs SKIPPED (already exists): id=${id}`);
+          return prev;
+        }
         return [{ ...notif, _source: 'socket', isRead: false }, ...prev].slice(0, 100);
       });
 
       // Badge counter for order-related types
       if (ORDER_BADGE_TYPES.has(type)) {
+        console.log(`[NotifDebug] OrderNotificationContext INCREMENTING badge: type=${type}`);
         setUnreadOrderCount(prev => prev + 1);
       }
 
       // In-app popup toast — only for relevant types, only once per ID
       if (POPUP_TYPES.has(type) || !type) {
         const idStr = id != null ? String(id) : null;
-        if (idStr && popupSeenIds.current.has(idStr)) return;
+        if (idStr && popupSeenIds.current.has(idStr)) {
+          console.log(`[NotifDebug] OrderNotificationContext popup SKIPPED (already in popupSeenIds): id=${idStr}`);
+          return;
+        }
         if (idStr) popupSeenIds.current.add(idStr);
 
         setPopupQueue(prev => {
           if (id != null && prev.some(n => n.id === id)) return prev;
-          // Replace queue with only the latest notification (one popup at a time)
+          console.log(`[NotifDebug] OrderNotificationContext SETTING popupQueue: type=${type}, id=${id}`);
           return [notif];
         });
+      } else {
+        console.log(`[NotifDebug] OrderNotificationContext popup SKIPPED (not in POPUP_TYPES): type=${type}`);
       }
     },
   });
 
   const dismissPopup = useCallback((id) => {
     setPopupQueue(prev => prev.filter(n => n.id !== id));
-  }, []);
+    // Stop sound escalation for this notification
+    if (id != null) acknowledgeNotification(id);
+  }, [acknowledgeNotification]);
 
   const resetUnreadOrders = useCallback(() => {
     setUnreadOrderCount(0);
@@ -150,6 +165,7 @@ export const OrderNotificationProvider = ({ children }) => {
         allMergedNotifications,
         popupQueue,
         dismissPopup,
+        acknowledgeNotification,
         resetUnreadOrders,
         addNewOrders,
         addNewOrderNotification,
@@ -174,8 +190,9 @@ export const useOrderNotifications = () => {
       permissionState:        'default',
       allMergedNotifications: [],
       popupQueue:             [],
-      dismissPopup:           () => {},
-      resetUnreadOrders:      () => {},
+      dismissPopup:            () => {},
+      acknowledgeNotification: () => {},
+      resetUnreadOrders:       () => {},
       addNewOrders:           () => {},
       addNewOrderNotification:() => {},
       markSyntheticNotifRead: () => {},

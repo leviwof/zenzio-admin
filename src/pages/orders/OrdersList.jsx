@@ -540,26 +540,47 @@ const OrdersList = () => {
   }, []);
 
   const playNotificationSound = useCallback(() => {
-    if (!audioRef.current) return;
+    if (!audioRef.current) {
+      console.log(`[NotifDebug] playNotificationSound SKIPPED (no audioRef)`);
+      return;
+    }
     try {
       audioRef.current.currentTime = 0;
       audioRef.current.play()
-        .then(() => { audioUnlocked.current = true; pendingSoundRef.current = false; })
-        .catch(() => { pendingSoundRef.current = true; });
-    } catch {
+        .then(() => {
+          console.log(`[NotifDebug] playNotificationSound PLAYED`);
+          audioUnlocked.current = true;
+          pendingSoundRef.current = false;
+        })
+        .catch((err) => {
+          console.log(`[NotifDebug] playNotificationSound FAILED: ${err}`);
+          pendingSoundRef.current = true;
+        });
+    } catch (err) {
+      console.log(`[NotifDebug] playNotificationSound EXCEPTION: ${err}`);
       pendingSoundRef.current = true;
     }
   }, []);
 
   const playLoudNotificationSound = useCallback(() => {
-    if (!loudAudioRef.current || loudSoundPlayedRef.current) return;
+    if (!loudAudioRef.current || loudSoundPlayedRef.current) {
+      console.log(`[NotifDebug] playLoudNotificationSound SKIPPED: noRef=${!loudAudioRef.current}, alreadyPlayed=${loudSoundPlayedRef.current}`);
+      return;
+    }
     try {
       loudAudioRef.current.currentTime = 0;
       loudAudioRef.current.play()
-        .then(() => { audioUnlocked.current = true; })
-        .catch(() => {});
+        .then(() => {
+          console.log(`[NotifDebug] playLoudNotificationSound PLAYED`);
+          audioUnlocked.current = true;
+        })
+        .catch((err) => {
+          console.log(`[NotifDebug] playLoudNotificationSound FAILED: ${err}`);
+        });
       loudSoundPlayedRef.current = true;
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.log(`[NotifDebug] playLoudNotificationSound EXCEPTION: ${err}`);
+    }
   }, []);
 
   const cancelLoudSoundTimer = useCallback(() => {
@@ -575,20 +596,25 @@ const OrdersList = () => {
     }, LOUD_SOUND_DELAY);
   }, [cancelLoudSoundTimer, playLoudNotificationSound]);
 
-  const showDesktopNotification = useCallback((orders) => {
+  const showDesktopNotification = useCallback(async (orders) => {
     const recentOrders = orders.filter(isRecentNotification);
     const count = recentOrders.length;
     const first = recentOrders[0];
-    if (!first) return;
+    if (!first) {
+      console.log(`[NotifDebug] OrdersList.showDesktopNotification SKIPPED: no recent orders (${orders.length} total)`);
+      return;
+    }
 
     const title = count === 1 ? `New Order #${first.orderId}` : `${count} New Orders Received`;
     const body = count === 1
       ? `${first.customer_name || "Guest"} - ${first.restaurant_name || "Unknown"} - ₹${first.price}`
       : `${first.customer_name || "Guest"} and ${count - 1} other${count - 1 > 1 ? 's' : ''}`;
     const firstOrderId = first.orderId || first.id;
-    showNativeDesktopNotification(body, {
+    const uniqueKey = `order-${firstOrderId}-${first.createdAt || first.time || Date.now()}`;
+    console.log(`[NotifDebug] OrdersList.showDesktopNotification FIRING: count=${count}, firstOrderId=${firstOrderId}, key=${uniqueKey}, permission=${window.Notification?.permission}`);
+    const result = await showNativeDesktopNotification(body, {
       notification: {
-        id: `order-${firstOrderId}`,
+        id: uniqueKey,
         type: 'NEW_ORDER',
         orderId: firstOrderId,
         title,
@@ -596,12 +622,13 @@ const OrdersList = () => {
         createdAt: first.createdAt || first.time,
       },
       dedupeKey: count === 1
-        ? `NEW_ORDER:order:${firstOrderId}`
-        : `NEW_ORDER:orders:${recentOrders.map(o => o.orderId || o.id).join(',')}`,
+        ? `NEW_ORDER:order:${firstOrderId}:${first.createdAt || first.time || 'now'}`
+        : `NEW_ORDER:orders:${recentOrders.map(o => `${o.orderId || o.id}:${o.createdAt || o.time || 'now'}`).join(',')}`,
       tag: count === 1 ? `new-order-${firstOrderId}` : 'new-orders',
       url: count === 1 && firstOrderId ? `/orders/${firstOrderId}` : '/orders',
       silent: audioUnlocked.current,
     });
+    console.log(`[NotifDebug] OrdersList.showDesktopNotification RESULT: ${result}`);
   }, []);
 
   const addToast = useCallback((order) => {
@@ -776,9 +803,14 @@ const OrdersList = () => {
 
   // ── Live Polling ──
   const pollOrders = useCallback(async () => {
-    if (isPollingRef.current) return;
+    if (isPollingRef.current) {
+      console.log(`[NotifDebug] pollOrders SKIPPED (already polling)`);
+      return;
+    }
     isPollingRef.current = true;
     soundPlayedThisCycle.current = false;
+    const knownCount = knownOrderIds.current.size;
+    console.log(`[NotifDebug] pollOrders START: knownOrderIds=${knownCount}, firstPoll=${firstPollRef.current}`);
     try {
       const params = {
         ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
@@ -792,19 +824,29 @@ const OrdersList = () => {
         const hasNewOrder = knownOrderIds.current.size > 0 &&
           [...newIds].some(id => !knownOrderIds.current.has(id));
 
+        console.log(`[NotifDebug] pollOrders: hasNewOrder=${hasNewOrder}, totalOrders=${newOrders.length}`);
+
         let newlyArrived = [];
         if (hasNewOrder) {
           newlyArrived = newOrders.filter(o => !knownOrderIds.current.has(o.orderId || o.id) && isRecentNotification(o));
-          const shouldAlertOrders = newlyArrived.some(order =>
-            claimNotificationAlert({
-              id: `order-${order.orderId || order.id}`,
+          console.log(`[NotifDebug] pollOrders: newlyArrived=${newlyArrived.length}`, newlyArrived.map(o => ({ id: o.orderId || o.id, status: o.restaurantStatus || o.status })));
+
+          const shouldAlertOrders = newlyArrived.some(order => {
+            const alertKey = `order-${order.orderId || order.id}-${order.createdAt || order.time || Date.now()}`;
+            const result = claimNotificationAlert({
+              id: alertKey,
               type: 'NEW_ORDER',
               orderId: order.orderId || order.id,
               createdAt: order.createdAt || order.time,
-            }),
-          );
+            });
+            console.log(`[NotifDebug] pollOrders claimAlert(${alertKey}): ${result}`);
+            return result;
+          });
+
+          console.log(`[NotifDebug] pollOrders: shouldAlertOrders=${shouldAlertOrders}, soundPlayedThisCycle=${soundPlayedThisCycle.current}`);
 
           if (shouldAlertOrders && !soundPlayedThisCycle.current) {
+            console.log(`[NotifDebug] pollOrders: PLAYING notification sound + scheduling loud sound`);
             playNotificationSound();
             scheduleLoudSound();
             soundPlayedThisCycle.current = true;
@@ -818,24 +860,29 @@ const OrdersList = () => {
             });
             addNewOrders(newlyArrived);
             highlightNewOrders(newlyArrived);
+            console.log(`[NotifDebug] pollOrders: FIRING desktop notification for ${newlyArrived.length} orders`);
             showDesktopNotification(newlyArrived);
             fetchOrders(true);
           }
         }
 
         const statusBasedNew = newOrders.filter(o => shouldNotifyByStatus(o));
+        console.log(`[NotifDebug] pollOrders: statusBasedNew=${statusBasedNew.length}`);
         statusBasedNew.forEach(order => {
           notifiedOrderIds.current.add(order.orderId || order.id);
           addNewOrderNotification(order);
           const prevStatus = knownOrderStatuses.current.get(order.orderId || order.id);
           const status = (order.restaurantStatus || order.status || '').toUpperCase();
+          const alertKey = `order-status-${order.orderId || order.id}-${status}-${order.createdAt || order.time || Date.now()}`;
           const shouldAlertStatus = claimNotificationAlert({
-            id: `order-status-${order.orderId || order.id}-${status}`,
+            id: alertKey,
             type: status === 'ACCEPTED' ? 'ORDER_ASSIGNED' : 'NEW_ORDER',
             orderId: order.orderId || order.id,
             createdAt: order.createdAt || order.time,
           });
+          console.log(`[NotifDebug] pollOrders statusBased: order=${order.orderId || order.id}, prevStatus=${prevStatus}, newStatus=${status}, shouldAlertStatus=${shouldAlertStatus}`);
           if (prevStatus !== undefined && shouldAlertStatus && !soundPlayedThisCycle.current) {
+            console.log(`[NotifDebug] pollOrders statusBased: PLAYING sound for status change`);
             playNotificationSound();
             scheduleLoudSound();
             soundPlayedThisCycle.current = true;
@@ -850,7 +897,8 @@ const OrdersList = () => {
       setLastUpdatedTime(Date.now());
       if (!socketConnected) setLiveConnected(true);
       fetchStats();
-    } catch {
+    } catch (err) {
+      console.log(`[NotifDebug] pollOrders ERROR:`, err);
       if (!socketConnected) setLiveConnected(false);
     } finally {
       isPollingRef.current = false;
