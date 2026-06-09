@@ -1,5 +1,5 @@
 export const RECENT_NOTIFICATION_WINDOW_MS = 10 * 60 * 1000;
-const FUTURE_CLOCK_SKEW_MS = 2 * 60 * 1000;
+const FUTURE_CLOCK_SKEW_MS = 10 * 60 * 1000;
 
 export const getNotificationTimestamp = (item = {}) => {
   const raw =

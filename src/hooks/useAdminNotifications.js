@@ -361,9 +361,14 @@ export default function useAdminNotifications(opts) {
         // Re-enable after testing confirms desktop notifications fire correctly.
         // seedAlertedIds(docs);
         console.log('seedAlertedIds DISABLED for testing');
-        localNotifsRef.current = docs.slice(0, 100);
+        var sortedDocs = docs.slice().sort(function(a, b) { return getNotifTime(b) - getNotifTime(a); });
+        console.log('[NotifOrder] Initial load (' + sortedDocs.length + ' docs) top 3: ' +
+          sortedDocs.slice(0, 3).map(function(n, i) {
+            return '#' + (i + 1) + ' id=' + getNotificationId(n) + ' createdAt=' + (n.createdAt || n.created_at || 'MISSING');
+          }).join(' | '));
+        localNotifsRef.current = sortedDocs.slice(0, 100);
         setNotifications(localNotifsRef.current.slice());
-        var latest = getLatestNotif(docs);
+        var latest = getLatestNotif(sortedDocs);
         if (latest) {
           rememberLastNotification(latest);
           lastIdRef.current   = getStoredLastNotificationId();
