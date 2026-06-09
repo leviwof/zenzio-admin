@@ -11,7 +11,6 @@ import { getNotifications, getRestaurantById, markNotificationAsRead, getRestaur
 import { useOrderNotifications } from '../../context/OrderNotificationContext';
 import { getAuthUser, getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
-import { filterRecentNotifications, isRecentNotification } from '../../utils/notifications';
 import { isAdminSocketConnected } from '../../services/socket';
 import { claimNotificationAlert, getPermissionState, requestNotificationPermissionFresh } from '../../services/desktopNotificationService';
 
@@ -214,6 +213,7 @@ const Header = ({ onLogout }) => {
   const knownUnreadIds = useRef(new Set());
   const knownSyntheticIds = useRef(new Set());
   const isInitialLoad = useRef(true);
+  const allMergedNotificationsRef = useRef([]);
   const audioRef = useRef(null);
   const audioUnlocked = useRef(false);
   const pendingSoundRef = useRef(false);
@@ -261,12 +261,17 @@ const Header = ({ onLogout }) => {
     });
     const seen = new Set();
     return combined.filter(n => {
-      if (!isRecentNotification(n)) return false;
-      if (seen.has(n.id)) return false;
-      seen.add(n.id);
+      // show all of today's notifications — not just the last 10 minutes
+      const createdAt = n.createdAt || n.created_at || n.timestamp;
+      if (createdAt && !isToday(createdAt)) return false;
+      if (n.id != null && seen.has(n.id)) return false;
+      if (n.id != null) seen.add(n.id);
       return true;
     });
   }, [allNotifications, contextNotifs]);
+
+  // Keep ref in sync so fetchNotifications can read latest without being a dependency
+  useEffect(() => { allMergedNotificationsRef.current = allMergedNotifications; }, [allMergedNotifications]);
 
   const displayNotifications = useMemo(() => allMergedNotifications.slice(0, 30), [allMergedNotifications]);
   const todayUnreadCount = useMemo(() => allMergedNotifications.filter(n => !n.isRead && isToday(n.createdAt)).length, [allMergedNotifications]);
@@ -353,10 +358,18 @@ const Header = ({ onLogout }) => {
       if (Array.isArray(response.data?.data)) docs = response.data.data;
       else if (Array.isArray(response.data?.notifications)) docs = response.data.notifications;
       else if (Array.isArray(response.data)) docs = response.data;
-      const docsList = filterRecentNotifications(Array.isArray(docs) ? docs : []);
-      const existingIds = new Set(allMergedNotifications.map(n => n.id));
-      const trulyNew = docsList.filter(n => !existingIds.has(n.id));
-      console.log(`[NotifDebug] Header fetchNotifications: ${docs.length} total, ${docsList.length} recent, ${trulyNew.length} trulyNew`);
+      // Show all of today's notifications (not just the last 10 minutes)
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const docsList = (Array.isArray(docs) ? docs : []).filter(n => {
+        const ts = n.createdAt || n.created_at || n.timestamp;
+        if (!ts) return true; // no timestamp → include
+        const d = new Date(ts);
+        return !isNaN(d) && d >= todayStart;
+      });
+      // Use ref to read current merged list without being a reactive dependency
+      const existingIds = new Set(allMergedNotificationsRef.current.map(n => n.id));
+      const trulyNew = docsList.filter(n => n.id != null && !existingIds.has(n.id));
+      console.log(`[NotifDebug] Header fetchNotifications: ${docs.length} total, ${docsList.length} today, ${trulyNew.length} trulyNew`);
       if (trulyNew.length > 0) {
         console.log(`[NotifDebug] Header fetchNotifications APPENDING ${trulyNew.length} new notifications:`, trulyNew.map(n => ({ id: n.id, type: n.type })));
         setAllNotifications(prev => {
@@ -366,7 +379,7 @@ const Header = ({ onLogout }) => {
         });
       }
     } catch (error) { console.error('Failed to fetch notifications:', error); }
-  }, [allMergedNotifications]);
+  }, []); // stable — reads allMergedNotificationsRef.current instead of allMergedNotifications
 
   useEffect(() => {
     fetchNotifications();
