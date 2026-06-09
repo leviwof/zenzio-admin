@@ -95,3 +95,59 @@ export function onAdminReconnect(fn) {
 export function isAdminSocketConnected() {
   return adminSocket?.connected ?? false;
 }
+
+// ── Restaurant Admin Socket ────────────────────────────────────────────────
+// Separate singleton for restaurant admins — connects to the same namespace
+// but authenticates with role:'restaurant_admin' and restaurantUid so the
+// backend joins this client to the restaurant:{restaurantUid} room.
+
+let restaurantAdminSocket = null;
+
+export function getRestaurantAdminSocket(restaurantUid) {
+  if (restaurantAdminSocket) return restaurantAdminSocket;
+
+  const token = getStoredAccessToken();
+  if (!token || !restaurantUid) {
+    console.log('[RestaurantNotif] Socket INIT SKIPPED: token=' + !!token + ' restaurantUid=' + restaurantUid);
+    return null;
+  }
+
+  const uid = localStorage.getItem('adminId') || '';
+  console.log('[RestaurantNotif] Socket INIT ' + normalizedBaseUrl + '/admin-notifications restaurantUid=' + restaurantUid);
+
+  restaurantAdminSocket = io(`${normalizedBaseUrl}/admin-notifications`, {
+    auth: { token, uid, role: 'restaurant_admin', restaurantUid },
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 30000,
+    randomizationFactor: 0.5,
+    timeout: 10000,
+    forceNew: true,
+  });
+
+  restaurantAdminSocket.on('connect', () => {
+    console.log('[RestaurantNotif] Socket Connected id=' + restaurantAdminSocket.id);
+  });
+  restaurantAdminSocket.on('connect_error', (err) => {
+    console.log('[RestaurantNotif] Socket connect_error: ' + err.message);
+  });
+  restaurantAdminSocket.on('disconnect', (reason) => {
+    console.log('[RestaurantNotif] Socket Disconnected: ' + reason);
+  });
+
+  return restaurantAdminSocket;
+}
+
+export function disconnectRestaurantAdminSocket() {
+  if (restaurantAdminSocket) {
+    restaurantAdminSocket.removeAllListeners();
+    restaurantAdminSocket.disconnect();
+    restaurantAdminSocket = null;
+  }
+}
+
+export function isRestaurantAdminSocketConnected() {
+  return restaurantAdminSocket?.connected ?? false;
+}

@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useCallback, useRef, useMemo, useEffect } from "react";
 import useAdminNotifications from "../hooks/useAdminNotifications";
+import useRestaurantNotifications from "../hooks/useRestaurantNotifications";
 import { isRecentNotification, getNotificationTimestamp } from "../utils/notifications";
+import { isRestaurantAdmin, getCurrentRestaurantUid } from "../utils/auth";
 
 const OrderNotificationContext = createContext(null);
 
@@ -35,60 +37,71 @@ export const OrderNotificationProvider = ({ children }) => {
 
   const apiSeededRef = useRef(false);
 
-  const { notifications, socketConnected, permissionState, acknowledgeNotification } = useAdminNotifications({
-    onNewNotification: (notif) => {
-      const id   = notif.id ?? notif.notificationId ?? notif.notification_id;
-      const type = (notif.type || '').toUpperCase();
+  // Detect role once — does not change during a session
+  const _isRestAdmin     = useMemo(() => isRestaurantAdmin(), []);
+  const _restaurantUid   = useMemo(() => getCurrentRestaurantUid(), []);
 
-      // Always add to notification list regardless of clock skew — so it appears in the dropdown
-      setSocketNotifs(prev => {
-        if (id != null && prev.some(n => n.id === id)) {
-          console.log(`[NotifDebug] OrderNotificationContext socketNotifs SKIPPED (already exists): id=${id}`);
-          return prev;
-        }
-        return [{ ...notif, _source: 'socket', isRead: false }, ...prev].slice(0, 100);
-      });
+  // Shared notification handler — called by both Zenzio Admin and Restaurant Admin sockets
+  const handleIncomingNotif = useCallback((notif) => {
+    const id   = notif.id ?? notif.notificationId ?? notif.notification_id;
+    const type = (notif.type || (notif.data?.type) || '').toUpperCase();
 
-      // Badge counter for order-related types
-      if (ORDER_BADGE_TYPES.has(type)) {
-        console.log(`[NotifDebug] OrderNotificationContext INCREMENTING badge: type=${type}`);
-        setUnreadOrderCount(prev => prev + 1);
+    // Always add to notification list regardless of clock skew
+    setSocketNotifs(prev => {
+      if (id != null && prev.some(n => n.id === id)) {
+        console.log(`[NotifDebug] socketNotifs SKIPPED (already exists): id=${id}`);
+        return prev;
       }
+      return [{ ...notif, _source: 'socket', isRead: false }, ...prev].slice(0, 100);
+    });
 
-      // Recency check for popup — prevents old reconnect-recovered notifications from showing popups.
-      // Diagnose with exact timestamps if blocked.
-      const recent = isRecentNotification(notif);
-      if (!recent) {
-        const ts  = getNotificationTimestamp(notif);
-        const now = Date.now();
-        console.log(
-          `[NotifDebug] OrderNotificationContext.onNewNotification popup SKIPPED (not recent):` +
-          ` type=${type}, id=${id}, createdAt=${notif?.createdAt},` +
-          ` ts=${ts}, now=${now}, diff=${ts != null ? ts - now : 'null'}ms`
-        );
+    // Badge counter for order-related types
+    if (ORDER_BADGE_TYPES.has(type)) {
+      console.log(`[NotifDebug] INCREMENTING badge: type=${type}`);
+      setUnreadOrderCount(prev => prev + 1);
+    }
+
+    // Recency check for popup only — list update above is unconditional
+    const recent = isRecentNotification(notif);
+    if (!recent) {
+      const ts  = getNotificationTimestamp(notif);
+      const now = Date.now();
+      console.log(
+        `[NotifDebug] popup SKIPPED (not recent):` +
+        ` type=${type}, id=${id}, createdAt=${notif?.createdAt},` +
+        ` ts=${ts}, now=${now}, diff=${ts != null ? ts - now : 'null'}ms`
+      );
+      return;
+    }
+
+    console.log(`[NotifDebug] onNewNotification: id=${id}, type=${type}, body="${(notif.body || notif.message || '').slice(0, 60)}"`);
+
+    if (POPUP_TYPES.has(type) || !type) {
+      const idStr = id != null ? String(id) : null;
+      if (idStr && popupSeenIds.current.has(idStr)) {
+        console.log(`[NotifDebug] popup SKIPPED (already in popupSeenIds): id=${idStr}`);
         return;
       }
+      if (idStr) popupSeenIds.current.add(idStr);
+      setPopupQueue(prev => {
+        if (id != null && prev.some(n => n.id === id)) return prev;
+        console.log(`[NotifDebug] SETTING popupQueue: type=${type}, id=${id}`);
+        return [notif];
+      });
+    } else {
+      console.log(`[NotifDebug] popup SKIPPED (not in POPUP_TYPES): type=${type}`);
+    }
+  }, []);
 
-      console.log(`[NotifDebug] OrderNotificationContext.onNewNotification: id=${id}, type=${type}, body="${(notif.body || notif.message || '').slice(0, 60)}"`);
+  const { notifications, socketConnected, permissionState, acknowledgeNotification } = useAdminNotifications({
+    onNewNotification: handleIncomingNotif,
+  });
 
-      // In-app popup toast — only for relevant types, only once per ID
-      if (POPUP_TYPES.has(type) || !type) {
-        const idStr = id != null ? String(id) : null;
-        if (idStr && popupSeenIds.current.has(idStr)) {
-          console.log(`[NotifDebug] OrderNotificationContext popup SKIPPED (already in popupSeenIds): id=${idStr}`);
-          return;
-        }
-        if (idStr) popupSeenIds.current.add(idStr);
-
-        setPopupQueue(prev => {
-          if (id != null && prev.some(n => n.id === id)) return prev;
-          console.log(`[NotifDebug] OrderNotificationContext SETTING popupQueue: type=${type}, id=${id}`);
-          return [notif];
-        });
-      } else {
-        console.log(`[NotifDebug] OrderNotificationContext popup SKIPPED (not in POPUP_TYPES): type=${type}`);
-      }
-    },
+  // Restaurant Admin socket — connects only when the current user is a restaurant admin
+  useRestaurantNotifications({
+    enabled:       _isRestAdmin,
+    restaurantUid: _restaurantUid,
+    onNewOrder:    handleIncomingNotif,
   });
 
   // Seed notification list from API on initial load so the bell is never empty
