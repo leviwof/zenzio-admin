@@ -185,21 +185,22 @@ export function seedAlertedIds(notifications = []) {
     const isVeryRecent = createdMs != null && (now - createdMs) < SEED_SKIP_RECENT_MS;
 
     if (isVeryRecent) {
-      // Do NOT seed into ALERTED_IDS_KEY — let the socket event claim it and
-      // trigger sound + desktop notification normally (same flow as reassignment).
+      // Do NOT seed into any alert/sound/desktop keys.
+      // Let the real-time socket event handle this fresh notification normally.
+      // Previous bug: orderId was still seeded into DESKTOP_ORDER_IDS_KEY here,
+      // which blocked showDesktopNotification even when claimAlert passed.
       skippedCount++;
     } else {
       addList(ALERTED_IDS_KEY, s);
       addList(SOUND_IDS_KEY,   s);
       addList(DESKTOP_IDS_KEY, s);
+      // Only seed orderId for old (non-recent) notifications
+      const orderId = getNotificationOrderId(n);
+      if (orderId != null) {
+        addList(DESKTOP_ORDER_IDS_KEY, String(orderId));
+        orderSeededCount++;
+      }
       seededCount++;
-    }
-
-    // Seed order IDs into DESKTOP_ORDER_IDS_KEY to prevent stale re-alerts
-    const orderId = getNotificationOrderId(n);
-    if (orderId != null) {
-      addList(DESKTOP_ORDER_IDS_KEY, String(orderId));
-      orderSeededCount++;
     }
   });
   console.log(`[NotifDebug] seedAlertedIds: seeded ${seededCount}, skipped-recent ${skippedCount}, orders ${orderSeededCount}`);
@@ -211,26 +212,48 @@ export function seedAlertedIds(notifications = []) {
  * Returns true the FIRST time for this notification ID, false thereafter.
  * Stored in localStorage so it survives page refresh.
  */
+// Session-scoped in-memory claimed Set.
+// Replaces the localStorage ALERTED_IDS_KEY check for real-time socket events.
+// This prevents the same notification from being claimed twice within a single
+// page session, without the cross-session false-block that localStorage caused.
+const _sessionClaimedIds = new Set();
+
 export function claimAlert(n = {}) {
-  const id = getNotificationId(n);
+  const id   = getNotificationId(n);
+  const type = getNotificationType(n);
 
   if (!isRecentNotification(n)) {
-    console.log(`[NotifDebug] claimAlert SKIPPED (not recent): id=${id}, type=${getNotificationType(n)}`);
-    return false;
+    const result = false;
+    console.log('CLAIM ALERT', id, result, '(not recent, type=' + type + ')');
+    return result;
   }
 
   if (id == null) {
-    console.log(`[NotifDebug] claimAlert ALLOWED (no id): type=${getNotificationType(n)}`);
-    return true;
+    const result = true;
+    console.log('CLAIM ALERT', id, result, '(no id, type=' + type + ')');
+    return result;
   }
+
   const s = String(id);
-  if (hasList(ALERTED_IDS_KEY, s)) {
-    console.log(`[NotifDebug] claimAlert SKIPPED (already alerted): id=${s}, type=${getNotificationType(n)}`);
-    return false;
+
+  // Session-scoped in-memory check only.
+  // We do NOT check localStorage (ALERTED_IDS_KEY) here because:
+  //   - localStorage entries from previous sessions block legitimate new alerts
+  //   - DESKTOP_IDS_KEY in showDesktopNotification handles cross-tab dedup for desktop
+  //   - tryAcquireAudioLock handles cross-tab dedup for sound
+  //   - localSeenIds in the hook handles in-session duplicate socket events
+  if (_sessionClaimedIds.has(s)) {
+    const result = false;
+    console.log('CLAIM ALERT', id, result, '(already claimed this session, type=' + type + ')');
+    return result;
   }
+
+  _sessionClaimedIds.add(s);
+  // Still write to localStorage for backwards compat with other code that reads it
   addList(ALERTED_IDS_KEY, s);
-  console.log(`[NotifDebug] claimAlert CLAIMED: id=${s}, type=${getNotificationType(n)}`);
-  return true;
+  const result = true;
+  console.log('CLAIM ALERT', id, result, '(claimed, type=' + type + ')');
+  return result;
 }
 
 // Legacy name kept for backwards compat
@@ -481,26 +504,26 @@ export async function showDesktopNotification(body, data = {}) {
 
   const notifId = getNotificationId(n) ?? data.notificationId ?? data.id;
 
-  // Dedup: never show the same notification ID twice
+  // Dedup: prevent the same notification ID from firing a desktop popup twice
+  // within the same browser session (handles multi-tab races via localStorage).
+  // Session-scoped: cleared on page load, so a refresh can re-alert if needed.
+  console.log('DESKTOP DEDUP CHECK', notifId);
   if (notifId != null) {
     const s = String(notifId);
     if (hasList(DESKTOP_IDS_KEY, s)) {
-      console.log(`[NotifDebug] showDesktopNotification SKIPPED (already shown): id=${s}, type=${getNotificationType(n)}`);
+      console.log(`[NotifDebug] showDesktopNotification SKIPPED (DESKTOP_IDS_KEY already has id): id=${s}, type=${getNotificationType(n)}`);
       return false;
     }
     addList(DESKTOP_IDS_KEY, s);
   }
 
-  // Cross-path dedup via orderId — prevents duplicates between socket & polling paths
+  // DESKTOP_ORDER_IDS_KEY cross-path check has been removed.
+  // It was designed to prevent socket + polling from both firing desktop
+  // notifications for the same order. Since polling no longer triggers desktop
+  // notifications (alertMissed: false), this check is obsolete and was causing
+  // legitimate new-order desktop notifications to be silently blocked.
   const orderId = getNotificationOrderId(n) || data.orderId;
-  if (orderId != null) {
-    const orderKey = String(orderId);
-    if (hasList(DESKTOP_ORDER_IDS_KEY, orderKey)) {
-      console.log(`[NotifDebug] showDesktopNotification SKIPPED (order already notified): orderId=${orderKey}, type=${getNotificationType(n)}`);
-      return false;
-    }
-    addList(DESKTOP_ORDER_IDS_KEY, orderKey);
-  }
+  console.log('ORDER DEDUP CHECK', orderId, '(check disabled — orderId logged only)');
 
   const type = getNotificationType(n) || normalizeType(data.type);
   const isRequireInteraction = REQUIRE_INTERACTION_TYPES.has(type);
@@ -534,7 +557,7 @@ export async function showDesktopNotification(body, data = {}) {
       data,
     });
 
-    console.log(`[NotifDebug] Desktop Notification Fired: title="${notifTitle}", body="${notifBody?.slice(0, 60)}", tag=${tag}, type=${type}, requireInteraction=${notifRequireInteraction}`);
+    console.log('DESKTOP NOTIFICATION FIRED', notifId, '| title:', notifTitle, '| body:', notifBody?.slice(0, 80), '| type:', type, '| requireInteraction:', notifRequireInteraction);
 
     popup.onclick = () => {
       try {

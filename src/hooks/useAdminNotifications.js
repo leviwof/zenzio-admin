@@ -261,22 +261,29 @@ export default function useAdminNotifications(opts) {
     if (onNewNotificationRef.current) onNewNotificationRef.current(notif);
 
     // ── Decide whether to alert (sound + desktop) ────────────────────────────
-    var important  = isImportantAdminNotification(notif);
-    var claimed    = claimAlert(notif);
-    var shouldAlert = alert && !fromBroadcast && important && claimed;
+    // claimAlert is called for its logging and session-tracking side-effects,
+    // but its return value no longer gates shouldAlert for socket events.
+    // Reason: claimAlert previously used localStorage (ALERTED_IDS_KEY) which
+    // persisted across page refreshes and caused legitimate socket events to be
+    // silently blocked. Dedup is now handled by:
+    //   1. localSeenIds (in-memory, per session) — blocks duplicate socket events
+    //   2. processedOrderIds (in-memory, per session) — blocks duplicate orders
+    //   3. DESKTOP_IDS_KEY in showDesktopNotification — blocks duplicate desktop per ID
+    //   4. tryAcquireAudioLock — blocks duplicate sound across tabs
+    var important = isImportantAdminNotification(notif);
+    claimAlert(notif); // side-effect: logs + writes to session Set + localStorage
+    var shouldAlert = alert && !fromBroadcast && important;
 
     console.log(
       '[NotifDebug] shouldAlert=' + shouldAlert +
       ' (alert=' + alert +
       ', fromBroadcast=' + fromBroadcast +
-      ', important=' + important +
-      ', claimed=' + claimed + ')'
+      ', important=' + important + ')'
     );
 
     if (shouldAlert) {
       // ALL important types — including NEW_ORDER — get sound + desktop from
-      // the socket event. The old guard that delegated NEW_ORDER to polling
-      // has been removed; that was the cause of missed notifications.
+      // the socket event.
       var content = buildDesktopNotificationContent(notif);
       var body    = content.body;
 
@@ -297,8 +304,9 @@ export default function useAdminNotifications(opts) {
 
       setPermissionState(getPermissionState());
     } else {
-      if (!important) console.log('[NotifDebug] Notification Skipped (not important): type=' + type);
-      if (!claimed)   console.log('[NotifDebug] Notification Skipped (already claimed/alerted): id=' + idStr);
+      if (!important)     console.log('[NotifDebug] Notification Skipped (not important): type=' + type);
+      if (fromBroadcast)  console.log('[NotifDebug] Notification Skipped (fromBroadcast, UI-only): id=' + idStr);
+      if (!alert)         console.log('[NotifDebug] Notification Skipped (poll history-sync, alert=false): id=' + idStr);
     }
 
     rememberLastNotification(notif);
@@ -321,11 +329,31 @@ export default function useAdminNotifications(opts) {
       if (!Array.isArray(docs)) docs = [];
 
       if (!initializedRef.current) {
-        // Initial load: seed all existing IDs — no sound/desktop triggered
-        var docCount = 0;
+        // Initial load — seed existing notification IDs into localSeenIds so
+        // the 60 s poll never re-alerts them. BUT: do NOT seed IDs for very
+        // recent notifications (< 2 min old). Those should still be alertable
+        // by the real-time socket event that arrives shortly after page load.
+        // Previous bug: ALL IDs were seeded, so the socket event for a fresh
+        // order that happened to land in the initial fetch was silently dropped.
+        var now        = Date.now();
+        var RECENT_MS  = 120_000; // 2 minutes — match seedAlertedIds
+        var docCount   = 0;
+        var skipCount  = 0;
         docs.forEach(function(n) {
           var nid = getNotificationId(n);
-          if (nid != null) { localSeenIds.current.add(String(nid)); docCount++; }
+          if (nid == null) return;
+
+          var createdAt = n.createdAt || n.created_at || n.timestamp;
+          var createdMs = createdAt ? Date.parse(createdAt) : null;
+          var isVeryRecent = (createdMs != null) && (now - createdMs) < RECENT_MS;
+
+          if (isVeryRecent) {
+            // Leave out of localSeenIds — socket event can still claim + alert it
+            skipCount++;
+          } else {
+            localSeenIds.current.add(String(nid));
+            docCount++;
+          }
         });
         seedAlertedIds(docs);
         localNotifsRef.current = docs.slice(0, 100);
@@ -339,8 +367,9 @@ export default function useAdminNotifications(opts) {
         initializedRef.current = true;
         setPermissionState(getPermissionState());
         console.log(
-          '[NotifDebug] Initial load: ' + docs.length + ' docs, ' +
-          docCount + ' IDs seeded. lastId=' + lastIdRef.current
+          '[NotifDebug] Initial load: ' + docs.length + ' docs, seeded=' +
+          docCount + ', skipped-recent=' + skipCount +
+          ', lastId=' + lastIdRef.current
         );
         return;
       }
