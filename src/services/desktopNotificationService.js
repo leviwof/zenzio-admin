@@ -158,21 +158,42 @@ export function isNotificationNewer(n = {}, lastId, lastTime) {
  *   2. Polling won't re-alert for notifications loaded during initial seed
  *   3. Works correctly on first-ever login (cold localStorage)
  *
+ * Recent notifications (< SEED_SKIP_RECENT_MS old) are NOT seeded into
+ * ALERTED_IDS_KEY so that the real-time socket event can still claim and
+ * display them. Without this, a notification created just before the page
+ * loaded would be pre-seeded and the socket event would silently drop it.
+ *
  * @param {Array} notifications - notification list from initial API fetch
  */
+const SEED_SKIP_RECENT_MS = 120_000; // 2 minutes
+
 export function seedAlertedIds(notifications = []) {
   if (!Array.isArray(notifications)) return;
-  let count = 0;
+  const now = Date.now();
+  let seededCount = 0;
+  let skippedCount = 0;
   notifications.forEach(n => {
     const id = getNotificationId(n);
     if (id == null) return;
     const s = String(id);
-    addList(ALERTED_IDS_KEY, s);
-    addList(SOUND_IDS_KEY,   s);
-    addList(DESKTOP_IDS_KEY, s);
-    count++;
+
+    // Determine age of notification
+    const createdAt = getNotificationCreatedAt(n);
+    const createdMs = createdAt ? Date.parse(createdAt) : null;
+    const isVeryRecent = createdMs != null && (now - createdMs) < SEED_SKIP_RECENT_MS;
+
+    if (isVeryRecent) {
+      // Do NOT seed into ALERTED_IDS_KEY — let the socket event claim it and
+      // trigger sound + desktop notification normally (same flow as reassignment).
+      skippedCount++;
+    } else {
+      addList(ALERTED_IDS_KEY, s);
+      addList(SOUND_IDS_KEY,   s);
+      addList(DESKTOP_IDS_KEY, s);
+      seededCount++;
+    }
   });
-  console.log(`[NotifDebug] seedAlertedIds: seeded ${count} existing notifications into all 3 dedup stores (ALERTED=${count}, SOUND=${count}, DESKTOP=${count})`);
+  console.log(`[NotifDebug] seedAlertedIds: seeded ${seededCount}, skipped-recent ${skippedCount} (will be handled by socket)`);
 }
 
 // ─── Alert deduplication ──────────────────────────────────────────────────────

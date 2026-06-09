@@ -21,7 +21,6 @@ import { isRecentNotification } from "../../utils/notifications";
 import { isAdminSocketConnected } from "../../services/socket";
 import {
   claimNotificationAlert,
-  showDesktopNotification as showNativeDesktopNotification,
 } from "../../services/desktopNotificationService";
 
 const notificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
@@ -596,40 +595,10 @@ const OrdersList = () => {
     }, LOUD_SOUND_DELAY);
   }, [cancelLoudSoundTimer, playLoudNotificationSound]);
 
-  const showDesktopNotification = useCallback(async (orders) => {
-    const recentOrders = orders.filter(isRecentNotification);
-    const count = recentOrders.length;
-    const first = recentOrders[0];
-    if (!first) {
-      console.log(`[NotifDebug] OrdersList.showDesktopNotification SKIPPED: no recent orders (${orders.length} total)`);
-      return;
-    }
-
-    const title = count === 1 ? `New Order #${first.orderId}` : `${count} New Orders Received`;
-    const body = count === 1
-      ? `${first.customer_name || "Guest"} - ${first.restaurant_name || "Unknown"} - ₹${first.price}`
-      : `${first.customer_name || "Guest"} and ${count - 1} other${count - 1 > 1 ? 's' : ''}`;
-    const firstOrderId = first.orderId || first.id;
-    const uniqueKey = `order-${firstOrderId}-${first.createdAt || first.time || Date.now()}`;
-    console.log(`[NotifDebug] OrdersList.showDesktopNotification FIRING: count=${count}, firstOrderId=${firstOrderId}, key=${uniqueKey}, permission=${window.Notification?.permission}`);
-    const result = await showNativeDesktopNotification(body, {
-      notification: {
-        id: uniqueKey,
-        type: 'NEW_ORDER',
-        orderId: firstOrderId,
-        title,
-        body,
-        createdAt: first.createdAt || first.time,
-      },
-      dedupeKey: count === 1
-        ? `NEW_ORDER:order:${firstOrderId}:${first.createdAt || first.time || 'now'}`
-        : `NEW_ORDER:orders:${recentOrders.map(o => `${o.orderId || o.id}:${o.createdAt || o.time || 'now'}`).join(',')}`,
-      tag: count === 1 ? `new-order-${firstOrderId}` : 'new-orders',
-      url: count === 1 && firstOrderId ? `/orders/${firstOrderId}` : '/orders',
-      silent: audioUnlocked.current,
-    });
-    console.log(`[NotifDebug] OrdersList.showDesktopNotification RESULT: ${result}`);
-  }, []);
+  // Desktop notifications for new orders are handled by the useAdminNotifications
+  // hook via socket (same flow as ORDER_REASSIGNED and other admin notifications).
+  // Firing a separate desktop notification here caused duplicates because the two
+  // systems used different dedup keys and both fired for the same order.
 
   const addToast = useCallback((order) => {
     if (!isRecentNotification(order)) return;
@@ -860,8 +829,6 @@ const OrdersList = () => {
             });
             addNewOrders(newlyArrived);
             highlightNewOrders(newlyArrived);
-            console.log(`[NotifDebug] pollOrders: FIRING desktop notification for ${newlyArrived.length} orders`);
-            showDesktopNotification(newlyArrived);
             fetchOrders(true);
           }
         }
@@ -903,7 +870,7 @@ const OrdersList = () => {
     } finally {
       isPollingRef.current = false;
     }
-  }, [restaurantAdmin, ownRestaurantUid, orderBelongsToOwnRestaurant, playNotificationSound, scheduleLoudSound, addToast, addNewOrderNotification, addNewOrders, highlightNewOrders, showDesktopNotification, shouldNotifyByStatus, fetchStats, fetchOrders]);
+  }, [restaurantAdmin, ownRestaurantUid, orderBelongsToOwnRestaurant, playNotificationSound, scheduleLoudSound, addToast, addNewOrderNotification, addNewOrders, highlightNewOrders, shouldNotifyByStatus, fetchStats, fetchOrders]);
 
   pollOrdersRef.current = pollOrders;
 
