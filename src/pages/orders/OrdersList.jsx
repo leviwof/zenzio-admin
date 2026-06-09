@@ -596,41 +596,33 @@ const OrdersList = () => {
     }, LOUD_SOUND_DELAY);
   }, [cancelLoudSoundTimer, playLoudNotificationSound]);
 
-  // Show desktop notification for new orders detected via polling.
-  // Uses orderId-based dedup to prevent duplicates with the socket path.
-  const showDesktopNotification = useCallback(async (orders) => {
-    const recentOrders = orders.filter(isRecentNotification);
-    const count = recentOrders.length;
-    const first = recentOrders[0];
+  const showDesktopNotification = useCallback((orders) => {
+    const first = orders[0];
     if (!first) {
-      console.log(`[NotifDebug] OrdersList.showDesktopNotification SKIPPED: no recent orders (${orders.length} total)`);
+      console.log(`[DEBUG] DESKTOP NOTIFICATION SKIPPED: empty orders array`);
       return;
     }
-
-    const title = count === 1 ? `New Order #${first.orderId}` : `${count} New Orders Received`;
+    if (!('Notification' in window)) {
+      console.log(`[DEBUG] DESKTOP NOTIFICATION SKIPPED: Notification API not supported`);
+      return;
+    }
+    if (Notification.permission !== 'granted') {
+      console.log(`[DEBUG] DESKTOP NOTIFICATION SKIPPED: permission=${Notification.permission}`);
+      return;
+    }
+    const count = orders.length;
+    const orderId = first.orderId || first.id;
+    const title = count === 1 ? `New Order #${orderId}` : `${count} New Orders`;
     const body = count === 1
-      ? `${first.customer_name || "Guest"} - ${first.restaurant_name || "Unknown"} - ₹${first.price}`
-      : `${first.customer_name || "Guest"} and ${count - 1} other${count - 1 > 1 ? 's' : ''}`;
-    const firstOrderId = first.orderId || first.id;
-    const uniqueKey = `order-${firstOrderId}-${first.createdAt || first.time || Date.now()}`;
-    console.log(`[NotifDebug] OrdersList.showDesktopNotification FIRING: count=${count}, firstOrderId=${firstOrderId}, key=${uniqueKey}, permission=${window.Notification?.permission}`);
-    const result = await showNativeDesktopNotification(body, {
-      notification: {
-        id: uniqueKey,
-        type: 'NEW_ORDER',
-        orderId: firstOrderId,
-        title,
-        body,
-        createdAt: first.createdAt || first.time,
-      },
-      dedupeKey: count === 1
-        ? `NEW_ORDER:order:${firstOrderId}:${first.createdAt || first.time || 'now'}`
-        : `NEW_ORDER:orders:${recentOrders.map(o => `${o.orderId || o.id}:${o.createdAt || o.time || 'now'}`).join(',')}`,
-      tag: count === 1 ? `new-order-${firstOrderId}` : 'new-orders',
-      url: count === 1 && firstOrderId ? `/orders/${firstOrderId}` : '/orders',
-      silent: true,
-    });
-    console.log(`[NotifDebug] OrdersList.showDesktopNotification RESULT: ${result}`);
+      ? `${first.customer_name || 'Guest'} - ${first.restaurant_name || 'Unknown'} - ₹${first.price}`
+      : `${first.customer_name || 'Guest'} and ${count - 1} other${count - 1 > 1 ? 's' : ''}`;
+    try {
+      const n = new Notification(title, { body, requireInteraction: true, tag: `order-${orderId}` });
+      n.onclick = () => { window.focus(); n.close(); };
+      console.log(`[DEBUG] DESKTOP NOTIFICATION FIRED: orderId=${orderId}, title="${title}"`);
+    } catch (err) {
+      console.log(`[DEBUG] DESKTOP NOTIFICATION SKIPPED: error=${err.message}`);
+    }
   }, []);
 
   const addToast = useCallback((order) => {
