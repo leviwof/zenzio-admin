@@ -21,6 +21,7 @@ import { isRecentNotification } from "../../utils/notifications";
 import { isAdminSocketConnected } from "../../services/socket";
 import {
   claimNotificationAlert,
+  showDesktopNotification as showNativeDesktopNotification,
 } from "../../services/desktopNotificationService";
 
 const notificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
@@ -831,15 +832,21 @@ const OrdersList = () => {
           newlyArrived = newOrders.filter(o => !knownOrderIds.current.has(o.orderId || o.id) && isRecentNotification(o));
           console.log(`[NotifDebug] pollOrders: newlyArrived=${newlyArrived.length}`, newlyArrived.map(o => ({ id: o.orderId || o.id, status: o.restaurantStatus || o.status })));
 
-          // Sound, desktop notification, and popup are now driven exclusively
-          // by the socket order:new event (useAdminNotifications).
-          // Polling is for history sync and orders-page UI only.
           if (newlyArrived.length > 0) {
+            console.log(`[DEBUG] POLL DETECTED ORDER: ${newlyArrived.length} new order(s), socketConnected=${socketConnected}`);
             addToast(newlyArrived[0]);
-            // When socket is down, feed the global popup queue so alerts work off this page too
-            if (!socketConnected) {
-              newlyArrived.forEach(order => addNewOrderNotification(order));
-            }
+
+            // Always drive alerts from polling — socket connection does NOT guarantee
+            // order:new events arrive (backend may emit only to its own socket namespace).
+            console.log(`[DEBUG] ALERT FUNCTION CALLED: addNewOrderNotification x${newlyArrived.length}`);
+            newlyArrived.forEach(order => addNewOrderNotification(order));
+
+            console.log(`[DEBUG] SOUND CALLED`);
+            playNotificationSound();
+
+            console.log(`[DEBUG] DESKTOP CALLED`);
+            showDesktopNotification(newlyArrived);
+
             newlyArrived.forEach(order => {
               notifiedOrderIds.current.add(order.orderId || order.id);
             });
