@@ -46,7 +46,7 @@ export const OrderNotificationProvider = ({ children }) => {
 
       // Update socket notification list
       setSocketNotifs(prev => {
-        if (prev.some(n => n.id === id)) {
+        if (id != null && prev.some(n => n.id === id)) {
           console.log(`[NotifDebug] OrderNotificationContext socketNotifs SKIPPED (already exists): id=${id}`);
           return prev;
         }
@@ -146,9 +146,9 @@ export const OrderNotificationProvider = ({ children }) => {
 
     const seen = new Set();
     return items.filter(n => {
-      if (!isRecentNotification(n)) return false;
-      if (seen.has(n.id)) return false;
-      seen.add(n.id);
+      // session-scoped socket/synthetic notifs are always relevant — no time filter here
+      if (n.id != null && seen.has(n.id)) return false;
+      if (n.id != null) seen.add(n.id);
       return true;
     });
   }, [socketNotifs, syntheticNotifs]);
