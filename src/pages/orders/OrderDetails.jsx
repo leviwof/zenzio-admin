@@ -7,7 +7,7 @@ import {
   IndianRupee, Clock, RefreshCw, Download, Ban, RotateCcw,
   Copy, Check, CreditCard, ShoppingBag, FileText, Eye, Loader2,
 } from 'lucide-react';
-import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder, updateOrderStatus, reconcilePayment } from '../../services/api';
+import { getOrderDetails, updateDeliveryStatusByAdmin, getAllDeliveryPartners, reassignOrder, updateOrderStatus, reconcilePayment, refundOrder } from '../../services/api';
 import DeliveryMap from '../../components/DeliveryMap';
 import Card, { CardContent, CardHeader } from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -262,6 +262,9 @@ const StatusBadge = ({ status }) => {
     ADMIN_CANCELLED: { label: 'Admin Cancelled', color: 'bg-red-50 text-red-700 border border-red-200' },
     REJECTED: { label: 'Rejected', color: 'bg-red-50 text-red-700 border border-red-200' },
     FAILED: { label: 'Failed', color: 'bg-red-50 text-red-700 border border-red-200' },
+    NONE: { label: 'None', color: 'bg-gray-50 text-gray-500 border border-gray-200' },
+    REFUNDED: { label: 'Refunded', color: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+    REFUND_FAILED: { label: 'Refund Failed', color: 'bg-red-50 text-red-700 border border-red-200' },
   };
   const s = String(status || '').toUpperCase();
   const info = map[s] || { label: s, color: 'bg-gray-50 text-gray-600 border border-gray-200' };
@@ -304,6 +307,9 @@ const OrderDetails = () => {
   const [lifecycleUpdating, setLifecycleUpdating] = useState(false);
   const [syncingPayment, setSyncingPayment] = useState(false);
 
+  const [showRefundModal, setShowRefundModal] = useState(false);
+  const [refundLoading, setRefundLoading] = useState(false);
+
   const handleSyncPayment = async () => {
     const razorpayOrderId = order?.razorpay_order_id;
     if (!razorpayOrderId) return;
@@ -323,6 +329,20 @@ const OrderDetails = () => {
       toast.error(err?.response?.data?.message || 'Failed to sync payment status.');
     } finally {
       setSyncingPayment(false);
+    }
+  };
+
+  const handleConfirmRefund = async () => {
+    setRefundLoading(true);
+    try {
+      await refundOrder(order.orderId);
+      toast.success('Refund initiated successfully. Funds will be returned to the customer.');
+      setShowRefundModal(false);
+      await fetchOrderDetails({ silent: true });
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to process refund.');
+    } finally {
+      setRefundLoading(false);
     }
   };
 
@@ -1327,7 +1347,37 @@ const OrderDetails = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-400 font-medium">Refund Status</p>
-                  <p className="mt-0.5"><StatusBadge status={order.refundStatus || 'NONE'} /></p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <StatusBadge status={order.refundStatus || 'NONE'} />
+                    {(order.payment_mode || '').toUpperCase() === 'ONLINE' && (() => {
+                      const placedAt = order.orderSummary?.orderPlacement || order.lastUpdated;
+                      const isToday = placedAt && (() => {
+                        const IST = 5.5 * 60 * 60 * 1000;
+                        const d = new Date(new Date(placedAt).getTime() + IST);
+                        const n = new Date(Date.now() + IST);
+                        return d.getUTCFullYear() === n.getUTCFullYear() &&
+                          d.getUTCMonth() === n.getUTCMonth() &&
+                          d.getUTCDate() === n.getUTCDate();
+                      })();
+                      if (!isToday) return null;
+                      return order.refundStatus === 'REFUNDED' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <Check size={11} />
+                          Refunded
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setShowRefundModal(true)}
+                          disabled={refundLoading}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                          title="Issue full refund to customer"
+                        >
+                          <RotateCcw size={11} />
+                          Refund
+                        </button>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -1795,6 +1845,59 @@ const OrderDetails = () => {
                     />
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Refund Confirmation Modal */}
+      <AnimatePresence>
+        {showRefundModal && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+            onClick={() => !refundLoading && setShowRefundModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6"
+            >
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                <RotateCcw size={22} className="text-red-600" />
+              </div>
+              <h3 className="text-base font-bold text-gray-900 text-center mb-1">Issue Full Refund</h3>
+              <p className="text-sm text-gray-500 text-center mb-1">
+                Refund <span className="font-semibold text-gray-900">{formatCurrency(order?.price)}</span> for order{' '}
+                <span className="font-mono font-semibold text-gray-900">#{order?.orderId}</span>
+              </p>
+              {(order?.paymentStatus || '').toLowerCase() !== 'success' && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-center mb-2">
+                  Payment not yet confirmed. Refund will only proceed if payment was captured.
+                </p>
+              )}
+              <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 text-center mb-5">
+                This action is permanent and cannot be undone. The customer will receive a full refund to their original payment method.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowRefundModal(false)}
+                  disabled={refundLoading}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmRefund}
+                  disabled={refundLoading}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {refundLoading ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+                  {refundLoading ? 'Processing…' : 'Confirm Refund'}
+                </button>
               </div>
             </motion.div>
           </div>
