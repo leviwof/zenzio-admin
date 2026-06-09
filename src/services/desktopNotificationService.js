@@ -506,19 +506,35 @@ export async function showDesktopNotification(body, data = {}) {
   const isRequireInteraction = REQUIRE_INTERACTION_TYPES.has(type);
   const tag  = notifId ? `zenzio-${notifId}` : `zenzio-${Date.now()}`;
 
+  // NEW_ORDER uses the mandated notification format per spec
+  let notifTitle = 'Zenzio Admin';
+  let notifBody  = body || 'You have a new notification';
+  let notifRequireInteraction = isRequireInteraction;
+  if (type === 'NEW_ORDER' || type === 'ORDER_RECEIVED') {
+    notifTitle = 'New Order Received';
+    const orderIdVal       = getNotificationOrderId(n) || data.orderId;
+    const restaurantVal    = n.restaurantName || n.data?.restaurantName || data.restaurantName;
+    if (orderIdVal && restaurantVal) {
+      notifBody = `Order #${orderIdVal} from ${restaurantVal}`;
+    } else if (orderIdVal) {
+      notifBody = `Order #${orderIdVal}`;
+    }
+    notifRequireInteraction = true;
+  }
+
   try {
-    const popup = new Notification('Zenzio Admin', {
-      body:               body || 'You have a new notification',
+    const popup = new Notification(notifTitle, {
+      body:               notifBody,
       icon:               appIcon,
       badge:              appIcon,
       tag,
-      renotify:           isRequireInteraction,
-      requireInteraction: isRequireInteraction,
+      renotify:           notifRequireInteraction,
+      requireInteraction: notifRequireInteraction,
       silent:             data.silent === true,
       data,
     });
 
-    console.log(`[NotifDebug] showDesktopNotification FIRED: body="${body?.slice(0, 60)}", tag=${tag}, type=${type}, requireInteraction=${isRequireInteraction}`);
+    console.log(`[NotifDebug] Desktop Notification Fired: title="${notifTitle}", body="${notifBody?.slice(0, 60)}", tag=${tag}, type=${type}, requireInteraction=${notifRequireInteraction}`);
 
     popup.onclick = () => {
       try {

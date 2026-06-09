@@ -1,15 +1,25 @@
 // =============================================================================
-// useAdminNotifications.js — Production-grade notification hook
+// useAdminNotifications.js — Reliable, socket-first notification delivery
 // =============================================================================
 //
 // Architecture:
-//   Socket.IO (primary) → real-time, < 1s delivery
-//   Polling 60s (fallback) → sleep/disconnect recovery
-//   ?after=<id> on reconnect → fetch only missed notifications
+//   Socket.IO "order:new"  → primary real-time source for ALL 4 actions:
+//                            A. Bell update  B. Notification list
+//                            C. Desktop popup  D. Sound
+//   Polling 60s            → history sync ONLY, never triggers desktop/sound
+//   Reconnect recovery     → fetches missed notifications (?after=lastId),
+//                            re-alerts them (they were missed real-time events)
 //
-// Sound escalation for NEW_ORDER:
-//   Plays notification sound immediately, then repeats every 10s (max 3x)
-//   until the notification is acknowledged (opened/read).
+// Multi-tab:
+//   BroadcastChannel — the tab that receives the socket event plays sound +
+//   shows desktop.  Other tabs receive the BC message and update UI only.
+//   tryAcquireAudioLock provides a second layer for sound dedup.
+//
+// Deduplication:
+//   processedOrderIds  — in-memory Set of order IDs already handled this session
+//   localSeenIds       — in-memory Set of notification IDs already processed
+//   claimAlert         — localStorage-persisted per-notification-ID claim
+//   hasSoundPlayed     — localStorage-persisted per-notification-ID sound flag
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react';
@@ -33,15 +43,16 @@ import {
   getPermissionState,
 } from '../services/desktopNotificationService';
 
-// Socket is primary — polling is only a fallback for sleep/disconnect recovery
-const FALLBACK_POLL_INTERVAL = 60_000;   // 60 seconds
+const FALLBACK_POLL_INTERVAL = 60_000;  // polling for history sync only
 const RECONNECT_FETCH_DELAY  = 800;
 
-// NEW_ORDER sound escalation
-const ESCALATION_INTERVAL = 10_000; // 10 seconds between repeats
-const MAX_ESCALATIONS     = 3;      // max 3 repeats after initial play
+// NEW_ORDER sound escalation: repeats every 10s, max 3 additional plays
+const ESCALATION_INTERVAL = 10_000;
+const MAX_ESCALATIONS     = 3;
 
 const NEW_ORDER_TYPES = new Set(['NEW_ORDER', 'ORDER_RECEIVED']);
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getNotifTime(n) {
   n = n || {};
@@ -70,6 +81,8 @@ function normalizeNotif(raw) {
   return base;
 }
 
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
 export default function useAdminNotifications(opts) {
   opts = opts || {};
   var onNotification    = opts.onNotification;
@@ -94,61 +107,59 @@ export default function useAdminNotifications(opts) {
     onNewNotificationRef.current = onNewNotification;
   });
 
-  var initializedRef    = useRef(false);
-  var lastIdRef         = useRef(getStoredLastNotificationId());
-  var lastTimeRef       = useRef(getStoredLastNotificationTime());
-  var localSeenIds      = useRef(new Set());
-  var localNotifsRef    = useRef([]);
-  var audioRef          = useRef(null);
-  var audioUnlockedRef  = useRef(false);
-  var pendingSoundRef   = useRef(null);
-  var bcRef             = useRef(null);
-  var fallbackTimerRef  = useRef(null);
-  var mountedRef        = useRef(true);
-  var socketHandlersRef = useRef(null);
+  var initializedRef     = useRef(false);
+  var lastIdRef          = useRef(getStoredLastNotificationId());
+  var lastTimeRef        = useRef(getStoredLastNotificationTime());
+  var localSeenIds       = useRef(new Set());
+  // processedOrderIds: dedup by orderId so the same order never triggers twice
+  var processedOrderIds  = useRef(new Set());
+  var localNotifsRef     = useRef([]);
+  var audioRef           = useRef(null);
+  var audioUnlockedRef   = useRef(false);
+  var pendingSoundRef    = useRef(null);
+  var bcRef              = useRef(null);
+  var fallbackTimerRef   = useRef(null);
+  var mountedRef         = useRef(true);
+  var socketHandlersRef  = useRef(null);
   // escalationMapRef: { [idStr]: { count, timerId, acknowledged } }
-  var escalationMapRef  = useRef({});
+  var escalationMapRef   = useRef({});
 
   var notifsState      = useState([]);
   var notifications    = notifsState[0];
   var setNotifications = notifsState[1];
 
-  // ---------------------------------------------------------------------------
-  // Audio
-  // ---------------------------------------------------------------------------
+  // ── Audio ──────────────────────────────────────────────────────────────────
 
   var playSound = useCallback(async function(notifId) {
     notifId = notifId != null ? notifId : null;
     if (!audioRef.current) {
-      console.log(`[NotifDebug] playSound SKIPPED (no audioRef): id=${notifId}`);
+      console.log('[NotifDebug] Sound Played SKIPPED (no audio element): id=' + notifId);
       return false;
     }
     if (notifId != null && hasSoundPlayed(notifId)) {
-      console.log(`[NotifDebug] playSound SKIPPED (sound already played): id=${notifId}`);
+      console.log('[NotifDebug] Sound Played SKIPPED (already played): id=' + notifId);
       return true;
     }
     var hasLock = await tryAcquireAudioLock();
     if (!hasLock) {
-      console.log(`[NotifDebug] playSound SKIPPED (audio lock not acquired): id=${notifId}`);
-      return true;
+      console.log('[NotifDebug] Sound Played SKIPPED (audio lock held by another tab): id=' + notifId);
+      return true; // another tab is playing — that is the desired behaviour
     }
     try {
       audioRef.current.currentTime = 0;
       await audioRef.current.play();
       if (notifId != null) markSoundPlayed(notifId);
       audioUnlockedRef.current = true;
-      console.log(`[NotifDebug] playSound PLAYED: id=${notifId}`);
+      console.log('[NotifDebug] Sound Played: id=' + notifId);
       return true;
     } catch (_e) {
-      console.log(`[NotifDebug] playSound FAILED (autoplay blocked?): id=${notifId}, error=${_e}`);
+      console.log('[NotifDebug] Sound Played FAILED (autoplay blocked): id=' + notifId + ', error=' + _e);
       pendingSoundRef.current = notifId;
       return false;
     }
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Sound escalation for NEW_ORDER
-  // ---------------------------------------------------------------------------
+  // ── Escalation (NEW_ORDER repeats every 10 s, max 3 additional plays) ──────
 
   var scheduleNextEscalation = useCallback(function scheduleNext(idStr, count) {
     if (!mountedRef.current) return;
@@ -161,12 +172,12 @@ export default function useAdminNotifications(opts) {
       var current = escalationMapRef.current[idStr];
       if (!current || current.acknowledged) return;
 
-      // Intentional repeat — bypass per-ID sound dedup
       var hasLock = await tryAcquireAudioLock();
       if (hasLock && audioRef.current) {
         try {
           audioRef.current.currentTime = 0;
           await audioRef.current.play();
+          console.log('[NotifDebug] Sound Played (escalation #' + (count + 1) + '): id=' + idStr);
         } catch (_e) {}
       }
       current.count = count + 1;
@@ -183,7 +194,6 @@ export default function useAdminNotifications(opts) {
     scheduleNextEscalation(idStr, 0);
   }, [scheduleNextEscalation]);
 
-  // Call when admin opens/reads a notification to stop escalation
   var acknowledgeNotification = useCallback(function(notifId) {
     if (notifId == null) return;
     var idStr = String(notifId);
@@ -194,9 +204,12 @@ export default function useAdminNotifications(opts) {
     delete escalationMapRef.current[idStr];
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Core notification handler
-  // ---------------------------------------------------------------------------
+  // ── Core notification handler ──────────────────────────────────────────────
+  //
+  // alert:         true  = may play sound + show desktop (socket / reconnect)
+  //                false = UI update only (60 s fallback poll)
+  // fromBroadcast: true  = received via BroadcastChannel — UI update only,
+  //                        another tab already played sound + showed desktop
 
   var handleNewNotification = useCallback(function(rawNotif, opts2) {
     opts2 = opts2 || {};
@@ -204,7 +217,7 @@ export default function useAdminNotifications(opts) {
     var fromBroadcast = opts2.fromBroadcast === true;
 
     if (!mountedRef.current) {
-      console.log(`[NotifDebug] handleNewNotification SKIPPED (unmounted)`);
+      console.log('[NotifDebug] Notification Skipped (component unmounted)');
       return;
     }
 
@@ -212,59 +225,80 @@ export default function useAdminNotifications(opts) {
     var id    = getNotificationId(notif);
     var idStr = id != null ? String(id) : null;
 
-    var type = String(notif.type || notif.data?.type || '').toUpperCase();
-    console.log(`[NotifDebug] handleNewNotification RECEIVED: id=${idStr}, type=${type}, alert=${alert}, fromBroadcast=${fromBroadcast}`);
+    var type     = String(notif.type || notif.data?.type || '').toUpperCase();
+    var orderId  = notif.orderId || notif.data?.orderId || null;
+    var orderKey = orderId ? String(orderId) : null;
 
+    console.log(
+      '[NotifDebug] Order Event Received: id=' + idStr +
+      ', type=' + type +
+      ', orderId=' + orderId +
+      ', alert=' + alert +
+      ', fromBroadcast=' + fromBroadcast
+    );
+
+    // ── Notification-ID dedup ────────────────────────────────────────────────
     if (idStr && localSeenIds.current.has(idStr)) {
-      console.log(`[NotifDebug] handleNewNotification SKIPPED (already in localSeenIds): id=${idStr}`);
+      console.log('[NotifDebug] Notification Skipped (already in localSeenIds): id=' + idStr);
       return;
     }
-    if (idStr) {
-      localSeenIds.current.add(idStr);
-      console.log(`[NotifDebug] handleNewNotification added to localSeenIds: id=${idStr}`);
+    if (idStr) localSeenIds.current.add(idStr);
+
+    // ── Order-ID dedup (prevents socket + polling double-firing) ────────────
+    if (orderKey && NEW_ORDER_TYPES.has(type)) {
+      if (processedOrderIds.current.has(orderKey)) {
+        console.log('[NotifDebug] Notification Skipped (orderId already processed): orderId=' + orderKey);
+        return;
+      }
+      processedOrderIds.current.add(orderKey);
     }
 
+    // ── Update in-memory list ────────────────────────────────────────────────
     localNotifsRef.current = [notif].concat(localNotifsRef.current).slice(0, 100);
     setNotifications(localNotifsRef.current.slice());
 
     if (onNotificationRef.current)    onNotificationRef.current(notif);
     if (onNewNotificationRef.current) onNewNotificationRef.current(notif);
 
-    var important = isImportantAdminNotification(notif);
-    var claimed   = claimAlert(notif);
+    // ── Decide whether to alert (sound + desktop) ────────────────────────────
+    var important  = isImportantAdminNotification(notif);
+    var claimed    = claimAlert(notif);
     var shouldAlert = alert && !fromBroadcast && important && claimed;
 
-    console.log(`[NotifDebug] handleNewNotification: important=${important}, claimed=${claimed}, shouldAlert=${shouldAlert}`);
+    console.log(
+      '[NotifDebug] shouldAlert=' + shouldAlert +
+      ' (alert=' + alert +
+      ', fromBroadcast=' + fromBroadcast +
+      ', important=' + important +
+      ', claimed=' + claimed + ')'
+    );
 
     if (shouldAlert) {
-      var isNewOrder = NEW_ORDER_TYPES.has(String(notif.type || '').toUpperCase());
+      // ALL important types — including NEW_ORDER — get sound + desktop from
+      // the socket event. The old guard that delegated NEW_ORDER to polling
+      // has been removed; that was the cause of missed notifications.
+      var content = buildDesktopNotificationContent(notif);
+      var body    = content.body;
 
-      // NEW_ORDER notifications are handled by the polling path in OrdersList.jsx
-      // (sound + desktop notification). The socket path should NOT duplicate them.
-      // Other notification types (cancellations, payment failures, etc.) are still
-      // handled by the socket path since polling doesn't cover those.
-      if (!isNewOrder) {
-        var content = buildDesktopNotificationContent(notif);
-        var body    = content.body;
-
-        console.log(`[NotifDebug] handleNewNotification TRIGGERING playSound + desktop: id=${idStr}, body="${body?.slice(0, 60)}"`);
-
-        playSound(idStr).then(function(soundPlayed) {
-          console.log(`[NotifDebug] handleNewNotification playSound resolved: soundPlayed=${soundPlayed}, now firing desktop notification`);
-          showDesktopNotification(body, {
-            notification:   notif,
-            notificationId: id,
-            type:           notif.type,
-          });
+      playSound(idStr).then(function() {
+        showDesktopNotification(body, {
+          notification:   notif,
+          notificationId: id,
+          type:           type,
         });
+      });
 
-        if (onSoundTriggerRef.current) onSoundTriggerRef.current(notif);
-        setPermissionState(getPermissionState());
-      } else {
-        console.log(`[NotifDebug] handleNewNotification SKIPPING socket sound+desktop for NEW_ORDER (polling handles it): id=${idStr}`);
+      if (onSoundTriggerRef.current) onSoundTriggerRef.current(notif);
+
+      // Repeat sound every 10 s (up to MAX_ESCALATIONS) for NEW_ORDER
+      if (NEW_ORDER_TYPES.has(type)) {
+        startEscalation(notif);
       }
+
+      setPermissionState(getPermissionState());
     } else {
-      console.log(`[NotifDebug] handleNewNotification NO ALERT (alert=${alert}, fromBroadcast=${fromBroadcast}, important=${important}, claimed=${claimed})`);
+      if (!important) console.log('[NotifDebug] Notification Skipped (not important): type=' + type);
+      if (!claimed)   console.log('[NotifDebug] Notification Skipped (already claimed/alerted): id=' + idStr);
     }
 
     rememberLastNotification(notif);
@@ -272,11 +306,12 @@ export default function useAdminNotifications(opts) {
     lastTimeRef.current = getStoredLastNotificationTime();
   }, [playSound, startEscalation]);
 
-  // ---------------------------------------------------------------------------
-  // Fetch & process (initial load + reconnect recovery + fallback poll)
-  // ---------------------------------------------------------------------------
+  // ── Fetch & process (initial load + reconnect recovery + fallback poll) ────
 
-  var fetchAndProcess = useCallback(async function(afterId) {
+  var fetchAndProcess = useCallback(async function(afterId, opts3) {
+    // alertMissed: true  = reconnect recovery (missed real-time events)
+    //              false = periodic poll, history sync only — no sound/desktop
+    var alertMissed = opts3 ? !!opts3.alertMissed : false;
     try {
       var response = await getNotifications(afterId ? { after: afterId } : undefined);
       var docs = [];
@@ -286,7 +321,7 @@ export default function useAdminNotifications(opts) {
       if (!Array.isArray(docs)) docs = [];
 
       if (!initializedRef.current) {
-        // Seed all existing IDs so they are never re-alerted
+        // Initial load: seed all existing IDs — no sound/desktop triggered
         var docCount = 0;
         docs.forEach(function(n) {
           var nid = getNotificationId(n);
@@ -303,26 +338,32 @@ export default function useAdminNotifications(opts) {
         }
         initializedRef.current = true;
         setPermissionState(getPermissionState());
-        console.log(`[NotifDebug] fetchAndProcess INITIAL LOAD: ${docs.length} docs, ${docCount} IDs seeded into localSeenIds. lastId=${lastIdRef.current}`);
+        console.log(
+          '[NotifDebug] Initial load: ' + docs.length + ' docs, ' +
+          docCount + ' IDs seeded. lastId=' + lastIdRef.current
+        );
         return;
       }
 
-      // Subsequent call — only alert genuinely new notifications
+      // Subsequent call — only process genuinely new notifications
       var missed = docs.filter(function(n) {
         var nid = getNotificationId(n);
         if (nid == null) return false;
-        if (localSeenIds.current.has(String(nid))) {
-          return false;
-        }
+        if (localSeenIds.current.has(String(nid))) return false;
         if (afterId) return true; // server already filtered server-side
         return isNotificationNewer(n, lastIdRef.current, lastTimeRef.current);
       });
 
-      console.log(`[NotifDebug] fetchAndProcess POLL: ${docs.length} docs, ${missed.length} missed, afterId=${afterId}, lastId=${lastIdRef.current}`);
+      console.log(
+        '[NotifDebug] fetchAndProcess: ' + docs.length + ' docs, ' +
+        missed.length + ' missed, afterId=' + afterId +
+        ', alertMissed=' + alertMissed +
+        ', lastId=' + lastIdRef.current
+      );
 
       if (missed.length > 0) {
         missed.slice().sort(compareNotifs).forEach(function(n) {
-          handleNewNotification(n, { alert: true });
+          handleNewNotification(n, { alert: alertMissed });
         });
       }
     } catch (_e) {
@@ -330,9 +371,7 @@ export default function useAdminNotifications(opts) {
     }
   }, [handleNewNotification]);
 
-  // ---------------------------------------------------------------------------
-  // Setup / teardown
-  // ---------------------------------------------------------------------------
+  // ── Setup / teardown ───────────────────────────────────────────────────────
 
   useEffect(function() {
     mountedRef.current = true;
@@ -362,6 +401,7 @@ export default function useAdminNotifications(opts) {
                 audioRef.current.currentTime = 0;
                 await audioRef.current.play();
                 if (queuedId != null) markSoundPlayed(queuedId);
+                console.log('[NotifDebug] Sound Played (retry after unlock): id=' + queuedId);
               } catch (_e2) {}
             }
           }
@@ -374,16 +414,19 @@ export default function useAdminNotifications(opts) {
     document.addEventListener('keydown',    unlockAudio, { passive: true });
     document.addEventListener('touchstart', unlockAudio, { passive: true });
 
-    requestDesktopNotificationPermissionOnce()
-      .then(function(perm) {
-        console.log(`[NotifDebug] Initial permission request resolved: ${perm || Notification.permission}`);
-        setPermissionState(getPermissionState());
-      })
-      .catch(function(err) {
-        console.log(`[NotifDebug] Initial permission request error: ${err}`);
-      });
+    // Request permission on mount (will prompt the first time)
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+      requestDesktopNotificationPermissionOnce()
+        .then(function(perm) {
+          console.log('[NotifDebug] Permission request resolved: ' + (perm || Notification.permission));
+          setPermissionState(getPermissionState());
+        })
+        .catch(function(err) {
+          console.log('[NotifDebug] Permission request error: ' + err);
+        });
+    }
 
-    // Multi-tab sync
+    // Multi-tab sync: receive BC messages and update UI only (no sound/desktop)
     try {
       bcRef.current = new BroadcastChannel('admin_notifications');
       bcRef.current.onmessage = function(event) {
@@ -394,19 +437,19 @@ export default function useAdminNotifications(opts) {
       };
     } catch (_e) {}
 
-    // Initial fetch seeds alerted IDs — no desktop popups triggered
+    // Initial fetch seeds alerted IDs — no desktop/sound
     fetchAndProcess();
 
-    // After socket reconnect, fetch only missed notifications via ?after=lastId
+    // Reconnect recovery: fetch missed notifications and alert them
     var unsubReconnect = onAdminReconnect(function() {
+      console.log('[NotifDebug] Socket Reconnected');
       setTimeout(function() {
-        fetchAndProcess(lastIdRef.current || undefined);
+        fetchAndProcess(lastIdRef.current || undefined, { alertMissed: true });
       }, RECONNECT_FETCH_DELAY);
     });
 
     return function() {
       mountedRef.current = false;
-      // Clear all pending escalation timers
       Object.values(escalationMapRef.current).forEach(function(entry) {
         if (entry && entry.timerId) clearTimeout(entry.timerId);
       });
@@ -422,9 +465,7 @@ export default function useAdminNotifications(opts) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Socket connection
-  // ---------------------------------------------------------------------------
+  // ── Socket connection ──────────────────────────────────────────────────────
 
   var connectSocket = useCallback(function() {
     var socket = getAdminSocket();
@@ -435,37 +476,69 @@ export default function useAdminNotifications(opts) {
       socket.off('disconnect',       socketHandlersRef.current.onDisconnect);
       socket.off('new_notification', socketHandlersRef.current.onNewNotif);
       socket.off('notification:new', socketHandlersRef.current.onNewNotif);
-      socket.off('order:new',        socketHandlersRef.current.onNewNotif);
+      socket.off('order:new',        socketHandlersRef.current.onOrderNew);
       socket.off('order:update',     socketHandlersRef.current.onNewNotif);
     }
 
-    var onConnect    = function() { if (mountedRef.current) setSocketConnected(true); };
-    var onDisconnect = function() { if (mountedRef.current) setSocketConnected(false); };
-    var onNewNotif   = function(rawNotif) {
-      console.log(`[NotifDebug] Socket onNewNotif RECEIVED:`, rawNotif?.id || rawNotif?.notificationId, JSON.stringify(rawNotif).slice(0, 200));
+    var onConnect = function() {
+      if (mountedRef.current) {
+        console.log('[NotifDebug] Socket Connected');
+        setSocketConnected(true);
+      }
+    };
+    var onDisconnect = function() {
+      if (mountedRef.current) setSocketConnected(false);
+    };
+
+    // order:new is the primary, dedicated handler for new order events.
+    // It executes all 4 required actions: bell, list, desktop, sound.
+    var onOrderNew = function(rawNotif) {
+      console.log(
+        '[NotifDebug] Order Event Received (order:new): orderId=' +
+        (rawNotif?.orderId || rawNotif?.data?.orderId) +
+        ', id=' + (rawNotif?.id || rawNotif?.notificationId)
+      );
       handleNewNotification(rawNotif, { alert: true });
       try {
         if (bcRef.current) bcRef.current.postMessage({ type: 'new_notif', notification: rawNotif });
       } catch (_e) {}
     };
 
-    socketHandlersRef.current = { onConnect, onDisconnect, onNewNotif };
+    // Generic handler for all other notification events
+    var onNewNotif = function(rawNotif) {
+      console.log(
+        '[NotifDebug] Order Event Received (new_notification): id=' +
+        (rawNotif?.id || rawNotif?.notificationId) +
+        ' type=' + (rawNotif?.type || rawNotif?.data?.type)
+      );
+      handleNewNotification(rawNotif, { alert: true });
+      try {
+        if (bcRef.current) bcRef.current.postMessage({ type: 'new_notif', notification: rawNotif });
+      } catch (_e) {}
+    };
 
-    if (socket.connected) setSocketConnected(true);
+    socketHandlersRef.current = { onConnect, onDisconnect, onNewNotif, onOrderNew };
+
+    if (socket.connected) {
+      console.log('[NotifDebug] Socket Connected (already connected on mount)');
+      setSocketConnected(true);
+    }
     socket.on('connect',          onConnect);
     socket.on('disconnect',       onDisconnect);
-    // Listen on all event names; backend emits all three for compatibility
+    // order:new is the dedicated high-priority event for new orders
+    socket.on('order:new',        onOrderNew);
+    // new_notification and notification:new carry all other notification types
     socket.on('new_notification', onNewNotif);
     socket.on('notification:new', onNewNotif);
-    socket.on('order:new',        onNewNotif);
     socket.on('order:update',     onNewNotif);
   }, [handleNewNotification]);
 
   useEffect(function() {
     connectSocket();
-    // 60s fallback poll — socket handles real-time; polling is sleep/disconnect recovery only
+
+    // 60 s fallback poll — history sync ONLY, never triggers sound or desktop
     fallbackTimerRef.current = setInterval(function() {
-      fetchAndProcess(undefined);
+      fetchAndProcess(undefined, { alertMissed: false });
     }, FALLBACK_POLL_INTERVAL);
 
     return function() {
@@ -475,7 +548,7 @@ export default function useAdminNotifications(opts) {
         socket.off('disconnect',       socketHandlersRef.current.onDisconnect);
         socket.off('new_notification', socketHandlersRef.current.onNewNotif);
         socket.off('notification:new', socketHandlersRef.current.onNewNotif);
-        socket.off('order:new',        socketHandlersRef.current.onNewNotif);
+        socket.off('order:new',        socketHandlersRef.current.onOrderNew);
         socket.off('order:update',     socketHandlersRef.current.onNewNotif);
       }
       if (fallbackTimerRef.current) clearInterval(fallbackTimerRef.current);
