@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef, useMemo } from "react";
+import { createContext, useContext, useState, useCallback, useRef, useMemo, useEffect } from "react";
 import useAdminNotifications from "../hooks/useAdminNotifications";
 import { isRecentNotification } from "../utils/notifications";
 
@@ -33,7 +33,9 @@ export const OrderNotificationProvider = ({ children }) => {
   // Track which IDs have already been added to popupQueue this session
   const popupSeenIds     = useRef(new Set());
 
-  const { socketConnected, permissionState, acknowledgeNotification } = useAdminNotifications({
+  const apiSeededRef = useRef(false);
+
+  const { notifications, socketConnected, permissionState, acknowledgeNotification } = useAdminNotifications({
     onNewNotification: (notif) => {
       if (!isRecentNotification(notif)) {
         console.log(`[NotifDebug] OrderNotificationContext.onNewNotification SKIPPED (not recent): type=${notif?.type}, id=${notif?.id}`);
@@ -78,6 +80,19 @@ export const OrderNotificationProvider = ({ children }) => {
       }
     },
   });
+
+  // Seed notification list from API on initial load so the bell is never empty
+  useEffect(() => {
+    if (apiSeededRef.current || !notifications?.length) return;
+    apiSeededRef.current = true;
+    setSocketNotifs(prev => {
+      const existingIds = new Set(prev.map(n => n.id));
+      const fromApi = notifications
+        .filter(n => n.id != null && !existingIds.has(n.id))
+        .map(n => ({ ...n, _source: 'api', isRead: n.isRead ?? false }));
+      return [...fromApi, ...prev].slice(0, 100);
+    });
+  }, [notifications]);
 
   const dismissPopup = useCallback((id) => {
     setPopupQueue(prev => prev.filter(n => n.id !== id));
