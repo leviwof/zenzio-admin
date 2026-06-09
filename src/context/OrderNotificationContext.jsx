@@ -128,7 +128,18 @@ export const OrderNotificationProvider = ({ children }) => {
 
   const addNewOrderNotification = useCallback((order) => {
     if (!order) return;
-    if (!isRecentNotification(order)) return;
+    const recent = isRecentNotification(order);
+    if (!recent) {
+      const ts  = getNotificationTimestamp(order);
+      const now = Date.now();
+      console.log(
+        `[NotifDebug] addNewOrderNotification SKIPPED (not recent):` +
+        ` orderId=${order.orderId || order.id}, time=${order.time || order.createdAt},` +
+        ` ts=${ts}, now=${now}, diff=${ts != null ? ts - now : 'null'}ms`
+      );
+      return;
+    }
+    console.log(`[NotifDebug] addNewOrderNotification FIRING: orderId=${order.orderId || order.id}`);
 
     const synId = `syn_${++notifIdCounter.current}_${order.orderId || order.id}`;
     const notif = {
