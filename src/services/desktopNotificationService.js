@@ -236,21 +236,17 @@ export function claimAlert(n = {}) {
 
   const s = String(id);
 
-  // Session-scoped in-memory check only.
-  // We do NOT check localStorage (ALERTED_IDS_KEY) here because:
-  //   - localStorage entries from previous sessions block legitimate new alerts
-  //   - DESKTOP_IDS_KEY in showDesktopNotification handles cross-tab dedup for desktop
-  //   - tryAcquireAudioLock handles cross-tab dedup for sound
-  //   - localSeenIds in the hook handles in-session duplicate socket events
-  if (_sessionClaimedIds.has(s)) {
-    const result = false;
-    console.log('CLAIM ALERT', id, result, '(already claimed this session, type=' + type + ')');
-    return result;
-  }
+  // DISABLED FOR TESTING — _sessionClaimedIds check bypassed.
+  // Re-enable after confirming alert fires end-to-end.
+  // if (_sessionClaimedIds.has(s)) {
+  //   console.log('CLAIM ALERT', id, false, '(alreadyClaimed, type=' + type + ')');
+  //   return false;
+  // }
+  console.log('CLAIM ALERT: _sessionClaimedIds check DISABLED for testing, id=' + id + ', type=' + type);
 
   _sessionClaimedIds.add(s);
-  // Still write to localStorage for backwards compat with other code that reads it
-  addList(ALERTED_IDS_KEY, s);
+  // DISABLED FOR TESTING — ALERTED_IDS_KEY write bypassed.
+  // addList(ALERTED_IDS_KEY, s);
   const result = true;
   console.log('CLAIM ALERT', id, result, '(claimed, type=' + type + ')');
   return result;
@@ -475,68 +471,60 @@ export function buildDesktopNotificationContent(n = {}) {
  * Returns true if the notification was fired, false if blocked/duped.
  */
 export async function showDesktopNotification(body, data = {}) {
+  const n       = data.notification || {};
+  const notifId = getNotificationId(n) ?? data.notificationId ?? data.id;
+
+  console.log('DESKTOP CHECK START', notifId);
+
   if (!('Notification' in window)) {
-    console.log(`[NotifDebug] showDesktopNotification SKIPPED: browser doesn't support Notification API`);
+    console.log('DESKTOP NOTIFICATION SKIPPED', 'noAPI: browser does not support Notification');
     return false;
   }
 
-  // If permission is 'default', try requesting it right now (may work if called from user gesture)
+  // If permission is 'default', try requesting it now
   if (Notification.permission === 'default') {
-    console.log(`[NotifDebug] showDesktopNotification: permission is 'default', attempting to request...`);
     try {
       const perm = await Notification.requestPermission();
-      console.log(`[NotifDebug] showDesktopNotification: requestPermission returned "${perm}"`);
+      console.log('DESKTOP NOTIFICATION SKIPPED (requesting permission):', perm);
     } catch (err) {
-      console.log(`[NotifDebug] showDesktopNotification: requestPermission threw: ${err}`);
+      console.log('DESKTOP NOTIFICATION SKIPPED', 'permissionRequestThrew: ' + err);
     }
   }
 
   if (Notification.permission !== 'granted') {
-    console.log(`[NotifDebug] showDesktopNotification SKIPPED: permission="${Notification.permission}" (needs "granted")`);
+    console.log('DESKTOP NOTIFICATION SKIPPED', 'permissionDenied: actual=' + Notification.permission);
     return false;
   }
 
-  const n  = data.notification || {};
   if (!isRecentNotification(n)) {
-    console.log(`[NotifDebug] showDesktopNotification SKIPPED (not recent): type=${getNotificationType(n)}, id=${getNotificationId(n)}`);
+    const ts = n.createdAt || n.created_at || n.timestamp || 'null';
+    console.log('DESKTOP NOTIFICATION SKIPPED', 'notRecent: createdAt=' + ts + ', now=' + new Date().toISOString());
     return false;
   }
 
-  const notifId = getNotificationId(n) ?? data.notificationId ?? data.id;
-
-  // Dedup: prevent the same notification ID from firing a desktop popup twice
-  // within the same browser session (handles multi-tab races via localStorage).
-  // Session-scoped: cleared on page load, so a refresh can re-alert if needed.
-  console.log('DESKTOP DEDUP CHECK', notifId);
-  if (notifId != null) {
-    const s = String(notifId);
-    if (hasList(DESKTOP_IDS_KEY, s)) {
-      console.log(`[NotifDebug] showDesktopNotification SKIPPED (DESKTOP_IDS_KEY already has id): id=${s}, type=${getNotificationType(n)}`);
-      return false;
-    }
-    addList(DESKTOP_IDS_KEY, s);
-  }
-
-  // DESKTOP_ORDER_IDS_KEY cross-path check has been removed.
-  // It was designed to prevent socket + polling from both firing desktop
-  // notifications for the same order. Since polling no longer triggers desktop
-  // notifications (alertMissed: false), this check is obsolete and was causing
-  // legitimate new-order desktop notifications to be silently blocked.
-  const orderId = getNotificationOrderId(n) || data.orderId;
-  console.log('ORDER DEDUP CHECK', orderId, '(check disabled — orderId logged only)');
+  // DISABLED FOR TESTING — DESKTOP_IDS_KEY blocks IDs seen in prior sessions.
+  // Re-enable after confirming desktop notifications fire on fresh orders.
+  // if (notifId != null) {
+  //   const s = String(notifId);
+  //   if (hasList(DESKTOP_IDS_KEY, s)) {
+  //     console.log('DESKTOP NOTIFICATION SKIPPED', 'alreadyDesktopNotified: id=' + s);
+  //     return false;
+  //   }
+  //   addList(DESKTOP_IDS_KEY, s);
+  // }
+  console.log('DESKTOP_IDS_KEY check DISABLED for testing, notifId=' + notifId);
 
   const type = getNotificationType(n) || normalizeType(data.type);
   const isRequireInteraction = REQUIRE_INTERACTION_TYPES.has(type);
   const tag  = notifId ? `zenzio-${notifId}` : `zenzio-${Date.now()}`;
 
-  // NEW_ORDER uses the mandated notification format per spec
   let notifTitle = 'Zenzio Admin';
   let notifBody  = body || 'You have a new notification';
   let notifRequireInteraction = isRequireInteraction;
   if (type === 'NEW_ORDER' || type === 'ORDER_RECEIVED') {
     notifTitle = 'New Order Received';
-    const orderIdVal       = getNotificationOrderId(n) || data.orderId;
-    const restaurantVal    = n.restaurantName || n.data?.restaurantName || data.restaurantName;
+    const orderIdVal    = getNotificationOrderId(n) || data.orderId;
+    const restaurantVal = n.restaurantName || n.data?.restaurantName || data.restaurantName;
     if (orderIdVal && restaurantVal) {
       notifBody = `Order #${orderIdVal} from ${restaurantVal}`;
     } else if (orderIdVal) {
@@ -544,6 +532,8 @@ export async function showDesktopNotification(body, data = {}) {
     }
     notifRequireInteraction = true;
   }
+
+  console.log('DESKTOP CHECK PASSED', notifId, '| type:', type, '| title:', notifTitle, '| body:', notifBody?.slice(0, 80));
 
   try {
     const popup = new Notification(notifTitle, {
@@ -557,7 +547,7 @@ export async function showDesktopNotification(body, data = {}) {
       data,
     });
 
-    console.log('DESKTOP NOTIFICATION FIRED', notifId, '| title:', notifTitle, '| body:', notifBody?.slice(0, 80), '| type:', type, '| requireInteraction:', notifRequireInteraction);
+    console.log('DESKTOP NOTIFICATION FIRED', notifId, '| title:', notifTitle, '| body:', notifBody?.slice(0, 80), '| type:', type);
 
     popup.onclick = () => {
       try {
@@ -571,7 +561,7 @@ export async function showDesktopNotification(body, data = {}) {
 
     return true;
   } catch (err) {
-    console.log(`[NotifDebug] showDesktopNotification ERROR: ${err}`);
+    console.log('DESKTOP NOTIFICATION SKIPPED', 'newNotificationThrew: ' + err);
     return false;
   }
 }

@@ -356,7 +356,11 @@ export default function useAdminNotifications(opts) {
             docCount++;
           }
         });
-        seedAlertedIds(docs);
+        // DISABLED FOR TESTING — seedAlertedIds seeds DESKTOP_IDS_KEY / ALERTED_IDS_KEY
+        // which can block socket events for notifications that arrived during initial fetch.
+        // Re-enable after testing confirms desktop notifications fire correctly.
+        // seedAlertedIds(docs);
+        console.log('seedAlertedIds DISABLED for testing');
         localNotifsRef.current = docs.slice(0, 100);
         setNotifications(localNotifsRef.current.slice());
         var latest = getLatestNotif(docs);
@@ -523,11 +527,7 @@ export default function useAdminNotifications(opts) {
     // order:new is the primary, dedicated handler for new order events.
     // It executes all 4 required actions: bell, list, desktop, sound.
     var onOrderNew = function(rawNotif) {
-      console.log(
-        '[NotifDebug] Order Event Received (order:new): orderId=' +
-        (rawNotif?.orderId || rawNotif?.data?.orderId) +
-        ', id=' + (rawNotif?.id || rawNotif?.notificationId)
-      );
+      console.log('ORDER EVENT RECEIVED', rawNotif);
       handleNewNotification(rawNotif, { alert: true });
       try {
         if (bcRef.current) bcRef.current.postMessage({ type: 'new_notif', notification: rawNotif });
@@ -536,11 +536,7 @@ export default function useAdminNotifications(opts) {
 
     // Generic handler for all other notification events
     var onNewNotif = function(rawNotif) {
-      console.log(
-        '[NotifDebug] Order Event Received (new_notification): id=' +
-        (rawNotif?.id || rawNotif?.notificationId) +
-        ' type=' + (rawNotif?.type || rawNotif?.data?.type)
-      );
+      console.log('ORDER EVENT RECEIVED', rawNotif);
       handleNewNotification(rawNotif, { alert: true });
       try {
         if (bcRef.current) bcRef.current.postMessage({ type: 'new_notif', notification: rawNotif });
