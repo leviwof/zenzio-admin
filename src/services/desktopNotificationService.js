@@ -162,15 +162,17 @@ export function isNotificationNewer(n = {}, lastId, lastTime) {
  */
 export function seedAlertedIds(notifications = []) {
   if (!Array.isArray(notifications)) return;
+  let count = 0;
   notifications.forEach(n => {
     const id = getNotificationId(n);
     if (id == null) return;
     const s = String(id);
-    // Mark in all three dedup stores
     addList(ALERTED_IDS_KEY, s);
     addList(SOUND_IDS_KEY,   s);
     addList(DESKTOP_IDS_KEY, s);
+    count++;
   });
+  console.log(`[NotifDebug] seedAlertedIds: seeded ${count} existing notifications into all 3 dedup stores (ALERTED=${count}, SOUND=${count}, DESKTOP=${count})`);
 }
 
 // ─── Alert deduplication ──────────────────────────────────────────────────────
@@ -180,13 +182,24 @@ export function seedAlertedIds(notifications = []) {
  * Stored in localStorage so it survives page refresh.
  */
 export function claimAlert(n = {}) {
-  if (!isRecentNotification(n)) return false;
-
   const id = getNotificationId(n);
-  if (id == null) return true; // no ID → can't dedup, allow
+
+  if (!isRecentNotification(n)) {
+    console.log(`[NotifDebug] claimAlert SKIPPED (not recent): id=${id}, type=${getNotificationType(n)}`);
+    return false;
+  }
+
+  if (id == null) {
+    console.log(`[NotifDebug] claimAlert ALLOWED (no id): type=${getNotificationType(n)}`);
+    return true;
+  }
   const s = String(id);
-  if (hasList(ALERTED_IDS_KEY, s)) return false;
+  if (hasList(ALERTED_IDS_KEY, s)) {
+    console.log(`[NotifDebug] claimAlert SKIPPED (already alerted): id=${s}, type=${getNotificationType(n)}`);
+    return false;
+  }
   addList(ALERTED_IDS_KEY, s);
+  console.log(`[NotifDebug] claimAlert CLAIMED: id=${s}, type=${getNotificationType(n)}`);
   return true;
 }
 
@@ -282,28 +295,50 @@ export function getPermissionState() {
  */
 export function requestDesktopNotificationPermissionOnce({ fromUserGesture = false } = {}) {
   if (!('Notification' in window) || !window.isSecureContext) {
+    console.log(`[NotifDebug] requestPermission: unsupported (no API or non-secure context)`);
     return Promise.resolve('unsupported');
   }
 
-  if (Notification.permission === 'granted' || Notification.permission === 'denied') {
-    return Promise.resolve(Notification.permission);
+  if (Notification.permission === 'granted') {
+    return Promise.resolve('granted');
   }
 
-  const prev = localStorage.getItem(PERM_ASKED_KEY);
-  // Don't re-prompt from a non-gesture context if we already tried
-  if (prev === 'interaction' || (prev === 'load' && !fromUserGesture)) {
-    return Promise.resolve(Notification.permission);
+  if (Notification.permission === 'denied') {
+    console.log(`[NotifDebug] requestPermission: permission was DENIED by user — can't auto-request`);
+    return Promise.resolve('denied');
   }
 
-  localStorage.setItem(PERM_ASKED_KEY, fromUserGesture ? 'interaction' : 'load');
-
+  // Always allow requesting from user gesture context
+  // This ensures the browser permission prompt actually shows
   try {
+    console.log(`[NotifDebug] requestPermission: calling Notification.requestPermission() (fromUserGesture=${fromUserGesture})`);
     const result = Notification.requestPermission();
-    return result && typeof result.then === 'function'
+    const promise = result && typeof result.then === 'function'
       ? result
       : Promise.resolve(result);
-  } catch {
+    promise.then(function(perm) {
+      console.log(`[NotifDebug] requestPermission result: ${perm}`);
+    });
+    return promise;
+  } catch (err) {
+    console.log(`[NotifDebug] requestPermission error: ${err}`);
     return Promise.resolve(Notification.permission);
+  }
+}
+
+/**
+ * Force a full permission re-request (no caches, no guards).
+ * Only works from a user gesture context.
+ */
+export async function requestNotificationPermissionFresh() {
+  if (!('Notification' in window) || !window.isSecureContext) return 'unsupported';
+  try {
+    const result = await Notification.requestPermission();
+    console.log(`[NotifDebug] requestNotificationPermissionFresh: ${result}`);
+    return result;
+  } catch (err) {
+    console.log(`[NotifDebug] requestNotificationPermissionFresh error: ${err}`);
+    return Notification.permission;
   }
 }
 
@@ -386,24 +421,49 @@ export function buildDesktopNotificationContent(n = {}) {
  *
  * Returns true if the notification was fired, false if blocked/duped.
  */
-export function showDesktopNotification(body, data = {}) {
-  if (!('Notification' in window)) return false;
-  if (Notification.permission !== 'granted') return false;
+export async function showDesktopNotification(body, data = {}) {
+  if (!('Notification' in window)) {
+    console.log(`[NotifDebug] showDesktopNotification SKIPPED: browser doesn't support Notification API`);
+    return false;
+  }
+
+  // If permission is 'default', try requesting it right now (may work if called from user gesture)
+  if (Notification.permission === 'default') {
+    console.log(`[NotifDebug] showDesktopNotification: permission is 'default', attempting to request...`);
+    try {
+      const perm = await Notification.requestPermission();
+      console.log(`[NotifDebug] showDesktopNotification: requestPermission returned "${perm}"`);
+    } catch (err) {
+      console.log(`[NotifDebug] showDesktopNotification: requestPermission threw: ${err}`);
+    }
+  }
+
+  if (Notification.permission !== 'granted') {
+    console.log(`[NotifDebug] showDesktopNotification SKIPPED: permission="${Notification.permission}" (needs "granted")`);
+    return false;
+  }
 
   const n  = data.notification || {};
-  if (!isRecentNotification(n)) return false;
+  if (!isRecentNotification(n)) {
+    console.log(`[NotifDebug] showDesktopNotification SKIPPED (not recent): type=${getNotificationType(n)}, id=${getNotificationId(n)}`);
+    return false;
+  }
 
-  const id = getNotificationId(n) ?? data.notificationId ?? data.id;
+  const notifId = getNotificationId(n) ?? data.notificationId ?? data.id;
 
   // Dedup: never show the same notification ID twice
-  if (id != null) {
-    if (hasList(DESKTOP_IDS_KEY, String(id))) return false;
-    addList(DESKTOP_IDS_KEY, String(id));
+  if (notifId != null) {
+    const s = String(notifId);
+    if (hasList(DESKTOP_IDS_KEY, s)) {
+      console.log(`[NotifDebug] showDesktopNotification SKIPPED (already shown): id=${s}, type=${getNotificationType(n)}`);
+      return false;
+    }
+    addList(DESKTOP_IDS_KEY, s);
   }
 
   const type = getNotificationType(n) || normalizeType(data.type);
   const isRequireInteraction = REQUIRE_INTERACTION_TYPES.has(type);
-  const tag  = id ? `zenzio-${id}` : `zenzio-${Date.now()}`;
+  const tag  = notifId ? `zenzio-${notifId}` : `zenzio-${Date.now()}`;
 
   try {
     const popup = new Notification('Zenzio Admin', {
@@ -411,11 +471,13 @@ export function showDesktopNotification(body, data = {}) {
       icon:               appIcon,
       badge:              appIcon,
       tag,
-      renotify:           isRequireInteraction,  // re-fire banner on same tag for critical types
-      requireInteraction: isRequireInteraction,  // stays in Notification Center until dismissed
+      renotify:           isRequireInteraction,
+      requireInteraction: isRequireInteraction,
       silent:             data.silent === true,
       data,
     });
+
+    console.log(`[NotifDebug] showDesktopNotification FIRED: body="${body?.slice(0, 60)}", tag=${tag}, type=${type}, requireInteraction=${isRequireInteraction}`);
 
     popup.onclick = () => {
       try {
@@ -428,5 +490,8 @@ export function showDesktopNotification(body, data = {}) {
     };
 
     return true;
-  } catch { return false; }
+  } catch (err) {
+    console.log(`[NotifDebug] showDesktopNotification ERROR: ${err}`);
+    return false;
+  }
 }

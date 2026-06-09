@@ -13,7 +13,7 @@ import { getAuthUser, getCurrentRestaurantUid, isRestaurantAdmin } from '../../u
 import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
 import { filterRecentNotifications, isRecentNotification } from '../../utils/notifications';
 import { isAdminSocketConnected } from '../../services/socket';
-import { claimNotificationAlert } from '../../services/desktopNotificationService';
+import { claimNotificationAlert, getPermissionState, requestNotificationPermissionFresh } from '../../services/desktopNotificationService';
 
 const notificationSoundPath = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
 
@@ -217,7 +217,7 @@ const Header = ({ onLogout }) => {
   const audioRef = useRef(null);
   const audioUnlocked = useRef(false);
   const pendingSoundRef = useRef(false);
-  const { unreadOrderCount, syntheticNotifs, markSyntheticNotifRead, allMergedNotifications: contextNotifs, socketConnected } = useOrderNotifications();
+  const { unreadOrderCount, syntheticNotifs, markSyntheticNotifRead, allMergedNotifications: contextNotifs, socketConnected, permissionState } = useOrderNotifications();
   const [badgeAnim, setBadgeAnim] = useState(false);
   const dropdownRef = useRef(null);
   const searchRef = useRef(null);
@@ -335,10 +335,14 @@ const Header = ({ onLogout }) => {
   useEffect(() => {
     const unreadSynthetic = syntheticNotifs.filter(n => !n.isRead);
     const newSynthIds = unreadSynthetic.map(n => n.id).filter(id => !knownSyntheticIds.current.has(id));
+    console.log(`[NotifDebug] Header syntheticNotifs: total=${syntheticNotifs.length}, unread=${unreadSynthetic.length}, newSynthIds=${newSynthIds.length}`);
     const shouldPlay = unreadSynthetic
       .filter(n => newSynthIds.includes(n.id))
       .some(n => claimNotificationAlert(n));
-    if (shouldPlay) playNotificationSound();
+    if (shouldPlay) {
+      console.log(`[NotifDebug] Header playing notification sound for synthetic notifications`);
+      playNotificationSound();
+    }
     unreadSynthetic.forEach(n => knownSyntheticIds.current.add(n.id));
   }, [syntheticNotifs, playNotificationSound]);
 
@@ -352,7 +356,9 @@ const Header = ({ onLogout }) => {
       const docsList = filterRecentNotifications(Array.isArray(docs) ? docs : []);
       const existingIds = new Set(allMergedNotifications.map(n => n.id));
       const trulyNew = docsList.filter(n => !existingIds.has(n.id));
+      console.log(`[NotifDebug] Header fetchNotifications: ${docs.length} total, ${docsList.length} recent, ${trulyNew.length} trulyNew`);
       if (trulyNew.length > 0) {
+        console.log(`[NotifDebug] Header fetchNotifications APPENDING ${trulyNew.length} new notifications:`, trulyNew.map(n => ({ id: n.id, type: n.type })));
         setAllNotifications(prev => {
           const allIds = new Set(prev.map(n => n.id));
           const add = trulyNew.filter(n => !allIds.has(n.id));
@@ -562,6 +568,31 @@ const Header = ({ onLogout }) => {
 
           {/* Notifications */}
           <div className="relative" ref={dropdownRef}>
+            {permissionState === 'denied' && (
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  alert('Desktop notifications are blocked in your browser. Please go to Site Settings > Notifications and set to "Allow".');
+                }}
+                className="mr-1 px-2 py-1.5 rounded-xl bg-red-50 border border-red-200 text-[10px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
+                title="Notifications blocked — click for instructions"
+              >
+                🔔 Blocked
+              </button>
+            )}
+            {permissionState === 'default' && (
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  const perm = await requestNotificationPermissionFresh();
+                  console.log(`[NotifDebug] Header enable notifications click: ${perm}`);
+                }}
+                className="mr-1 px-2 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[10px] font-semibold text-amber-600 hover:bg-amber-100 transition-colors"
+                title="Click to enable desktop notifications"
+              >
+                🔔 Enable
+              </button>
+            )}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}

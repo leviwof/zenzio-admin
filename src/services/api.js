@@ -552,7 +552,10 @@ export const getSubscriptionHistory = (restaurantId) =>
 
 
 
-export const getNotifications = () => api.get('/notifications');
+export const getNotifications = (params) => {
+  const qs = params && params.after ? `?after=${encodeURIComponent(params.after)}` : '';
+  return api.get(`/notifications${qs}`);
+};
 export const markNotificationAsRead = (id) => api.patch(`/notifications/${id}/read`);
 
 
