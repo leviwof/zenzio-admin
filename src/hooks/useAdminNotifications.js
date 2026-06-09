@@ -561,6 +561,7 @@ export default function useAdminNotifications(opts) {
     socket.on('new_notification', onNewNotif);
     socket.on('notification:new', onNewNotif);
     socket.on('order:update',     onNewNotif);
+    console.log('order:new listener registered on socket', socket.id || '(connecting)');
   }, [handleNewNotification]);
 
   useEffect(function() {

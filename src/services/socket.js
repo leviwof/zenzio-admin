@@ -18,13 +18,20 @@ export function getAdminSocket() {
   if (adminSocket) return adminSocket;
 
   const token = getStoredAccessToken();
-  if (!token) return null;
+  if (!token) {
+    console.log('SOCKET INIT SKIPPED: no token in localStorage');
+    return null;
+  }
 
   const uid = localStorage.getItem('adminId') || '';
   // Always send role:'admin' so the backend joins this socket to the 'role:admin'
   // room. The backend's emitToAllAdmins() emits to 'role:admin'. The stored
   // adminRole value ("0","1","2") does not match that room name.
   const role = 'admin';
+
+  const authPayload = { uid, role, tokenPrefix: token.slice(0, 20) + '...' };
+  console.log('SOCKET INIT', normalizedBaseUrl + '/admin-notifications');
+  console.log('SOCKET AUTH', authPayload);
 
   adminSocket = io(`${normalizedBaseUrl}/admin-notifications`, {
     auth: { token, uid, role },
@@ -39,6 +46,7 @@ export function getAdminSocket() {
   });
 
   adminSocket.on('connect', () => {
+    console.log('SOCKET CONNECTED', adminSocket.id);
     connectHandlers.forEach((fn) => fn());
   });
 
