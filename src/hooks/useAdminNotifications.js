@@ -23,7 +23,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { getAdminSocket, onAdminReconnect } from '../services/socket';
+import { getAdminSocket, onAdminReconnect, isAdminSocketConnected } from '../services/socket';
 import { getNotifications } from '../services/api';
 import {
   buildDesktopNotificationContent,
@@ -43,7 +43,8 @@ import {
   getPermissionState,
 } from '../services/desktopNotificationService';
 
-const FALLBACK_POLL_INTERVAL = 60_000;  // polling for history sync only
+const FALLBACK_POLL_INTERVAL = 60_000;  // polling when socket is connected (history sync)
+const DISCONNECTED_POLL_INTERVAL = 15_000; // faster poll + alerts when socket is down
 const RECONNECT_FETCH_DELAY  = 800;
 
 // NEW_ORDER sound escalation: repeats every 10s, max 3 additional plays
@@ -565,13 +566,32 @@ export default function useAdminNotifications(opts) {
   useEffect(function() {
     connectSocket();
 
-    // 60 s fallback poll — history sync ONLY, never triggers sound or desktop
-    fallbackTimerRef.current = setInterval(function() {
-      fetchAndProcess(undefined, { alertMissed: false });
-    }, FALLBACK_POLL_INTERVAL);
+    function schedulePoll() {
+      if (fallbackTimerRef.current) clearInterval(fallbackTimerRef.current);
+      var socketUp = isAdminSocketConnected();
+      var interval = socketUp ? FALLBACK_POLL_INTERVAL : DISCONNECTED_POLL_INTERVAL;
+      fallbackTimerRef.current = setInterval(function() {
+        var connected = isAdminSocketConnected();
+        // When socket is down, poll faster and alert on newly discovered notifications
+        fetchAndProcess(undefined, { alertMissed: !connected });
+      }, interval);
+    }
+
+    schedulePoll();
+
+    // Re-schedule poll interval when socket connects/disconnects
+    var socket = getAdminSocket();
+    var onConnChange = function() { schedulePoll(); };
+    if (socket) {
+      socket.on('connect', onConnChange);
+      socket.on('disconnect', onConnChange);
+    }
 
     return function() {
-      var socket = getAdminSocket();
+      if (socket) {
+        socket.off('connect', onConnChange);
+        socket.off('disconnect', onConnChange);
+      }
       if (socket && socketHandlersRef.current) {
         socket.off('connect',          socketHandlersRef.current.onConnect);
         socket.off('disconnect',       socketHandlersRef.current.onDisconnect);

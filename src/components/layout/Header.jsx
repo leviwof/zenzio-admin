@@ -16,12 +16,6 @@ import { claimNotificationAlert, getPermissionState, requestNotificationPermissi
 
 const notificationSoundPath = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
 
-const isToday = (dateStr) => {
-  if (!dateStr) return false;
-  try { return new Date(dateStr).toDateString() === new Date().toDateString(); }
-  catch { return false; }
-};
-
 const formatFullTimestamp = (dateStr) => {
   if (!dateStr) return '';
   try {
@@ -253,17 +247,12 @@ const Header = ({ onLogout }) => {
     const apiItems = allNotifications.map(n => ({ ...n, _source: 'api' }));
     const contextItems = (contextNotifs || []).map(n => ({ ...n }));
     const combined = [...apiItems, ...contextItems].sort((a, b) => {
-      const aToday = isToday(a.createdAt);
-      const bToday = isToday(b.createdAt);
-      if (aToday && !bToday) return -1;
-      if (!aToday && bToday) return 1;
-      return new Date(b.createdAt) - new Date(a.createdAt);
+      const aTime = new Date(a.createdAt || a.created_at || a.timestamp || 0);
+      const bTime = new Date(b.createdAt || b.created_at || b.timestamp || 0);
+      return bTime - aTime;
     });
     const seen = new Set();
     return combined.filter(n => {
-      // show all of today's notifications — not just the last 10 minutes
-      const createdAt = n.createdAt || n.created_at || n.timestamp;
-      if (createdAt && !isToday(createdAt)) return false;
       if (n.id != null && seen.has(n.id)) return false;
       if (n.id != null) seen.add(n.id);
       return true;
@@ -273,8 +262,14 @@ const Header = ({ onLogout }) => {
   // Keep ref in sync so fetchNotifications can read latest without being a dependency
   useEffect(() => { allMergedNotificationsRef.current = allMergedNotifications; }, [allMergedNotifications]);
 
-  const displayNotifications = useMemo(() => allMergedNotifications.slice(0, 30), [allMergedNotifications]);
-  const todayUnreadCount = useMemo(() => allMergedNotifications.filter(n => !n.isRead && isToday(n.createdAt)).length, [allMergedNotifications]);
+  const displayNotifications = useMemo(
+    () => allMergedNotifications.slice(0, 30),
+    [allMergedNotifications],
+  );
+  const todayUnreadCount = useMemo(
+    () => allMergedNotifications.filter(n => !n.isRead).length,
+    [allMergedNotifications],
+  );
 
   useEffect(() => {
     audioRef.current = new Audio(notificationSoundPath);
@@ -334,10 +329,6 @@ const Header = ({ onLogout }) => {
   }, []);
 
   useEffect(() => {
-    isInitialLoad.current = false;
-  }, []);
-
-  useEffect(() => {
     const unreadSynthetic = syntheticNotifs.filter(n => !n.isRead);
     const newSynthIds = unreadSynthetic.map(n => n.id).filter(id => !knownSyntheticIds.current.has(id));
     console.log(`[NotifDebug] Header syntheticNotifs: total=${syntheticNotifs.length}, unread=${unreadSynthetic.length}, newSynthIds=${newSynthIds.length}`);
@@ -358,24 +349,29 @@ const Header = ({ onLogout }) => {
       if (Array.isArray(response.data?.data)) docs = response.data.data;
       else if (Array.isArray(response.data?.notifications)) docs = response.data.notifications;
       else if (Array.isArray(response.data)) docs = response.data;
-      // Show all of today's notifications (not just the last 10 minutes)
-      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-      const docsList = (Array.isArray(docs) ? docs : []).filter(n => {
-        const ts = n.createdAt || n.created_at || n.timestamp;
-        if (!ts) return true; // no timestamp → include
-        const d = new Date(ts);
-        return !isNaN(d) && d >= todayStart;
+      const docsList = (Array.isArray(docs) ? docs : []).slice().sort((a, b) => {
+        const aTime = new Date(a.createdAt || a.created_at || a.timestamp || 0);
+        const bTime = new Date(b.createdAt || b.created_at || b.timestamp || 0);
+        return bTime - aTime;
       });
-      // Use ref to read current merged list without being a reactive dependency
+
+      // Initial load: populate with the most recent notifications (up to 50)
+      if (isInitialLoad.current) {
+        isInitialLoad.current = false;
+        setAllNotifications(docsList.slice(0, 50));
+        console.log(`[NotifDebug] Header fetchNotifications INITIAL: ${docsList.length} total, showing ${Math.min(docsList.length, 50)}`);
+        return;
+      }
+
+      // Subsequent polls: append only genuinely new items
       const existingIds = new Set(allMergedNotificationsRef.current.map(n => n.id));
       const trulyNew = docsList.filter(n => n.id != null && !existingIds.has(n.id));
-      console.log(`[NotifDebug] Header fetchNotifications: ${docs.length} total, ${docsList.length} today, ${trulyNew.length} trulyNew`);
+      console.log(`[NotifDebug] Header fetchNotifications: ${docs.length} total, ${trulyNew.length} trulyNew`);
       if (trulyNew.length > 0) {
-        console.log(`[NotifDebug] Header fetchNotifications APPENDING ${trulyNew.length} new notifications:`, trulyNew.map(n => ({ id: n.id, type: n.type })));
         setAllNotifications(prev => {
           const allIds = new Set(prev.map(n => n.id));
           const add = trulyNew.filter(n => !allIds.has(n.id));
-          return [...add, ...prev];
+          return [...add, ...prev].slice(0, 50);
         });
       }
     } catch (error) { console.error('Failed to fetch notifications:', error); }

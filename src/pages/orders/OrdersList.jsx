@@ -451,7 +451,7 @@ const OrdersList = () => {
   const hasInteracted = useRef(false);
   const { socketConnected } = useOrderNotifications();
 
-  const { resetUnreadOrders, addNewOrders } = useOrderNotifications();
+  const { resetUnreadOrders, addNewOrders, addNewOrderNotification } = useOrderNotifications();
 
   const orderBelongsToOwnRestaurant = useCallback((order) => {
     if (!restaurantAdmin || !ownRestaurantUid) return true;
@@ -836,6 +836,10 @@ const OrdersList = () => {
           // Polling is for history sync and orders-page UI only.
           if (newlyArrived.length > 0) {
             addToast(newlyArrived[0]);
+            // When socket is down, feed the global popup queue so alerts work off this page too
+            if (!socketConnected) {
+              newlyArrived.forEach(order => addNewOrderNotification(order));
+            }
             newlyArrived.forEach(order => {
               notifiedOrderIds.current.add(order.orderId || order.id);
             });
@@ -866,7 +870,7 @@ const OrdersList = () => {
     } finally {
       isPollingRef.current = false;
     }
-  }, [restaurantAdmin, ownRestaurantUid, orderBelongsToOwnRestaurant, addToast, addNewOrders, highlightNewOrders, shouldNotifyByStatus, fetchStats, fetchOrders]);
+  }, [restaurantAdmin, ownRestaurantUid, orderBelongsToOwnRestaurant, addToast, addNewOrders, addNewOrderNotification, highlightNewOrders, shouldNotifyByStatus, fetchStats, fetchOrders, socketConnected]);
 
   pollOrdersRef.current = pollOrders;
 
