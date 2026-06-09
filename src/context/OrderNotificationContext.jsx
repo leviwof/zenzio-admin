@@ -46,13 +46,12 @@ export const OrderNotificationProvider = ({ children }) => {
       const type = (notif.type || '').toUpperCase();
       console.log(`[NotifDebug] OrderNotificationContext.onNewNotification: id=${id}, type=${type}, body="${(notif.body || notif.message || '').slice(0, 60)}"`);
 
-      // Update socket notification list — prepend at index 0
+      // Update socket notification list
       setSocketNotifs(prev => {
         if (id != null && prev.some(n => n.id === id)) {
           console.log(`[NotifDebug] OrderNotificationContext socketNotifs SKIPPED (already exists): id=${id}`);
           return prev;
         }
-        console.log(`[NotifOrder] Context socketNotifs prepend id=${id} type=${type} createdAt=${notif.createdAt || 'MISSING'}`);
         return [{ ...notif, _source: 'socket', isRead: false }, ...prev].slice(0, 100);
       });
 
