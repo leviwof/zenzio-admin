@@ -12,13 +12,19 @@ let disconnectHandlers = [];
 let reconnectHandlers = [];
 
 export function getAdminSocket() {
-  if (adminSocket?.connected) return adminSocket;
+  // Return the existing socket instance if it already exists (even while connecting).
+  // Do NOT check .connected — a connecting socket has connected=false but must NOT
+  // be replaced, or its event listeners would be orphaned on the old reference.
+  if (adminSocket) return adminSocket;
 
   const token = getStoredAccessToken();
   if (!token) return null;
 
   const uid = localStorage.getItem('adminId') || '';
-  const role = localStorage.getItem('adminRole') || localStorage.getItem('loginRole') || '';
+  // Always send role:'admin' so the backend joins this socket to the 'role:admin'
+  // room. The backend's emitToAllAdmins() emits to 'role:admin'. The stored
+  // adminRole value ("0","1","2") does not match that room name.
+  const role = 'admin';
 
   adminSocket = io(`${normalizedBaseUrl}/admin-notifications`, {
     auth: { token, uid, role },
@@ -29,7 +35,7 @@ export function getAdminSocket() {
     reconnectionDelayMax: 30000,
     randomizationFactor: 0.5,
     timeout: 10000,
-    forceNew: true,
+    // forceNew removed — we manage the singleton ourselves via adminSocket variable
   });
 
   adminSocket.on('connect', () => {

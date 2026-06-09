@@ -153,6 +153,13 @@ export const OrderNotificationProvider = ({ children }) => {
     );
   }, []);
 
+  const markSocketNotifRead = useCallback((id) => {
+    if (id == null) return;
+    setSocketNotifs(prev =>
+      prev.map(n => n.id === id ? { ...n, isRead: true } : n)
+    );
+  }, []);
+
   const allMergedNotifications = useMemo(() => {
     const items = [
       ...socketNotifs.map(n => ({ ...n, _source: n._source || 'socket' })),
@@ -185,6 +192,7 @@ export const OrderNotificationProvider = ({ children }) => {
         addNewOrders,
         addNewOrderNotification,
         markSyntheticNotifRead,
+        markSocketNotifRead,
         lastResetTime,
       }}
     >
@@ -211,6 +219,7 @@ export const useOrderNotifications = () => {
       addNewOrders:           () => {},
       addNewOrderNotification:() => {},
       markSyntheticNotifRead: () => {},
+      markSocketNotifRead:    () => {},
       lastResetTime:          { current: Date.now() },
     };
   }

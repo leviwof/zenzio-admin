@@ -211,7 +211,7 @@ const Header = ({ onLogout }) => {
   const audioRef = useRef(null);
   const audioUnlocked = useRef(false);
   const pendingSoundRef = useRef(false);
-  const { unreadOrderCount, syntheticNotifs, markSyntheticNotifRead, allMergedNotifications: contextNotifs, socketConnected, permissionState } = useOrderNotifications();
+  const { unreadOrderCount, syntheticNotifs, markSyntheticNotifRead, markSocketNotifRead, allMergedNotifications: contextNotifs, socketConnected, permissionState } = useOrderNotifications();
   const [badgeAnim, setBadgeAnim] = useState(false);
   const dropdownRef = useRef(null);
   const searchRef = useRef(null);
@@ -395,23 +395,29 @@ const Header = ({ onLogout }) => {
 
   const handleMarkAsRead = useCallback(async (e, id) => {
     e.stopPropagation();
-    if (id.startsWith('syn_')) { markSyntheticNotifRead(id); knownSyntheticIds.current.delete(id); }
-    else {
+    if (String(id).startsWith('syn_')) {
+      markSyntheticNotifRead(id);
+      knownSyntheticIds.current.delete(id);
+    } else {
       try {
         await markNotificationAsRead(id);
         setAllNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+        markSocketNotifRead(id); // also mark in context socket list if it lives there
         knownUnreadIds.current.delete(id);
       } catch (error) { console.error('Failed to mark notification as read:', error); }
     }
-  }, [markSyntheticNotifRead]);
+  }, [markSyntheticNotifRead, markSocketNotifRead]);
 
   const handleNotificationClick = useCallback(async (notif) => {
     if (!notif.isRead) {
-      if (notif._source === 'synthetic' || notif.id.startsWith('syn_')) { markSyntheticNotifRead(notif.id); knownSyntheticIds.current.delete(notif.id); }
-      else {
+      if (notif._source === 'synthetic' || String(notif.id).startsWith('syn_')) {
+        markSyntheticNotifRead(notif.id);
+        knownSyntheticIds.current.delete(notif.id);
+      } else {
         try {
           await markNotificationAsRead(notif.id);
           setAllNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, isRead: true } : n));
+          markSocketNotifRead(notif.id);
           knownUnreadIds.current.delete(notif.id);
         } catch (error) { console.error('Failed to mark notification as read:', error); }
       }
@@ -419,7 +425,7 @@ const Header = ({ onLogout }) => {
     const orderId = extractOrderId(notif);
     navigate(orderId ? `/orders/${orderId}` : '/orders');
     setShowDropdown(false);
-  }, [navigate, markSyntheticNotifRead]);
+  }, [navigate, markSyntheticNotifRead, markSocketNotifRead]);
 
   const clockLoading = !mounted || !clock.time;
 
