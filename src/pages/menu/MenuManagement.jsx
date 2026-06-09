@@ -201,6 +201,53 @@ const DeleteModal = ({ open, menu, onConfirm, onCancel, loading }) => {
   );
 };
 
+const BlockModal = ({ open, menu, isCurrentlyAvailable, onConfirm, onCancel, loading }) => {
+  if (!open) return null;
+  const action = isCurrentlyAvailable ? 'Block' : 'Unblock';
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onCancel}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.92 }}
+        className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${isCurrentlyAvailable ? 'bg-amber-100' : 'bg-emerald-100'}`}>
+          <UtensilsCrossed size={24} className={isCurrentlyAvailable ? 'text-amber-500' : 'text-emerald-500'} />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">{action} Menu Item</h3>
+        <p className="text-sm text-gray-500 text-center mb-4">
+          Are you sure you want to {action.toLowerCase()} <span className="font-semibold text-gray-700">&ldquo;{menu?.menu_name}&rdquo;</span>?
+        </p>
+        <p className={`text-xs text-center mb-6 rounded-lg p-2.5 ${isCurrentlyAvailable ? 'text-amber-600 bg-amber-50' : 'text-emerald-600 bg-emerald-50'}`}>
+          {isCurrentlyAvailable
+            ? 'Customers will not be able to order this item until it is unblocked.'
+            : 'Customers will be able to order this item after unblocking.'}
+        </p>
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className={`flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-xl transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-2
+              ${isCurrentlyAvailable ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+          >
+            {loading && <Loader2 size={14} className="animate-spin" />}
+            {action}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 const StatCard = ({ icon: Icon, label, value, color, sub }) => (
   <motion.div
     initial={{ opacity: 0, y: 12 }}
@@ -244,6 +291,8 @@ const MenuManagement = () => {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ show: false, menu: null });
+  const [blockModal, setBlockModal] = useState({ show: false, menu: null, isCurrentlyAvailable: false });
+  const [blockLoading, setBlockLoading] = useState(false);
   const [toggleLoading, setToggleLoading] = useState({});
 
   const [restaurants, setRestaurants] = useState([]);
@@ -505,13 +554,35 @@ const MenuManagement = () => {
     setToggleLoading((prev) => ({ ...prev, [menu.menu_uid]: true }));
     const state = getMenuAvailabilityState(menu);
     try {
-      await toggleMenuAvailability(menu.menu_uid, !state.menuIsAvailable);
+      await toggleMenuAvailability(menu.menu_uid, !state.menuIsAvailable, menu.menu_name);
       toast.success(`Menu marked ${state.menuIsAvailable ? 'unavailable' : 'available'}`);
       fetchMenus();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update availability');
     } finally {
       setToggleLoading((prev) => ({ ...prev, [menu.menu_uid]: false }));
+    }
+  };
+
+  const handleBlockUnblock = (menu) => {
+    const state = getMenuAvailabilityState(menu);
+    setBlockModal({ show: true, menu, isCurrentlyAvailable: state.menuIsAvailable });
+  };
+
+  const confirmBlockUnblock = async () => {
+    if (!blockModal.menu) return;
+    const menu = blockModal.menu;
+    const newAvailability = !blockModal.isCurrentlyAvailable;
+    setBlockLoading(true);
+    try {
+      await toggleMenuAvailability(menu.menu_uid, newAvailability, menu.menu_name);
+      toast.success(`Menu ${blockModal.isCurrentlyAvailable ? 'blocked' : 'unblocked'} successfully`);
+      setBlockModal({ show: false, menu: null, isCurrentlyAvailable: false });
+      fetchMenus();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update availability');
+    } finally {
+      setBlockLoading(false);
     }
   };
 
@@ -798,6 +869,16 @@ const MenuManagement = () => {
             menu={deleteModal.menu}
             onConfirm={confirmDelete}
             onCancel={() => setDeleteModal({ show: false, menu: null })}
+          />
+        )}
+        {blockModal.show && (
+          <BlockModal
+            open
+            menu={blockModal.menu}
+            isCurrentlyAvailable={blockModal.isCurrentlyAvailable}
+            onConfirm={confirmBlockUnblock}
+            onCancel={() => setBlockModal({ show: false, menu: null, isCurrentlyAvailable: false })}
+            loading={blockLoading}
           />
         )}
       </AnimatePresence>
@@ -1347,13 +1428,20 @@ const MenuManagement = () => {
                               {toggleLoading[menu.menu_uid] ? 'Updating...' : availBadge.label}
                             </button>
                           ) : (
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${availBadge.bg} ${availBadge.text} ${availBadge.ring}`}
-                              title={unavailableTitle}
+                            <button
+                              onClick={() => handleBlockUnblock(menu)}
+                              disabled={toggleLoading[menu.menu_uid]}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset cursor-pointer transition-all duration-150
+                                ${availBadge.bg} ${availBadge.text} ${availBadge.ring} disabled:opacity-50 disabled:cursor-not-allowed`}
+                              title={`${unavailableTitle}. Click to ${availabilityState.menuIsAvailable ? 'block' : 'unblock'} this item.`}
                             >
-                              <span className={`w-1.5 h-1.5 rounded-full ${availBadge.dot}`} />
-                              {availBadge.label}
-                            </span>
+                              {toggleLoading[menu.menu_uid] ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <span className={`w-1.5 h-1.5 rounded-full ${availBadge.dot}`} />
+                              )}
+                              {toggleLoading[menu.menu_uid] ? 'Updating...' : availBadge.label}
+                            </button>
                           )}
                         </td>
                         <td className="px-4 py-3">

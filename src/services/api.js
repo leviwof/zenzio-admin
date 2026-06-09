@@ -468,8 +468,11 @@ export const toggleMenuStatus = (menuUid, newStatus) =>
     isActive: newStatus ? 1 : 0
   });
 
-export const toggleMenuAvailability = (menuUid, isAvailable) =>
-  api.patch(`/restaurant-menu/${menuUid}/availability`, { is_available: isAvailable });
+export const toggleMenuAvailability = (menuUid, isAvailable, menuName) =>
+  api.patch(`/restaurant-menu/${menuUid}/availability`, {
+    is_available: isAvailable,
+    ...(menuName != null && { menuName }),
+  });
 
 export const deleteMenu = (menuUid) =>
   api.delete(`/restaurant-menu/${menuUid}/soft`);
