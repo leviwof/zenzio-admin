@@ -672,4 +672,7 @@ export const updateGlobalSettings = (data) => api.patch('/global-settings', data
 export const reconcilePayment = (razorpayOrderId) =>
   api.post('/payments/reconcile', { razorpayOrderId });
 
+export const refundOrder = (orderId) =>
+  api.post(`/payments/order/${orderId}/refund`);
+
 export default api;
