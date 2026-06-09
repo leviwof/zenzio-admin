@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useMemo, useEffect } from "react";
 import useAdminNotifications from "../hooks/useAdminNotifications";
-import { isRecentNotification } from "../utils/notifications";
+import { isRecentNotification, getNotificationTimestamp } from "../utils/notifications";
 
 const OrderNotificationContext = createContext(null);
 
@@ -37,16 +37,10 @@ export const OrderNotificationProvider = ({ children }) => {
 
   const { notifications, socketConnected, permissionState, acknowledgeNotification } = useAdminNotifications({
     onNewNotification: (notif) => {
-      if (!isRecentNotification(notif)) {
-        console.log(`[NotifDebug] OrderNotificationContext.onNewNotification SKIPPED (not recent): type=${notif?.type}, id=${notif?.id}`);
-        return;
-      }
-
       const id   = notif.id ?? notif.notificationId ?? notif.notification_id;
       const type = (notif.type || '').toUpperCase();
-      console.log(`[NotifDebug] OrderNotificationContext.onNewNotification: id=${id}, type=${type}, body="${(notif.body || notif.message || '').slice(0, 60)}"`);
 
-      // Update socket notification list
+      // Always add to notification list regardless of clock skew — so it appears in the dropdown
       setSocketNotifs(prev => {
         if (id != null && prev.some(n => n.id === id)) {
           console.log(`[NotifDebug] OrderNotificationContext socketNotifs SKIPPED (already exists): id=${id}`);
@@ -60,6 +54,22 @@ export const OrderNotificationProvider = ({ children }) => {
         console.log(`[NotifDebug] OrderNotificationContext INCREMENTING badge: type=${type}`);
         setUnreadOrderCount(prev => prev + 1);
       }
+
+      // Recency check for popup — prevents old reconnect-recovered notifications from showing popups.
+      // Diagnose with exact timestamps if blocked.
+      const recent = isRecentNotification(notif);
+      if (!recent) {
+        const ts  = getNotificationTimestamp(notif);
+        const now = Date.now();
+        console.log(
+          `[NotifDebug] OrderNotificationContext.onNewNotification popup SKIPPED (not recent):` +
+          ` type=${type}, id=${id}, createdAt=${notif?.createdAt},` +
+          ` ts=${ts}, now=${now}, diff=${ts != null ? ts - now : 'null'}ms`
+        );
+        return;
+      }
+
+      console.log(`[NotifDebug] OrderNotificationContext.onNewNotification: id=${id}, type=${type}, body="${(notif.body || notif.message || '').slice(0, 60)}"`);
 
       // In-app popup toast — only for relevant types, only once per ID
       if (POPUP_TYPES.has(type) || !type) {
