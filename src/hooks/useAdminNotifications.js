@@ -254,9 +254,10 @@ export default function useAdminNotifications(opts) {
       processedOrderIds.current.add(orderKey);
     }
 
-    // ── Update in-memory list ────────────────────────────────────────────────
+    // ── Update in-memory list — prepend at index 0 ──────────────────────────
     localNotifsRef.current = [notif].concat(localNotifsRef.current).slice(0, 100);
     setNotifications(localNotifsRef.current.slice());
+    console.log('[NotifOrder] Socket insert at index 0: id=' + idStr + ' type=' + type + ' createdAt=' + (notif.createdAt || 'MISSING'));
 
     if (onNotificationRef.current)    onNotificationRef.current(notif);
     if (onNewNotificationRef.current) onNewNotificationRef.current(notif);
@@ -361,9 +362,18 @@ export default function useAdminNotifications(opts) {
         // Re-enable after testing confirms desktop notifications fire correctly.
         // seedAlertedIds(docs);
         console.log('seedAlertedIds DISABLED for testing');
-        localNotifsRef.current = docs.slice(0, 100);
+        // Sort DESC by createdAt — do not trust API response order
+        var sortedDocs = docs.slice().sort(function(a, b) { return getNotifTime(b) - getNotifTime(a); });
+        console.log('[NotifOrder] Initial load (' + sortedDocs.length + ' docs) top 10:');
+        sortedDocs.slice(0, 10).forEach(function(n, i) {
+          console.log('[NotifOrder] #' + (i + 1) +
+            ' id=' + getNotificationId(n) +
+            ' type=' + (n.type || (n.data && n.data.type) || 'GENERAL') +
+            ' createdAt=' + (n.createdAt || n.created_at || 'MISSING'));
+        });
+        localNotifsRef.current = sortedDocs.slice(0, 100);
         setNotifications(localNotifsRef.current.slice());
-        var latest = getLatestNotif(docs);
+        var latest = getLatestNotif(sortedDocs);
         if (latest) {
           rememberLastNotification(latest);
           lastIdRef.current   = getStoredLastNotificationId();

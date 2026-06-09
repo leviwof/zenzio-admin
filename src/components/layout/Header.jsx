@@ -266,6 +266,19 @@ const Header = ({ onLogout }) => {
     () => allMergedNotifications.slice(0, 30),
     [allMergedNotifications],
   );
+
+  useEffect(() => {
+    if (displayNotifications.length === 0) return;
+    console.log('[NotifOrder] Header displayNotifications top 10:');
+    displayNotifications.slice(0, 10).forEach((n, i) => {
+      console.log('[NotifOrder] #' + (i + 1) +
+        ' id=' + n.id +
+        ' type=' + (n.type || '') +
+        ' createdAt=' + (n.createdAt || 'MISSING') +
+        ' isRead=' + n.isRead +
+        ' _source=' + (n._source || '?'));
+    });
+  }, [displayNotifications]);
   const todayUnreadCount = useMemo(
     () => allMergedNotifications.filter(n => !n.isRead).length,
     [allMergedNotifications],
