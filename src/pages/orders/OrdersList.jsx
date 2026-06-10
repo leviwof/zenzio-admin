@@ -16,21 +16,10 @@ import { saveAs } from "file-saver";
 import toast from "react-hot-toast";
 import { useOrderNotifications } from "../../context/OrderNotificationContext";
 import { getCurrentRestaurantUid, isRestaurantAdmin, isZenzioAdmin } from "../../utils/auth";
-import { shouldRunSharedPoll } from "../../utils/requestCoordinator";
 import { isRecentNotification } from "../../utils/notifications";
-import { isAdminSocketConnected } from "../../services/socket";
-import {
-  claimNotificationAlert,
-  showDesktopNotification as showNativeDesktopNotification,
-} from "../../services/desktopNotificationService";
 
-const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
-const loudNotificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
-const ORDER_POLL_INTERVAL = 15000;
-const TOAST_DURATION = 9000;
 const HIGHLIGHT_DURATION = 20000;
 const EXIT_ANIMATION_DURATION = 350;
-const LOUD_SOUND_DELAY = 10000;
 
 const CANCEL_REASONS = [
   { label: "Delivery executive unavailable", value: "delivery_executive_unavailable" },
@@ -425,34 +414,15 @@ const OrdersList = () => {
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const knownOrderIds = useRef(new Set());
-  const knownOrderStatuses = useRef(new Map());
-  const notifiedOrderIds = useRef(new Set());
-  const firstPollRef = useRef(true);
-  const audioRef = useRef(null);
-  const loudAudioRef = useRef(null);
-  const audioUnlocked = useRef(false);
-  const pendingSoundRef = useRef(false);
-  const loudSoundTimerRef = useRef(null);
-  const loudSoundPlayedRef = useRef(false);
-  const pollOrdersRef = useRef(null);
-  const isPollingRef = useRef(false);
-
   const highlightedOrderIds = useRef(new Set());
   const highlightTimers = useRef(new Map());
   const [highlightedIds, setHighlightedIds] = useState(new Set());
-  const toastIdCounter = useRef(0);
-  const [toasts, setToasts] = useState([]);
-  const soundPlayedThisCycle = useRef(false);
   const initialFetchRef = useRef(false);
   const [lastUpdatedTime, setLastUpdatedTime] = useState(null);
   const [lastUpdatedAgo, setLastUpdatedAgo] = useState(null);
 
   const [liveConnected, setLiveConnected] = useState(false);
-  const hasInteracted = useRef(false);
-  const { socketConnected } = useOrderNotifications();
-
-  const { resetUnreadOrders, addNewOrders, addNewOrderNotification } = useOrderNotifications();
+  const { socketConnected, resetUnreadOrders, registerNewOrderCallback } = useOrderNotifications();
 
   const orderBelongsToOwnRestaurant = useCallback((order) => {
     if (!restaurantAdmin || !ownRestaurantUid) return true;
@@ -467,7 +437,6 @@ const OrdersList = () => {
   }, [restaurantAdmin, ownRestaurantUid]);
 
   useEffect(() => {
-    hasInteracted.current = false;
     resetUnreadOrders();
   }, []);
 
@@ -481,173 +450,6 @@ const OrdersList = () => {
     return () => clearInterval(interval);
   }, [lastUpdatedTime]);
 
-  useEffect(() => {
-    audioRef.current = new Audio(notificationSound);
-    audioRef.current.preload = 'auto';
-    loudAudioRef.current = new Audio(loudNotificationSound);
-    loudAudioRef.current.preload = 'auto';
-    const primeAudio = async (audio) => {
-      if (!audio) return false;
-      const previousVolume = audio.volume;
-      try {
-        audio.volume = 0;
-        await audio.play();
-        audio.pause();
-        audio.currentTime = 0;
-        return true;
-      } catch {
-        return false;
-      } finally {
-        audio.volume = previousVolume;
-      }
-    };
-
-    const unlock = async () => {
-      if (audioUnlocked.current) return;
-      const unlocked = await Promise.all([
-        primeAudio(audioRef.current),
-        primeAudio(loudAudioRef.current),
-      ]);
-      if (!unlocked.some(Boolean)) return;
-
-      audioUnlocked.current = true;
-      document.removeEventListener('click', unlock);
-      document.removeEventListener('touchstart', unlock);
-
-      if (pendingSoundRef.current && audioRef.current) {
-        pendingSoundRef.current = false;
-        audioRef.current.currentTime = 0;
-        audioRef.current.play().catch(() => {
-          pendingSoundRef.current = true;
-        });
-      }
-    };
-    document.addEventListener('click', unlock);
-    document.addEventListener('touchstart', unlock);
-    return () => {
-      document.removeEventListener('click', unlock);
-      document.removeEventListener('touchstart', unlock);
-    };
-  }, []);
-
-  const shouldNotifyByStatus = useCallback((order) => {
-    if (!isRecentNotification(order)) return false;
-
-    const id = order.orderId || order.id;
-    if (notifiedOrderIds.current.has(id)) return false;
-    const status = (order.restaurantStatus || order.status || '').toUpperCase();
-    return status === 'NEW' || status === 'PENDING_PAYMENT' || status === 'PENDING' || status === 'ACCEPTED';
-  }, []);
-
-  const playNotificationSound = useCallback(() => {
-    if (!audioRef.current) {
-      console.log(`[NotifDebug] playNotificationSound SKIPPED (no audioRef)`);
-      return;
-    }
-    try {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play()
-        .then(() => {
-          console.log(`[NotifDebug] playNotificationSound PLAYED`);
-          audioUnlocked.current = true;
-          pendingSoundRef.current = false;
-        })
-        .catch((err) => {
-          console.log(`[NotifDebug] playNotificationSound FAILED: ${err}`);
-          pendingSoundRef.current = true;
-        });
-    } catch (err) {
-      console.log(`[NotifDebug] playNotificationSound EXCEPTION: ${err}`);
-      pendingSoundRef.current = true;
-    }
-  }, []);
-
-  const playLoudNotificationSound = useCallback(() => {
-    if (!loudAudioRef.current || loudSoundPlayedRef.current) {
-      console.log(`[NotifDebug] playLoudNotificationSound SKIPPED: noRef=${!loudAudioRef.current}, alreadyPlayed=${loudSoundPlayedRef.current}`);
-      return;
-    }
-    try {
-      loudAudioRef.current.currentTime = 0;
-      loudAudioRef.current.play()
-        .then(() => {
-          console.log(`[NotifDebug] playLoudNotificationSound PLAYED`);
-          audioUnlocked.current = true;
-        })
-        .catch((err) => {
-          console.log(`[NotifDebug] playLoudNotificationSound FAILED: ${err}`);
-        });
-      loudSoundPlayedRef.current = true;
-    } catch (err) {
-      console.log(`[NotifDebug] playLoudNotificationSound EXCEPTION: ${err}`);
-    }
-  }, []);
-
-  const cancelLoudSoundTimer = useCallback(() => {
-    if (loudSoundTimerRef.current) { clearTimeout(loudSoundTimerRef.current); loudSoundTimerRef.current = null; }
-  }, []);
-
-  const scheduleLoudSound = useCallback(() => {
-    cancelLoudSoundTimer();
-    loudSoundPlayedRef.current = false;
-    loudSoundTimerRef.current = setTimeout(() => {
-      playLoudNotificationSound();
-      loudSoundTimerRef.current = null;
-    }, LOUD_SOUND_DELAY);
-  }, [cancelLoudSoundTimer, playLoudNotificationSound]);
-
-  const showDesktopNotification = useCallback((orders) => {
-    const first = orders[0];
-    if (!first) {
-      console.log(`[DEBUG] DESKTOP NOTIFICATION SKIPPED: empty orders array`);
-      return;
-    }
-    if (!('Notification' in window)) {
-      console.log(`[DEBUG] DESKTOP NOTIFICATION SKIPPED: Notification API not supported`);
-      return;
-    }
-    if (Notification.permission !== 'granted') {
-      console.log(`[DEBUG] DESKTOP NOTIFICATION SKIPPED: permission=${Notification.permission}`);
-      return;
-    }
-    const count = orders.length;
-    const orderId = first.orderId || first.id;
-    const title = count === 1 ? `New Order #${orderId}` : `${count} New Orders`;
-    const body = count === 1
-      ? `${first.customer_name || 'Guest'} - ${first.restaurant_name || 'Unknown'} - ₹${first.price}`
-      : `${first.customer_name || 'Guest'} and ${count - 1} other${count - 1 > 1 ? 's' : ''}`;
-    try {
-      const n = new Notification(title, { body, requireInteraction: true, tag: `order-${orderId}` });
-      n.onclick = () => { window.focus(); n.close(); };
-      console.log(`[DEBUG] DESKTOP NOTIFICATION FIRED: orderId=${orderId}, title="${title}"`);
-    } catch (err) {
-      console.log(`[DEBUG] DESKTOP NOTIFICATION SKIPPED: error=${err.message}`);
-    }
-  }, []);
-
-  const addToast = useCallback((order) => {
-    if (!isRecentNotification(order)) return;
-
-    const id = ++toastIdCounter.current;
-    const t = {
-      id, orderId: order.orderId,
-      customerName: order.customer_name || order.customer || "Guest",
-      restaurantName: order.restaurant_name || "Unknown Restaurant",
-      amount: order.price, time: order.time || order.createdAt,
-      createdAt: Date.now(), exiting: false,
-    };
-    setToasts([t]);
-    setTimeout(() => {
-      setToasts([{ ...t, exiting: true }]);
-      setTimeout(() => setToasts([]), EXIT_ANIMATION_DURATION);
-    }, TOAST_DURATION);
-  }, []);
-
-  const dismissToast = useCallback((id) => {
-    cancelLoudSoundTimer();
-    setToasts(prev => prev.map(t => t.id === id ? { ...t, exiting: true } : t));
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), EXIT_ANIMATION_DURATION);
-  }, [cancelLoudSoundTimer]);
 
   const highlightNewOrders = useCallback((newOrderList) => {
     const newIds = [];
@@ -675,12 +477,11 @@ const OrdersList = () => {
 
   useEffect(() => {
     return () => {
-      cancelLoudSoundTimer();
       highlightTimers.current.forEach(t => clearTimeout(t));
       highlightTimers.current.clear();
       highlightedOrderIds.current.clear();
     };
-  }, [cancelLoudSoundTimer]);
+  }, []);
 
   // ── Debounced Search ──
   useEffect(() => {
@@ -795,107 +596,16 @@ const OrdersList = () => {
       paymentStatusFilter, paymentMethodFilter, orderTypeFilter,
       dateFilter, fromDate, toDate, amountMin, amountMax, cityFilter]);
 
-  // ── Live Polling ──
-  const pollOrders = useCallback(async () => {
-    if (isPollingRef.current) {
-      console.log(`[NotifDebug] pollOrders SKIPPED (already polling)`);
-      return;
-    }
-    isPollingRef.current = true;
-    const knownCount = knownOrderIds.current.size;
-    console.log(`[NotifDebug] pollOrders START: knownOrderIds=${knownCount}, firstPoll=${firstPollRef.current}`);
-    try {
-      const params = {
-        ...(restaurantAdmin && ownRestaurantUid ? { restaurant_uid: ownRestaurantUid } : {}),
-      };
-      const res = await getAllOrders(params);
-      const newOrders = (res.data?.data || res.data || []).filter(orderBelongsToOwnRestaurant);
-
-      const newIds = new Set(newOrders.map(o => o.orderId || o.id));
-
-      if (!firstPollRef.current) {
-        const hasNewOrder = knownOrderIds.current.size > 0 &&
-          [...newIds].some(id => !knownOrderIds.current.has(id));
-
-        console.log(`[NotifDebug] pollOrders: hasNewOrder=${hasNewOrder}, totalOrders=${newOrders.length}`);
-
-        let newlyArrived = [];
-        if (hasNewOrder) {
-          newlyArrived = newOrders.filter(o => !knownOrderIds.current.has(o.orderId || o.id) && isRecentNotification(o));
-          console.log(`[NotifDebug] pollOrders: newlyArrived=${newlyArrived.length}`, newlyArrived.map(o => ({ id: o.orderId || o.id, status: o.restaurantStatus || o.status })));
-
-          if (newlyArrived.length > 0) {
-            console.log(`[DEBUG] POLL DETECTED ORDER: ${newlyArrived.length} new order(s), socketConnected=${socketConnected}`);
-            addToast(newlyArrived[0]);
-
-            // Always drive alerts from polling — socket connection does NOT guarantee
-            // order:new events arrive (backend may emit only to its own socket namespace).
-            console.log(`[DEBUG] ALERT FUNCTION CALLED: addNewOrderNotification x${newlyArrived.length}`);
-            newlyArrived.forEach(order => addNewOrderNotification(order));
-
-            console.log(`[DEBUG] SOUND CALLED`);
-            playNotificationSound();
-
-            console.log(`[DEBUG] DESKTOP CALLED`);
-            showDesktopNotification(newlyArrived);
-
-            newlyArrived.forEach(order => {
-              notifiedOrderIds.current.add(order.orderId || order.id);
-            });
-            addNewOrders(newlyArrived);
-            highlightNewOrders(newlyArrived);
-            fetchOrders(true);
-          }
-        }
-
-        const statusBasedNew = newOrders.filter(o => shouldNotifyByStatus(o));
-        console.log(`[NotifDebug] pollOrders: statusBasedNew=${statusBasedNew.length}`);
-        statusBasedNew.forEach(order => {
-          notifiedOrderIds.current.add(order.orderId || order.id);
-          knownOrderStatuses.current.set(order.orderId || order.id, (order.restaurantStatus || order.status || '').toUpperCase());
-        });
-      }
-
-      firstPollRef.current = false;
-      knownOrderIds.current = newIds;
-      newOrders.forEach(o => knownOrderStatuses.current.set(o.orderId || o.id, (o.restaurantStatus || o.status || '').toUpperCase()));
-
-      setLastUpdatedTime(Date.now());
-      if (!socketConnected) setLiveConnected(true);
-      fetchStats();
-    } catch (err) {
-      console.log(`[NotifDebug] pollOrders ERROR:`, err);
-      if (!socketConnected) setLiveConnected(false);
-    } finally {
-      isPollingRef.current = false;
-    }
-  }, [restaurantAdmin, ownRestaurantUid, orderBelongsToOwnRestaurant, addToast, addNewOrders, addNewOrderNotification, highlightNewOrders, shouldNotifyByStatus, fetchStats, fetchOrders, socketConnected]);
-
-  pollOrdersRef.current = pollOrders;
-
+  // When the global notification provider detects a new order (via polling or socket),
+  // it calls this callback so the table can refresh and highlight the new rows.
   useEffect(() => {
-    if (shouldRunSharedPoll('orders-list', ORDER_POLL_INTERVAL - 1000)) {
-      pollOrdersRef.current?.();
-    }
-
-    const interval = setInterval(() => {
-      if (shouldRunSharedPoll('orders-list', ORDER_POLL_INTERVAL - 1000)) {
-        pollOrdersRef.current?.();
-      }
-    }, ORDER_POLL_INTERVAL);
-
-    const onVisibilityChange = () => {
-      if (shouldRunSharedPoll('orders-list', ORDER_POLL_INTERVAL - 1000)) {
-        pollOrdersRef.current?.();
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
-  }, []);
+    const unsubscribe = registerNewOrderCallback((newlyArrived) => {
+      fetchOrders(true);
+      fetchStats();
+      highlightNewOrders(newlyArrived);
+    });
+    return unsubscribe;
+  }, [registerNewOrderCallback, fetchOrders, fetchStats, highlightNewOrders]);
 
   // ── Actions ──
   const handleView = (order) => {
@@ -1761,46 +1471,6 @@ const OrdersList = () => {
         </>
       )}
 
-      {/* ── Notification Toasts ── */}
-      {toasts.length > 0 && (
-        <div className="fixed top-20 right-6 z-[100] flex flex-col gap-2 pointer-events-none">
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              onClick={() => { cancelLoudSoundTimer(); navigate(`/orders/${toast.orderId}`); }}
-              className={`pointer-events-auto w-80 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden cursor-pointer
-                ${toast.exiting ? 'animate-toast-exit' : 'animate-toast-enter'}
-              `}
-            >
-              <div className="flex items-start gap-3 p-4">
-                <div className="flex-shrink-0 w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center">
-                  <Bell size={16} className="text-indigo-500" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-bold text-indigo-500 uppercase tracking-wide">New Order</p>
-                    <button onClick={(e) => { e.stopPropagation(); dismissToast(toast.id); }} className="text-gray-300 hover:text-gray-500 transition-colors flex-shrink-0">
-                      <X size={14} />
-                    </button>
-                  </div>
-                  <p className="text-sm font-bold text-gray-900 mt-0.5">#{toast.orderId}</p>
-                  <div className="mt-1.5 space-y-0.5">
-                    <p className="text-xs text-gray-600"><span className="text-gray-400">Customer:</span> {toast.customerName}</p>
-                    <p className="text-xs text-gray-600"><span className="text-gray-400">Restaurant:</span> {toast.restaurantName}</p>
-                    <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
-                      <p className="text-sm font-bold text-gray-900">₹{toast.amount}</p>
-                      <p className="text-[10px] text-gray-400">
-                        {(() => { const t = formatDateTime(toast.time); return t; })()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="h-1 bg-gradient-to-r from-indigo-500 to-indigo-400 animate-pulse" style={{ width: '100%' }} />
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 };
