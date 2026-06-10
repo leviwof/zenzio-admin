@@ -24,8 +24,8 @@ import {
   showDesktopNotification as showNativeDesktopNotification,
 } from "../../services/desktopNotificationService";
 
-const notificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
-const loudNotificationSound = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
+const notificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
+const loudNotificationSound = `${import.meta.env.BASE_URL}notification.mp3`;
 const ORDER_POLL_INTERVAL = 15000;
 const TOAST_DURATION = 9000;
 const HIGHLIGHT_DURATION = 20000;
