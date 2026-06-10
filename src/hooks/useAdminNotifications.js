@@ -134,27 +134,28 @@ export default function useAdminNotifications(opts) {
   var playSound = useCallback(async function(notifId) {
     notifId = notifId != null ? notifId : null;
     if (!audioRef.current) {
-      console.log('[NotifDebug] Sound Played SKIPPED (no audio element): id=' + notifId);
+      console.log('[SOUND] Audio play failed — no audio element: id=' + notifId);
       return false;
     }
     if (notifId != null && hasSoundPlayed(notifId)) {
-      console.log('[NotifDebug] Sound Played SKIPPED (already played): id=' + notifId);
+      console.log('[SOUND] Audio play skipped — already played this session: id=' + notifId);
       return true;
     }
     var hasLock = await tryAcquireAudioLock();
     if (!hasLock) {
-      console.log('[NotifDebug] Sound Played SKIPPED (audio lock held by another tab): id=' + notifId);
-      return true; // another tab is playing — that is the desired behaviour
+      console.log('[SOUND] Audio play skipped — another tab holds the audio lock: id=' + notifId);
+      return true; // another tab is playing — desired behaviour
     }
+    console.log('[SOUND] Audio play started: ' + audioRef.current.src + ' | id=' + notifId);
     try {
       audioRef.current.currentTime = 0;
       await audioRef.current.play();
       if (notifId != null) markSoundPlayed(notifId);
       audioUnlockedRef.current = true;
-      console.log('[NotifDebug] Sound Played: id=' + notifId);
+      console.log('[SOUND] Audio play success: id=' + notifId);
       return true;
     } catch (_e) {
-      console.log('[NotifDebug] Sound Played FAILED (autoplay blocked): id=' + notifId + ', error=' + _e);
+      console.log('[SOUND] Audio play failed (autoplay blocked — needs user interaction first): id=' + notifId + ' | error=' + _e);
       pendingSoundRef.current = notifId;
       return false;
     }
@@ -178,7 +179,7 @@ export default function useAdminNotifications(opts) {
         try {
           audioRef.current.currentTime = 0;
           await audioRef.current.play();
-          console.log('[NotifDebug] Sound Played (escalation #' + (count + 1) + '): id=' + idStr);
+          console.log('[SOUND] Audio play success (escalation repeat #' + (count + 1) + '): id=' + idStr);
         } catch (_e) {}
       }
       current.count = count + 1;
@@ -418,6 +419,12 @@ export default function useAdminNotifications(opts) {
     var soundPath = (import.meta.env.BASE_URL || '/') + 'notification.mp3';
     audioRef.current = new Audio(soundPath);
     audioRef.current.preload = 'auto';
+    audioRef.current.addEventListener('canplaythrough', function() {
+      console.log('[SOUND] Audio file loaded: ' + soundPath);
+    }, { once: true });
+    audioRef.current.addEventListener('error', function(e) {
+      console.log('[SOUND] Audio file load ERROR: ' + soundPath + ' — ' + (e.message || 'unknown'));
+    }, { once: true });
 
     var unlockAudio = async function() {
       requestDesktopNotificationPermissionOnce({ fromUserGesture: true })
@@ -440,7 +447,7 @@ export default function useAdminNotifications(opts) {
                 audioRef.current.currentTime = 0;
                 await audioRef.current.play();
                 if (queuedId != null) markSoundPlayed(queuedId);
-                console.log('[NotifDebug] Sound Played (retry after unlock): id=' + queuedId);
+                console.log('[SOUND] Audio play success (retry after user interaction): id=' + queuedId);
               } catch (_e2) {}
             }
           }

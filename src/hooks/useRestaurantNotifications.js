@@ -73,6 +73,7 @@ export default function useRestaurantNotifications({ enabled, restaurantUid, onN
         body,
         requireInteraction: true,
         tag: 'restaurant-order-' + orderId,
+        silent: true,  // we play notification.mp3 ourselves; suppress OS chime
       });
       n.onclick = () => { window.focus(); n.close(); };
       console.log('[RestaurantNotif] Desktop Notification Fired: orderId=' + orderId);
