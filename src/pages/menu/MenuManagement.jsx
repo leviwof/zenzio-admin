@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, Download, Eye, Edit, Trash2, Loader2, AlertCircle,
+  Search, Download, Edit, Trash2, Loader2, AlertCircle,
   ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Filter, ArrowUpDown, RotateCcw, UtensilsCrossed,
-  CheckSquare, Square, MoreVertical, RefreshCw,
+  CheckSquare, Square, RefreshCw,
   IndianRupee, Star, Clock,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -25,9 +25,9 @@ const formatDate = (d) =>
 
 const getStatusBadge = (isActive) => {
   if (isActive) {
-    return { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-600/20', dot: 'bg-emerald-500', label: 'Enabled' };
+    return { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-600/20', dot: 'bg-emerald-500', label: 'On' };
   }
-  return { bg: 'bg-gray-50', text: 'text-gray-700', ring: 'ring-gray-600/20', dot: 'bg-gray-400', label: 'Disabled' };
+  return { bg: 'bg-gray-50', text: 'text-gray-700', ring: 'ring-gray-600/20', dot: 'bg-gray-400', label: 'Off' };
 };
 
 const getAvailBadge = (isAvailable) => {
@@ -101,62 +101,6 @@ const FilterDropdown = ({ label, icon: Icon, value, options, onChange, onClear }
   );
 };
 
-const ActionMenu = ({ menu, onView, onEdit, onDelete }) => {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-        aria-label="Actions"
-      >
-        <MoreVertical size={16} />
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.96 }}
-            transition={{ duration: 0.12 }}
-            className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-gray-200 shadow-lg shadow-gray-200/50 z-50 py-1 overflow-hidden"
-          >
-            <button
-              onClick={(e) => { e.stopPropagation(); setOpen(false); onView(menu); }}
-              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <Eye size={14} />
-              View Details
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); setOpen(false); onEdit(menu); }}
-              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <Edit size={14} />
-              Edit Menu
-            </button>
-            <div className="border-t border-gray-100 my-1" />
-            <button
-              onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(menu); }}
-              className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors"
-            >
-              <Trash2 size={14} />
-              Delete Menu
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
 
 const DeleteModal = ({ open, menu, onConfirm, onCancel, loading }) => {
   if (!open) return null;
@@ -1264,11 +1208,11 @@ const MenuManagement = () => {
                   {!restaurantAdmin && <th className="w-10 px-4 py-3.5"></th>}
                   <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase">Image</th>
                   <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase">Name</th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase">Price</th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase">Final Price</th>
                   <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Cuisine</th>
                   <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Category</th>
                   <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase">Avail</th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase">Edit</th>
                   <th className="w-12 px-4 py-3.5"></th>
                 </tr>
               </thead>
@@ -1297,11 +1241,11 @@ const MenuManagement = () => {
                     )}
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Image</th>
                     <SortHeader column="menu_name" label="Name" />
-                    <SortHeader column="price" label="Price" />
+                    <SortHeader column="price" label="Final Price" />
                     <SortHeader column="cuisine_type" label="Cuisine" className="hidden md:table-cell" />
                     <SortHeader column="category" label="Category" className="hidden md:table-cell" />
                     <SortHeader column="status" label="Status" />
-                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Avail</th>
+                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Edit</th>
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
                     <th className="w-12 px-4 py-3.5"></th>
                   </tr>
@@ -1368,7 +1312,7 @@ const MenuManagement = () => {
                         <td className="px-4 py-3">
                           <div className="text-sm font-semibold text-gray-900">
                             <span className="text-xs text-gray-500">₹</span>
-                            {menu.price}
+                            {menu.finalPrice ?? menu.price}
                           </div>
                           {menu.discount > 0 && (
                             <div className="text-[10px] text-green-600 font-medium">{menu.discount}% off</div>
@@ -1412,37 +1356,13 @@ const MenuManagement = () => {
                           )}
                         </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          {restaurantAdmin ? (
-                            <button
-                              onClick={() => handleToggleAvailability(menu)}
-                              disabled={toggleLoading[menu.menu_uid]}
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset cursor-pointer transition-all duration-150
-                                ${availBadge.bg} ${availBadge.text} ${availBadge.ring} disabled:opacity-50 disabled:cursor-not-allowed`}
-                              title={`${unavailableTitle}. Click to toggle item availability.`}
-                            >
-                              {toggleLoading[menu.menu_uid] ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : (
-                                <span className={`w-1.5 h-1.5 rounded-full ${availBadge.dot}`} />
-                              )}
-                              {toggleLoading[menu.menu_uid] ? 'Updating...' : availBadge.label}
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleBlockUnblock(menu)}
-                              disabled={toggleLoading[menu.menu_uid]}
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset cursor-pointer transition-all duration-150
-                                ${availBadge.bg} ${availBadge.text} ${availBadge.ring} disabled:opacity-50 disabled:cursor-not-allowed`}
-                              title={`${unavailableTitle}. Click to ${availabilityState.menuIsAvailable ? 'block' : 'unblock'} this item.`}
-                            >
-                              {toggleLoading[menu.menu_uid] ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : (
-                                <span className={`w-1.5 h-1.5 rounded-full ${availBadge.dot}`} />
-                              )}
-                              {toggleLoading[menu.menu_uid] ? 'Updating...' : availBadge.label}
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleEdit(menu)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-indigo-600 hover:bg-indigo-50 transition-colors"
+                          >
+                            <Edit size={13} />
+                            Edit
+                          </button>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -1451,20 +1371,13 @@ const MenuManagement = () => {
                           </div>
                         </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              onClick={() => handleView(menu)}
-                              className="px-2 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                            >
-                              <Eye size={14} />
-                            </button>
-                            <ActionMenu
-                              menu={menu}
-                              onView={handleView}
-                              onEdit={handleEdit}
-                              onDelete={handleDeleteClick}
-                            />
-                          </div>
+                          <button
+                            onClick={() => handleDeleteClick(menu)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 size={13} />
+                            Delete
+                          </button>
                         </td>
                       </motion.tr>
                     );

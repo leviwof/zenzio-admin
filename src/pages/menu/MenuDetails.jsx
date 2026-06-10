@@ -210,7 +210,7 @@ const MenuDetails = () => {
                 ? 'bg-green-100 text-green-800' 
                 : 'bg-gray-100 text-gray-800'
             }`}>
-              Admin Status: {adminStatusActive ? 'Enabled' : 'Disabled'}
+              Admin Status: {adminStatusActive ? 'On' : 'Off'}
             </span>
             <span
               className={`px-4 py-2 rounded-full text-sm font-medium ${
@@ -325,20 +325,24 @@ const MenuDetails = () => {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Price</label>
-              <p className="text-2xl font-bold text-gray-900 mt-1">₹{menu.price}</p>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Price (with platform fee)</label>
+              <p className="text-2xl font-bold text-gray-900 mt-1">₹{menu.finalPrice ?? menu.price}</p>
+              {menu.basePrice != null && menu.basePrice !== menu.finalPrice && (
+                <p className="text-xs text-gray-400 mt-1">Base ₹{menu.basePrice}</p>
+              )}
             </div>
-            
+
             <div>
               <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Discount</label>
               <p className="text-2xl font-bold text-green-600 mt-1">{menu.discount}%</p>
             </div>
-            
+
             <div>
               <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Final Price</label>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                ₹{(menu.price - (menu.price * menu.discount / 100)).toFixed(2)}
-              </p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">₹{menu.finalPrice ?? menu.price}</p>
+              {menu.discount > 0 && (
+                <p className="text-xs text-gray-400 mt-1">After {menu.discount}% discount applied</p>
+              )}
             </div>
 
             {menu.size && (
@@ -403,7 +407,7 @@ const MenuDetails = () => {
             </div>
             <div>
               <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Admin Toggle</label>
-              <p className="text-base text-gray-900 mt-1">{adminStatusActive ? 'Enabled' : 'Disabled'}</p>
+              <p className="text-base text-gray-900 mt-1">{adminStatusActive ? 'On' : 'Off'}</p>
             </div>
             <div>
               <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Restaurant Availability</label>
