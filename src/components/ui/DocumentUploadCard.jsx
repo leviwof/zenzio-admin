@@ -55,12 +55,14 @@ const DocumentUploadCard = ({
   uploading = false,
   disabled = false,
   getFileUrl = (f) => f,
+  onViewDocument = null,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [removing, setRemoving] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [loadingView, setLoadingView] = useState(false)
   const removeBtnRef = useRef(null)
   const fileInputRef = useRef(null)
   const dropRef = useRef(null)
@@ -218,15 +220,26 @@ const DocumentUploadCard = ({
                   </p>
                   <p className="text-[10px] text-gray-400">{ext} Document</p>
                 </div>
-                <a
-                  href={fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                <button
+                  onClick={async () => {
+                    if (onViewDocument) {
+                      setLoadingView(true)
+                      try {
+                        const url = await onViewDocument(currentFile)
+                        if (url) window.open(url, '_blank', 'noopener,noreferrer')
+                      } finally {
+                        setLoadingView(false)
+                      }
+                    } else if (fileUrl) {
+                      window.open(fileUrl, '_blank', 'noopener,noreferrer')
+                    }
+                  }}
+                  disabled={loadingView}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
                   title="View document"
                 >
-                  <Eye size={16} />
-                </a>
+                  {loadingView ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}
+                </button>
               </div>
 
               {uploadProgress > 0 && (
