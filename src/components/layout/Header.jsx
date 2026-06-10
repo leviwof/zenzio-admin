@@ -14,7 +14,7 @@ import { shouldRunSharedPoll } from '../../utils/requestCoordinator';
 import { isAdminSocketConnected } from '../../services/socket';
 import { claimNotificationAlert, getPermissionState, requestNotificationPermissionFresh } from '../../services/desktopNotificationService';
 
-const notificationSoundPath = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
+const notificationSoundPath = `${import.meta.env.BASE_URL}notification.mp3`;
 
 const formatFullTimestamp = (dateStr) => {
   if (!dateStr) return '';

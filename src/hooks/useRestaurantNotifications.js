@@ -4,7 +4,7 @@ import {
   disconnectRestaurantAdminSocket,
 } from '../services/socket';
 
-const SOUND_SRC = `${import.meta.env.BASE_URL}loudNotificationSound.mpeg`;
+const SOUND_SRC = `${import.meta.env.BASE_URL}notification.mp3`;
 
 export default function useRestaurantNotifications({ enabled, restaurantUid, onNewOrder }) {
   const [connected, setConnected] = useState(false);

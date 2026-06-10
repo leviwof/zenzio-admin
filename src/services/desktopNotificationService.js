@@ -535,30 +535,56 @@ export async function showDesktopNotification(body, data = {}) {
 
   console.log('DESKTOP CHECK PASSED', notifId, '| type:', type, '| title:', notifTitle, '| body:', notifBody?.slice(0, 80));
 
+  // Compute route now so it can be embedded in notification data for SW click handler
+  const route = getRoute(n, data);
+
+  const notifOptions = {
+    body:               notifBody,
+    icon:               appIcon,
+    badge:              appIcon,
+    tag,
+    renotify:           notifRequireInteraction,
+    requireInteraction: notifRequireInteraction,
+    silent:             data.silent === true,
+    // Include route URL so the SW notificationclick handler can navigate to it
+    data: { ...data, url: route },
+  };
+
+  // ── Primary path: Service Worker showNotification() ─────────────────────────
+  // Works even when the browser window is minimized because the SW runs as a
+  // separate OS-level process independent of tab/window visibility.
+  //
+  // getRegistration() resolves immediately (no waiting) with the current
+  // registration. We use reg.active to confirm the SW is actually running —
+  // this handles the first-load case where controller is still null while the
+  // SW is installing.
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration().catch(() => null);
+      if (reg?.active) {
+        await reg.showNotification(notifTitle, notifOptions);
+        console.log('DESKTOP NOTIFICATION FIRED (SW)', notifId, '| title:', notifTitle, '| body:', notifBody?.slice(0, 80), '| type:', type);
+        return true;
+      }
+    } catch (swErr) {
+      console.log('DESKTOP NOTIFICATION (SW) failed, falling back to Notification API:', swErr);
+    }
+  }
+
+  // ── Fallback: direct Notification API ───────────────────────────────────────
+  // Used when no Service Worker is active (e.g. HTTP dev without HTTPS, or
+  // the SW hasn't been installed yet on first load).
   try {
-    const popup = new Notification(notifTitle, {
-      body:               notifBody,
-      icon:               appIcon,
-      badge:              appIcon,
-      tag,
-      renotify:           notifRequireInteraction,
-      requireInteraction: notifRequireInteraction,
-      silent:             data.silent === true,
-      data,
-    });
-
-    console.log('DESKTOP NOTIFICATION FIRED', notifId, '| title:', notifTitle, '| body:', notifBody?.slice(0, 80), '| type:', type);
-
+    const popup = new Notification(notifTitle, notifOptions);
+    console.log('DESKTOP NOTIFICATION FIRED (direct)', notifId, '| title:', notifTitle, '| body:', notifBody?.slice(0, 80), '| type:', type);
     popup.onclick = () => {
       try {
         window.focus();
-        const route = getRoute(n, data);
         if (route && window.location.pathname + window.location.search !== route) {
           window.location.href = route;
         }
       } finally { popup.close(); }
     };
-
     return true;
   } catch (err) {
     console.log('DESKTOP NOTIFICATION SKIPPED', 'newNotificationThrew: ' + err);
