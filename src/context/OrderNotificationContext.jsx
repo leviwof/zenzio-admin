@@ -78,23 +78,24 @@ export const OrderNotificationProvider = ({ children }) => {
   // ── Play poll-detected notification sound ────────────────────────────────────
   const playPollSound = useCallback(async () => {
     if (!pollAudioRef.current) {
-      console.log('[GLOBAL NOTIFICATION] Sound skipped — no audio element');
+      console.log('[SOUND] Audio play failed — no audio element (poll path)');
       return;
     }
     const hasLock = await tryAcquireAudioLock();
     if (!hasLock) {
-      console.log('[GLOBAL NOTIFICATION] Sound skipped — another tab holds audio lock');
+      console.log('[SOUND] Audio play skipped — another tab holds the audio lock (poll path)');
       return;
     }
+    console.log('[SOUND] Audio play started: ' + pollAudioRef.current.src + ' (poll path)');
     try {
       pollAudioRef.current.currentTime = 0;
       await pollAudioRef.current.play();
       pollAudioUnlocked.current = true;
       pendingPollSound.current = false;
-      console.log('[GLOBAL NOTIFICATION] Sound played');
-    } catch {
+      console.log('[SOUND] Audio play success (poll path)');
+    } catch (e) {
       pendingPollSound.current = true;
-      console.log('[GLOBAL NOTIFICATION] Sound blocked (autoplay) — queued for next user interaction');
+      console.log('[SOUND] Audio play failed (autoplay blocked — needs user interaction first, poll path): ' + e);
     }
   }, []);
 
@@ -302,6 +303,12 @@ export const OrderNotificationProvider = ({ children }) => {
     const soundPath = `${import.meta.env.BASE_URL}notification.mp3`;
     pollAudioRef.current = new Audio(soundPath);
     pollAudioRef.current.preload = 'auto';
+    pollAudioRef.current.addEventListener('canplaythrough', () => {
+      console.log('[SOUND] Audio file loaded (poll path): ' + soundPath);
+    }, { once: true });
+    pollAudioRef.current.addEventListener('error', (e) => {
+      console.log('[SOUND] Audio file load ERROR (poll path): ' + soundPath + ' — ' + (e.message || 'check Network tab for 404'));
+    }, { once: true });
 
     // Unlock audio context on first user interaction (browser autoplay policy)
     const unlockAudio = async () => {
@@ -322,9 +329,11 @@ export const OrderNotificationProvider = ({ children }) => {
           pendingPollSound.current = false;
           const hasLock = await tryAcquireAudioLock();
           if (hasLock) {
+            console.log('[SOUND] Audio play started (queued retry, poll path): ' + soundPath);
             pollAudioRef.current.currentTime = 0;
-            pollAudioRef.current.play().catch(() => {});
-            console.log('[GLOBAL NOTIFICATION] Sound played (queued retry after unlock)');
+            pollAudioRef.current.play()
+              .then(() => console.log('[SOUND] Audio play success (queued retry, poll path)'))
+              .catch((e) => console.log('[SOUND] Audio play failed (queued retry, poll path): ' + e));
           }
         }
       } catch {}

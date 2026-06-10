@@ -545,7 +545,7 @@ export async function showDesktopNotification(body, data = {}) {
     tag,
     renotify:           notifRequireInteraction,
     requireInteraction: notifRequireInteraction,
-    silent:             data.silent === true,
+    silent:             true,   // we play notification.mp3 ourselves; suppress OS chime
     // Include route URL so the SW notificationclick handler can navigate to it
     data: { ...data, url: route },
   };
