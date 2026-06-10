@@ -254,7 +254,9 @@ const ExistingOffers = () => {
                         <td className="px-4 py-4 text-sm">{offer.restaurantName}</td>
                         <td className="px-4 py-4 text-sm">{offer.categoryName}</td>
                         <td className="px-4 py-4 text-sm font-medium text-red-500">
-                          {offer.discountValue}{offer.discountType === 'PERCENTAGE' ? '%' : '₹'} OFF
+                          {['BOGO', 'BUY_X_GET_Y', 'FREE_ITEM_CART', 'FREE_ITEM_CATEGORY', 'PLATFORM_CAMPAIGN'].includes(offer.discountType)
+                            ? (offer.discountType === 'BOGO' ? 'Buy 1 Get 1' : offer.discountType === 'BUY_X_GET_Y' ? 'Buy X Get Y' : 'Free Item')
+                            : `${offer.discountValue}${offer.discountType === 'PERCENTAGE' ? '%' : '₹'} OFF`}
                           <p className="mt-1 text-xs font-normal text-gray-500">Items: {offer.itemSummary}</p>
                         </td>
                         <td className="px-4 py-4 text-sm">₹{offer.minOrderValue || 0}</td>
