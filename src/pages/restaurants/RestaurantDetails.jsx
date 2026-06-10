@@ -14,7 +14,8 @@ import {
   getRestaurantAdminStats, updateRestaurantProfileAdmin,
   updateRestaurantAddressAdmin, uploadRestaurantLogoAdmin,
   uploadRestaurantSingleDocument, deleteRestaurantDocumentsByType,
-  updateRestaurantOperationalHours, updateRestaurantStatus
+  updateRestaurantOperationalHours, updateRestaurantStatus,
+  getDocumentViewUrl,
 } from '../../services/api'
 import DocumentUploadCard from '../../components/ui/DocumentUploadCard'
 import { getRestaurantImageUrl, getRestaurantLogoUrl } from '../../utils/imageUtils'
@@ -461,6 +462,16 @@ const RestaurantDetails = () => {
       const msg = err.response?.data?.message || err.message || 'Remove failed'
       toast.error(msg)
       throw err
+    }
+  }
+
+  const handleViewDocument = async (filename) => {
+    try {
+      const res = await getDocumentViewUrl(`documents/restaurant/${filename}`)
+      return res.data?.url ?? null
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to open document')
+      return null
     }
   }
 
@@ -913,6 +924,7 @@ const RestaurantDetails = () => {
                   onRemove={handleDocRemove}
                   uploading={uploadingDoc === cfg.key}
                   getFileUrl={getRestaurantImageUrl}
+                  onViewDocument={handleViewDocument}
                 />
               ))}
             </div>

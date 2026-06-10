@@ -675,4 +675,7 @@ export const reconcilePayment = (razorpayOrderId) =>
 export const refundOrder = (orderId) =>
   api.post(`/payments/order/${orderId}/refund`);
 
+export const getDocumentViewUrl = (blobPath) =>
+  api.get('/documents/view', { params: { path: blobPath } });
+
 export default api;
