@@ -15,11 +15,12 @@ import {
   updateRestaurantAddressAdmin, uploadRestaurantLogoAdmin,
   uploadRestaurantSingleDocument, deleteRestaurantDocumentsByType,
   updateRestaurantOperationalHours, updateRestaurantStatus,
-  getDocumentViewUrl,
+  getDocumentViewUrl, getAllOrders,
 } from '../../services/api'
 import DocumentUploadCard from '../../components/ui/DocumentUploadCard'
 import { getRestaurantImageUrl, getRestaurantLogoUrl } from '../../utils/imageUtils'
 import { saveAs } from 'file-saver'
+import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth'
 import Card, { CardContent, CardHeader } from '../../components/ui/Card'
@@ -356,19 +357,135 @@ const RestaurantDetails = () => {
     finally { setIsUpdatingAddress(false) }
   }
 
-  const handleExportStats = () => {
-    const csvContent = [
-      ["Restaurant Name", restaurant?.profile?.restaurant_name || "Unknown"],
-      ["Report Period", `${startDate} to ${endDate}`],
-      ["Metric", "Value"],
-      ["Total Sales", stats.sales],
-      ["Total Orders", stats.orders],
-      ["Total Bookings", stats.bookings],
-      ["Active Offers", stats.active_offers],
-      ["Generated At", new Date().toLocaleString()]
-    ].map(e => e.join(",")).join("\n")
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    saveAs(blob, `restaurant-stats-${uid}-${startDate}-${endDate}.csv`)
+  const handleExportStats = async () => {
+    try {
+      toast.loading('Preparing export...')
+      const res = await getAllOrders({ restaurant_uid: uid, limit: 10000 })
+      const raw = res.data?.data || res.data || []
+      const orders = Array.isArray(raw) ? raw : []
+      toast.dismiss()
+
+      if (!orders.length) { toast.error('No orders found for this restaurant'); return }
+
+      const COMMISSION_RATE = 0.10
+      const FOOD_TAX_RATE = 0.05
+      const GST_RATE = 0.18
+
+      const headers = [
+        'Order No.',
+        'Order Place Date',
+        'Restaurant Name',
+        'Name of Items',
+        'No. of Items',
+        'Price for Single Menu Items',
+        'Total Menu Price',
+        'Commission 10% on Menu Price',
+        'Total Price with Commission',
+        'Food Tax 5% (after Commission)',
+        'Delivery Charges',
+        'Packing Charges',
+        'Discount (Offer)',
+        'Total Order Value',
+        '18% GST on Commission + Delivery + Packing',
+      ]
+
+      const restaurantName = restaurant?.profile?.restaurant_name || 'Unknown'
+
+      const rows = orders.map((o) => {
+        const ps = o.priceSummary || {}
+        const items = Array.isArray(o.items) ? o.items : []
+
+        const itemNames = items.map((i) => i.name).join(', ') || 'N/A'
+        const itemCount = items.reduce((sum, i) => sum + Number(i.qty || 1), 0)
+        const itemPrices = items.map((i) => `${i.name}: ₹${Number(i.price || 0).toFixed(2)}`).join(', ')
+
+        const totalMenuPrice = items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 1), 0)
+        const commission = Math.round(totalMenuPrice * COMMISSION_RATE * 100) / 100
+        const totalWithCommission = Math.round((totalMenuPrice + commission) * 100) / 100
+        const foodTax = Math.round(totalWithCommission * FOOD_TAX_RATE * 100) / 100
+        const deliveryCharges = Number(o.delivery_charge ?? ps.deliveryFee ?? ps.deliveryCharge ?? 0)
+        const packingCharges = Number(ps.packingCharge ?? ps.packing_charge ?? 0)
+        const discount = Number(ps.discount ?? o.applied_discount?.value ?? 0)
+        const totalOrderValue = Number(ps.total ?? o.price ?? o.totalAmount ?? 0)
+        const gst18 = Math.round((commission + deliveryCharges + packingCharges) * GST_RATE * 100) / 100
+
+        const d = o.createdAt ? new Date(o.createdAt) : null
+        const dateStr = d ? d.toLocaleDateString('en-GB') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'N/A'
+
+        return [
+          o.orderId || o.id || 'N/A',
+          dateStr,
+          restaurantName,
+          itemNames,
+          itemCount,
+          itemPrices,
+          totalMenuPrice,
+          commission,
+          totalWithCommission,
+          foodTax,
+          deliveryCharges,
+          packingCharges,
+          discount,
+          totalOrderValue,
+          gst18,
+        ]
+      })
+
+      const wsData = [headers, ...rows]
+      const ws = XLSX.utils.aoa_to_sheet(wsData)
+
+      ws['!cols'] = [
+        { wch: 18 }, { wch: 20 }, { wch: 24 }, { wch: 40 }, { wch: 12 },
+        { wch: 45 }, { wch: 18 }, { wch: 28 }, { wch: 24 }, { wch: 28 },
+        { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 42 },
+      ]
+
+      const headerRange = XLSX.utils.decode_range(ws['!ref'])
+      for (let C = headerRange.s.c; C <= headerRange.e.c; C++) {
+        const cellAddr = XLSX.utils.encode_cell({ r: 0, c: C })
+        if (!ws[cellAddr]) continue
+        ws[cellAddr].s = {
+          font: { bold: true, color: { rgb: 'FFFFFF' } },
+          fill: { patternType: 'solid', fgColor: { rgb: '4F46E5' } },
+          alignment: { horizontal: 'center', wrapText: true },
+          border: {
+            top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+            bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+            left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+            right: { style: 'thin', color: { rgb: 'CCCCCC' } },
+          },
+        }
+      }
+
+      const currencyCols = [6, 7, 8, 9, 10, 11, 12, 13, 14]
+      for (let R = 1; R <= rows.length; R++) {
+        for (let C = 0; C <= headerRange.e.c; C++) {
+          const cellAddr = XLSX.utils.encode_cell({ r: R, c: C })
+          if (!ws[cellAddr]) continue
+          ws[cellAddr].s = {
+            numFmt: currencyCols.includes(C) ? '"₹"#,##0.00' : '@',
+            alignment: { wrapText: true, vertical: 'top' },
+            border: {
+              top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+              bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+              left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+              right: { style: 'thin', color: { rgb: 'E5E7EB' } },
+            },
+          }
+        }
+      }
+
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Orders')
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true })
+      const today = new Date().toISOString().split('T')[0]
+      saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `orders_${uid}_full_history_${today}.xlsx`)
+      toast.success(`Exported ${orders.length} orders`)
+    } catch (err) {
+      toast.dismiss()
+      console.error('Export failed', err)
+      toast.error('Export failed. Please try again.')
+    }
   }
 
   const handleMealToggle = (id) => {
