@@ -600,6 +600,8 @@ export const updateQuickMenu = (id, formData) =>
   });
 export const updateQuickMenuStatus = (id, isActive) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/quick-search/admin/${id}/status`, { is_active: isActive });
+export const reorderQuickMenus = (items) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch('/quick-search/admin/reorder', { items });
 export const deleteQuickMenu = (id) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/quick-search/admin/${id}`);
 

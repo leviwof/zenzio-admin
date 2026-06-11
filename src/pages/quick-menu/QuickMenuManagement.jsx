@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit2,
+  GripVertical,
   Image as ImageIcon,
   Loader2,
   Plus,
@@ -19,14 +20,17 @@ import {
   createQuickMenu,
   deleteQuickMenu,
   getQuickMenusAdmin,
+  reorderQuickMenus,
   updateQuickMenu,
   updateQuickMenuStatus,
 } from '../../services/api';
 
+const PAGE_SIZE = 10;
+
 const emptyForm = {
   menu_name: '',
   search_keyword: '',
-  priority: '10',
+  priority: '',
   is_active: true,
   image: null,
 };
@@ -45,6 +49,10 @@ const QuickMenuManagement = () => {
   const [formData, setFormData] = useState(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [draggedMenuId, setDraggedMenuId] = useState(null);
+  const [reorderLoading, setReorderLoading] = useState(false);
+
+  const canReorder = !search.trim() && status === 'all' && quickMenus.length > 1;
 
   const imagePreview = useMemo(() => {
     if (formData.image) return URL.createObjectURL(formData.image);
@@ -78,7 +86,7 @@ const QuickMenuManagement = () => {
       setError('');
       const response = await getQuickMenusAdmin({
         page: targetPage,
-        limit: 10,
+        limit: PAGE_SIZE,
         search: search.trim() || undefined,
         status,
       });
@@ -96,7 +104,10 @@ const QuickMenuManagement = () => {
 
   const openCreateModal = () => {
     setEditingMenu(null);
-    setFormData(emptyForm);
+    setFormData({
+      ...emptyForm,
+      priority: String((meta.total || 0) + 1),
+    });
     setModalOpen(true);
   };
 
@@ -105,7 +116,7 @@ const QuickMenuManagement = () => {
     setFormData({
       menu_name: quickMenu.menu_name || '',
       search_keyword: quickMenu.search_keyword || '',
-      priority: String(quickMenu.priority || 10),
+      priority: String(quickMenu.priority || ''),
       is_active: Boolean(quickMenu.is_active),
       image: null,
     });
@@ -130,8 +141,8 @@ const QuickMenuManagement = () => {
     }
 
     const priority = Number(formData.priority);
-    if (!Number.isInteger(priority) || priority < 1 || priority > 10) {
-      toast.error('Priority must be between 1 and 10');
+    if (!Number.isInteger(priority) || priority < 1) {
+      toast.error('Priority must be a positive number');
       return false;
     }
 
@@ -189,6 +200,70 @@ const QuickMenuManagement = () => {
 
   const handleDelete = (quickMenu) => {
     setDeleteTarget(quickMenu);
+  };
+
+  const getPageStartPriority = () => ((meta.page || page) - 1) * (meta.limit || PAGE_SIZE);
+
+  const getDisplayPriority = (index) => getPageStartPriority() + index + 1;
+
+  const applyPagePriorities = (menus) => {
+    const pageStartPriority = getPageStartPriority();
+    return menus.map((menu, index) => ({
+      ...menu,
+      priority: pageStartPriority + index + 1,
+    }));
+  };
+
+  const handleDragStart = (event, quickMenu) => {
+    if (!canReorder || reorderLoading) return;
+    setDraggedMenuId(quickMenu.id);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(quickMenu.id));
+  };
+
+  const handleDragOver = (event) => {
+    if (!canReorder || reorderLoading || !draggedMenuId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (event, targetMenu) => {
+    event.preventDefault();
+    if (!canReorder || reorderLoading || !draggedMenuId || draggedMenuId === targetMenu.id) {
+      setDraggedMenuId(null);
+      return;
+    }
+
+    const fromIndex = quickMenus.findIndex((menu) => menu.id === draggedMenuId);
+    const toIndex = quickMenus.findIndex((menu) => menu.id === targetMenu.id);
+    if (fromIndex < 0 || toIndex < 0) {
+      setDraggedMenuId(null);
+      return;
+    }
+
+    const previousMenus = quickMenus;
+    const nextMenus = [...quickMenus];
+    const [movedMenu] = nextMenus.splice(fromIndex, 1);
+    nextMenus.splice(toIndex, 0, movedMenu);
+    const prioritizedMenus = applyPagePriorities(nextMenus);
+
+    setQuickMenus(prioritizedMenus);
+    setDraggedMenuId(null);
+
+    try {
+      setReorderLoading(true);
+      await reorderQuickMenus(prioritizedMenus.map((menu) => ({
+        id: menu.id,
+        priority: menu.priority,
+      })));
+      toast.success('Quick menu order updated');
+      fetchQuickMenus();
+    } catch (err) {
+      setQuickMenus(previousMenus);
+      toast.error(err.response?.data?.message || 'Failed to update quick menu order');
+    } finally {
+      setReorderLoading(false);
+    }
   };
 
   const closeDeleteModal = () => {
@@ -270,6 +345,11 @@ const QuickMenuManagement = () => {
               <option value="inactive">Inactive</option>
             </select>
           </div>
+          {!canReorder && quickMenus.length > 1 && (
+            <p className="mt-3 text-xs text-gray-500">
+              Clear search and status filters to reorder quick menus.
+            </p>
+          )}
         </div>
 
         <div className="overflow-hidden rounded-lg bg-white shadow-sm">
@@ -301,12 +381,32 @@ const QuickMenuManagement = () => {
                     </td>
                   </tr>
                 ) : (
-                  quickMenus.map((quickMenu) => (
-                    <tr key={quickMenu.id} className="hover:bg-gray-50">
+                  quickMenus.map((quickMenu, index) => (
+                    <tr
+                      key={quickMenu.id}
+                      onDragOver={handleDragOver}
+                      onDrop={(event) => handleDrop(event, quickMenu)}
+                      className={`hover:bg-gray-50 ${
+                        draggedMenuId === quickMenu.id ? 'bg-red-50/60 opacity-70' : ''
+                      }`}
+                    >
                       <td className="px-6 py-4">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-sm font-semibold text-red-600">
-                          {quickMenu.priority || 10}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            draggable={canReorder && !reorderLoading}
+                            onDragStart={(event) => handleDragStart(event, quickMenu)}
+                            onDragEnd={() => setDraggedMenuId(null)}
+                            disabled={!canReorder || reorderLoading}
+                            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            title={canReorder ? 'Drag to reorder' : 'Clear filters to reorder'}
+                          >
+                            <GripVertical size={18} />
+                          </button>
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-sm font-semibold text-red-600">
+                            {quickMenu.priority || getDisplayPriority(index)}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <img
@@ -371,7 +471,7 @@ const QuickMenuManagement = () => {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage((current) => Math.max(current - 1, 1))}
-                disabled={page <= 1 || loading}
+                disabled={page <= 1 || loading || reorderLoading}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ChevronLeft size={16} />
@@ -379,7 +479,7 @@ const QuickMenuManagement = () => {
               </button>
               <button
                 onClick={() => setPage((current) => Math.min(current + 1, meta.totalPages || 1))}
-                disabled={page >= (meta.totalPages || 1) || loading}
+                disabled={page >= (meta.totalPages || 1) || loading || reorderLoading}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
@@ -451,20 +551,14 @@ const QuickMenuManagement = () => {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
-                <select
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
                   value={formData.priority}
                   onChange={(event) => setFormData((current) => ({ ...current, priority: event.target.value }))}
                   className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                >
-                  {Array.from({ length: 10 }, (_, index) => {
-                    const value = String(index + 1);
-                    return (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    );
-                  })}
-                </select>
+                />
               </div>
 
               <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
