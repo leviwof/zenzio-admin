@@ -335,6 +335,16 @@ const OrderDetails = () => {
 
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundLoading, setRefundLoading] = useState(false);
+  const [proofPreviewUrl, setProofPreviewUrl] = useState(null);
+
+  useEffect(() => {
+    if (!proofPreviewUrl) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [proofPreviewUrl]);
 
   const handleSyncPayment = async () => {
     const razorpayOrderId = order?.razorpay_order_id;
@@ -1522,7 +1532,7 @@ const OrderDetails = () => {
                     src={order.deliveryProof}
                     alt="Delivery Proof"
                     className="w-full h-40 object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                    onClick={() => window.open(order.deliveryProof, '_blank')}
+                    onClick={() => setProofPreviewUrl(order.deliveryProof)}
                   />
                 </div>
               </CardContent>
@@ -1883,6 +1893,47 @@ const OrderDetails = () => {
                     />
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delivery Proof Preview */}
+      <AnimatePresence>
+        {proofPreviewUrl && (
+          <div
+            className="fixed inset-0 z-[100] overflow-hidden flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setProofPreviewUrl(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[82vh] overflow-hidden flex flex-col"
+            >
+              <div className="h-12 px-4 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Delivery Proof</p>
+                  <p className="text-[11px] text-gray-400">Order #{order?.orderId}</p>
+                </div>
+                <button
+                  onClick={() => setProofPreviewUrl(null)}
+                  className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  title="Close preview"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <iframe
+                  src={proofPreviewUrl}
+                  title="Delivery proof preview"
+                  scrolling="auto"
+                  className="block h-full w-full bg-gray-50"
+                />
               </div>
             </motion.div>
           </div>

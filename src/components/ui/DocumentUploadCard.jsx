@@ -63,6 +63,7 @@ const DocumentUploadCard = ({
   const [removing, setRemoving] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [loadingView, setLoadingView] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState(null)
   const removeBtnRef = useRef(null)
   const fileInputRef = useRef(null)
   const dropRef = useRef(null)
@@ -148,8 +149,32 @@ const DocumentUploadCard = ({
     fileInputRef.current?.click()
   }
 
+  const handleViewClick = async () => {
+    if (onViewDocument) {
+      setLoadingView(true)
+      try {
+        const url = await onViewDocument(currentFile)
+        if (url) setPreviewUrl(url)
+      } finally {
+        setLoadingView(false)
+      }
+      return
+    }
+
+    if (fileUrl) setPreviewUrl(fileUrl)
+  }
+
   const fileUrl = hasFile ? getFileUrl(currentFile) : null
   const ext = hasFile ? getFileExtension(currentFile).toUpperCase() : ''
+
+  useEffect(() => {
+    if (!previewUrl) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [previewUrl])
 
   return (
     <>
@@ -221,19 +246,7 @@ const DocumentUploadCard = ({
                   <p className="text-[10px] text-gray-400">{ext} Document</p>
                 </div>
                 <button
-                  onClick={async () => {
-                    if (onViewDocument) {
-                      setLoadingView(true)
-                      try {
-                        const url = await onViewDocument(currentFile)
-                        if (url) window.open(url, '_blank', 'noopener,noreferrer')
-                      } finally {
-                        setLoadingView(false)
-                      }
-                    } else if (fileUrl) {
-                      window.open(fileUrl, '_blank', 'noopener,noreferrer')
-                    }
-                  }}
+                  onClick={handleViewClick}
                   disabled={loadingView}
                   className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
                   title="View document"
@@ -404,6 +417,46 @@ const DocumentUploadCard = ({
         </div>
       </motion.div>
 
+      <AnimatePresence>
+        {previewUrl && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] overflow-hidden bg-gray-950/70 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.98 }}
+              transition={{ duration: 0.18 }}
+              className="w-full max-w-5xl h-[82vh] bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col"
+            >
+              <div className="h-12 px-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{label}</p>
+                  <p className="text-[11px] text-gray-400 truncate">{currentFile}</p>
+                </div>
+                <button
+                  onClick={() => setPreviewUrl(null)}
+                  className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  title="Close preview"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <iframe
+                  src={previewUrl}
+                  title={`${label} preview`}
+                  scrolling="auto"
+                  className="block h-full w-full bg-gray-50"
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   )
 }
