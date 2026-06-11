@@ -189,6 +189,32 @@ const formatVariance = (value) => {
 
 const getAppliedDiscount = (order) => order?.applied_discount || order?.appliedDiscount || null;
 
+const getDiscountAmount = (order, priceSummary = {}) => {
+  const appliedDiscount = getAppliedDiscount(order);
+  return Number(
+    priceSummary.discount ??
+      priceSummary.couponDiscount ??
+      order?.coupon_discount ??
+      appliedDiscount?.discountAmount ??
+      appliedDiscount?.value ??
+      0,
+  ) || 0;
+};
+
+const getStoredTaxAmount = (order, priceSummary = {}) =>
+  Number(priceSummary.tax ?? priceSummary.taxes ?? order?.taxes ?? 0) || 0;
+
+const getStoredOrderTotal = (order, priceSummary = {}) =>
+  Number(priceSummary.total ?? order?.price ?? order?.totalAmount ?? 0) || 0;
+
+const usesFinalPriceTaxModel = (order, priceSummary = {}) => {
+  const tax = getStoredTaxAmount(order, priceSummary);
+  const subtotal = Number(priceSummary.subtotal ?? order?.item_total ?? 0) || 0;
+  const discount = getDiscountAmount(order, priceSummary);
+  const expectedTax = Number((Math.max(subtotal - discount, 0) * 0.05).toFixed(2));
+  return tax > 0 && Math.abs(tax - expectedTax) < 0.02;
+};
+
 const getFreeOfferItems = (order) => {
   const appliedDiscount = getAppliedDiscount(order);
   return Array.isArray(appliedDiscount?.freeItems) ? appliedDiscount.freeItems : [];
@@ -525,6 +551,10 @@ const OrderDetails = () => {
     const doc = receiptWindow.document;
     const ps = order.priceSummary || {};
     const deliveryTip = getDeliveryTipAmount(order, ps);
+    const taxAmount = getStoredTaxAmount(order, ps);
+    const finalAmount = getStoredOrderTotal(order, ps);
+    const discountAmount = getDiscountAmount(order, ps);
+    const taxLabel = usesFinalPriceTaxModel(order, ps) ? 'Tax 5% on final item price' : 'Tax';
     const appliedDiscount = getAppliedDiscount(order);
     const freeItems = getFreeOfferItems(order);
     const itemsHtml = (order.items || []).map(item => `
@@ -574,10 +604,10 @@ const OrderDetails = () => {
         <div class="line"></div>
         <table>
           ${ps.subtotal ? `<tr><td>Subtotal</td><td class="right">₹${ps.subtotal}</td></tr>` : ''}
-          ${ps.tax ? `<tr><td>Tax</td><td class="right">₹${ps.tax}</td></tr>` : ''}
+          ${taxAmount ? `<tr><td>${taxLabel}</td><td class="right">₹${taxAmount}</td></tr>` : ''}
           ${ps.deliveryFee ? `<tr><td>Delivery</td><td class="right">₹${ps.deliveryFee}</td></tr>` : ''}
-          ${ps.discount > 0 ? `<tr><td>Discount</td><td class="right">-₹${ps.discount}</td></tr>` : ''}
-          <tr class="total"><td>TOTAL</td><td class="right">₹${ps.total || 0}</td></tr>
+          ${discountAmount > 0 ? `<tr><td>Discount</td><td class="right">-₹${discountAmount}</td></tr>` : ''}
+          <tr class="total"><td>TOTAL</td><td class="right">₹${finalAmount}</td></tr>
           ${deliveryTip > 0 ? `<tr><td>Delivery Tip</td><td class="right">${formatCurrency(deliveryTip)}</td></tr>` : ''}
         </table>
         <div class="line"></div>
@@ -594,6 +624,10 @@ const OrderDetails = () => {
     if (!order) return;
     const ps = order.priceSummary || {};
     const deliveryTip = getDeliveryTipAmount(order, ps);
+    const taxAmount = getStoredTaxAmount(order, ps);
+    const finalAmount = getStoredOrderTotal(order, ps);
+    const discountAmount = getDiscountAmount(order, ps);
+    const taxLabel = usesFinalPriceTaxModel(order, ps) ? 'Tax 5% on final item price' : 'Tax';
     const appliedDiscount = getAppliedDiscount(order);
     const freeItems = getFreeOfferItems(order);
     const items = (order.items || []).map(item =>
@@ -622,13 +656,13 @@ const OrderDetails = () => {
       `================================`,
       `BILLING`,
       `Subtotal: ₹${ps.subtotal || 0}`,
-      `Tax: ₹${ps.tax || 0}`,
+      `${taxLabel}: ₹${taxAmount}`,
       `Delivery Fee: ₹${ps.deliveryFee || 0}`,
-      ps.discount > 0 ? `Discount: -₹${ps.discount}` : '',
+      discountAmount > 0 ? `Discount: -₹${discountAmount}` : '',
       `Packaging Charge: ${formatCurrency(ps.packingCharge || 0)}`,
       deliveryTip > 0 ? `Delivery Tip: ${formatCurrency(deliveryTip)}` : '',
       `--------------------------------`,
-      `TOTAL: ₹${ps.total || 0}`,
+      `TOTAL: ₹${finalAmount}`,
       `================================`,
       `Payment: ${order.paymentMethod || 'N/A'} - ${order.paymentStatus || 'N/A'}`,
       ``,
@@ -730,6 +764,10 @@ const OrderDetails = () => {
   const appliedDiscount = getAppliedDiscount(order);
   const freeItems = getFreeOfferItems(order);
   const deliveryTip = getDeliveryTipAmount(order, ps);
+  const taxAmount = getStoredTaxAmount(order, ps);
+  const finalAmount = getStoredOrderTotal(order, ps);
+  const discountAmount = getDiscountAmount(order, ps);
+  const taxLabel = usesFinalPriceTaxModel(order, ps) ? 'Tax 5% on final item price' : 'Tax';
   const hasJourneyPricing = Boolean(order.delivery_pricing_version);
   const restaurantToCustomerKm = order.restaurant_to_customer_km ?? order.restaurantToCustomerDistance ?? null;
   const totalJourneyKm = order.total_journey_km ?? null;
@@ -836,7 +874,7 @@ const OrderDetails = () => {
                   <p className="text-xs text-gray-500 mt-0.5">Full order lifecycle and billing information</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold text-gray-900">₹<AnimatedCounter value={ps.total || 0} /></p>
+                  <p className="text-2xl font-bold text-gray-900">₹<AnimatedCounter value={finalAmount} /></p>
                   <p className="text-xs text-gray-400">{order.paymentMethod || 'N/A'} • {order.paymentStatus || 'N/A'}</p>
                 </div>
               </div>
@@ -923,7 +961,7 @@ const OrderDetails = () => {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500">Total</span>
-                    <span className="text-sm font-bold text-gray-900">₹{order.priceSummary?.total || order.price || 0}</span>
+                    <span className="text-sm font-bold text-gray-900">₹{finalAmount}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500">Payment</span>
@@ -1258,8 +1296,8 @@ const OrderDetails = () => {
                     <span>₹{ps.subtotal || 0}</span>
                   </div>
                   <div className="flex justify-between text-gray-600">
-                    <span>Tax</span>
-                    <span>₹{ps.tax || 0}</span>
+                    <span>{taxLabel}</span>
+                    <span>₹{taxAmount}</span>
                   </div>
                   <div className="flex justify-between text-gray-600">
                     <span>Delivery Fee</span>
@@ -1277,15 +1315,15 @@ const OrderDetails = () => {
                       <span>{formatCurrency(deliveryTip)}</span>
                     </div>
                   )}
-                  {ps.discount > 0 && (
+                  {discountAmount > 0 && (
                     <div className="flex justify-between text-red-500">
                       <span>Discount</span>
-                      <span>-₹{ps.discount}</span>
+                      <span>-₹{discountAmount}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-100 pt-2 mt-2 text-base">
                     <span>Final Amount</span>
-                    <span>₹{ps.total || 0}</span>
+                    <span>₹{finalAmount}</span>
                   </div>
                 </div>
               )}
@@ -1646,7 +1684,7 @@ const OrderDetails = () => {
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-1">
                   <p className="text-sm text-gray-600">Order ID: <span className="font-semibold text-gray-900">#{order?.orderId}</span></p>
                   <p className="text-sm text-gray-600">Customer: <span className="font-semibold text-gray-900">{order?.customer_name || 'Guest'}</span></p>
-                  <p className="text-sm text-gray-600">Amount: <span className="font-semibold text-gray-900">₹{order?.priceSummary?.total ?? order?.price ?? 0}</span></p>
+                  <p className="text-sm text-gray-600">Amount: <span className="font-semibold text-gray-900">₹{finalAmount}</span></p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Cancellation Reason <span className="text-red-500">*</span></label>

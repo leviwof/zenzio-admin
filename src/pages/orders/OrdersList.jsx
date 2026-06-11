@@ -45,6 +45,22 @@ const formatDateTime = (d) => {
   });
 };
 
+const getStoredOrderTotal = (order = {}) =>
+  Number(order.priceSummary?.total ?? order.price ?? order.totalAmount ?? 0) || 0;
+
+const getStoredTaxAmount = (order = {}) =>
+  Number(order.priceSummary?.tax ?? order.priceSummary?.taxes ?? order.taxes ?? 0) || 0;
+
+const getStoredDiscountAmount = (order = {}) =>
+  Number(
+    order.priceSummary?.discount ??
+      order.priceSummary?.couponDiscount ??
+      order.coupon_discount ??
+      order.applied_discount?.discountAmount ??
+      order.applied_discount?.value ??
+      0,
+  ) || 0;
+
 
 const StatusBadge = ({ status }) => {
   const statusMap = {
@@ -300,7 +316,7 @@ const MobileOrderCard = ({ order, onView, onCancel, onDelete, isHighlighted, con
           <span className="text-gray-400">{order.restaurant_name || "—"}</span>
         </div>
         <div className="text-right">
-          <span className="text-sm font-bold text-gray-900">₹{order.price}</span>
+          <span className="text-sm font-bold text-gray-900">₹{getStoredOrderTotal(order)}</span>
           <span className="block text-[10px] text-gray-400">{formatDateTime(order.createdAt || order.time)}</span>
         </div>
       </div>
@@ -719,7 +735,6 @@ const OrdersList = () => {
       }
 
       const COMMISSION_RATE = 0.10;
-      const FOOD_TAX_RATE = 0.05;
       const GST_RATE = 0.18;
 
       const headers = [
@@ -732,7 +747,7 @@ const OrdersList = () => {
         "Total Menu Price",
         "Commission 10% on Menu Price",
         "Total Price with Commission",
-        "Food Tax 5% (after Commission)",
+        "Food Tax 5% on Final Item Price",
         "Delivery Charges",
         "Packing Charges",
         "Discount (Offer)",
@@ -751,11 +766,11 @@ const OrdersList = () => {
         const totalMenuPrice = items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 1), 0);
         const commission = Math.round(totalMenuPrice * COMMISSION_RATE * 100) / 100;
         const totalWithCommission = Math.round((totalMenuPrice + commission) * 100) / 100;
-        const foodTax = Math.round(totalWithCommission * FOOD_TAX_RATE * 100) / 100;
+        const foodTax = getStoredTaxAmount(o);
         const deliveryCharges = Number(o.final_delivery_charge ?? o.delivery_fee ?? 0);
         const packingCharges = Number(o.packing_charge ?? 0);
-        const discount = Number(o.coupon_discount ?? o.applied_discount?.value ?? 0);
-        const totalOrderValue = Number(o.price ?? o.totalAmount ?? 0);
+        const discount = getStoredDiscountAmount(o);
+        const totalOrderValue = getStoredOrderTotal(o);
         const gst18 = Math.round((commission + deliveryCharges + packingCharges) * GST_RATE * 100) / 100;
 
         return [
@@ -994,7 +1009,7 @@ const OrdersList = () => {
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-1">
                   <p className="text-sm text-gray-600">Order ID: <span className="font-semibold text-gray-900">#{selectedOrderForCancel?.orderId}</span></p>
                   <p className="text-sm text-gray-600">Customer: <span className="font-semibold text-gray-900">{selectedOrderForCancel?.customer_name || 'Guest'}</span></p>
-                  <p className="text-sm text-gray-600">Amount: <span className="font-semibold text-gray-900">₹{selectedOrderForCancel?.price}</span></p>
+                  <p className="text-sm text-gray-600">Amount: <span className="font-semibold text-gray-900">₹{getStoredOrderTotal(selectedOrderForCancel)}</span></p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Cancellation Reason <span className="text-red-500">*</span></label>
@@ -1400,7 +1415,7 @@ const OrdersList = () => {
 
                         {/* Amount */}
                         <td className="px-4 py-3">
-                          <span className="text-sm font-bold text-gray-900 tabular-nums">₹{order.price || order.totalAmount || 0}</span>
+                          <span className="text-sm font-bold text-gray-900 tabular-nums">₹{getStoredOrderTotal(order)}</span>
                         </td>
 
                         {/* Status */}
