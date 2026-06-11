@@ -752,10 +752,10 @@ const OrdersList = () => {
         const commission = Math.round(totalMenuPrice * COMMISSION_RATE * 100) / 100;
         const totalWithCommission = Math.round((totalMenuPrice + commission) * 100) / 100;
         const foodTax = Math.round(totalWithCommission * FOOD_TAX_RATE * 100) / 100;
-        const deliveryCharges = Number(o.delivery_charge ?? ps.deliveryFee ?? ps.deliveryCharge ?? 0);
-        const packingCharges = Number(ps.packingCharge ?? ps.packing_charge ?? 0);
-        const discount = Number(ps.discount ?? o.applied_discount?.value ?? 0);
-        const totalOrderValue = Number(ps.total ?? o.price ?? o.totalAmount ?? 0);
+        const deliveryCharges = Number(o.final_delivery_charge ?? o.delivery_fee ?? 0);
+        const packingCharges = Number(o.packing_charge ?? 0);
+        const discount = Number(o.coupon_discount ?? o.applied_discount?.value ?? 0);
+        const totalOrderValue = Number(o.price ?? o.totalAmount ?? 0);
         const gst18 = Math.round((commission + deliveryCharges + packingCharges) * GST_RATE * 100) / 100;
 
         return [
