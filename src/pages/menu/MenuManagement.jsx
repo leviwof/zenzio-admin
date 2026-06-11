@@ -479,14 +479,30 @@ const MenuManagement = () => {
     );
   };
 
+  const updateMenuInPlace = (uid, patch) => {
+    setMenus(prev => prev.map(m => {
+      if (m.menu_uid !== uid) return m;
+      const updated = { ...m, ...patch };
+      if (patch.availability) {
+        updated.availability = { ...(m.availability || {}), ...patch.availability };
+      }
+      return mergeMenuAvailability(updated);
+    }));
+  };
+
   const handleToggleStatus = async (menu) => {
     setToggleLoading((prev) => ({ ...prev, [menu.menu_uid]: true }));
     const state = getMenuAvailabilityState(menu);
     const currentStatus = state.menuStatus;
+    const newStatus = !currentStatus;
     try {
-      await toggleMenuStatus(menu.menu_uid, !currentStatus);
-      toast.success(`Menu ${currentStatus ? 'disabled' : 'enabled'}`);
-      fetchMenus();
+      await toggleMenuStatus(menu.menu_uid, newStatus);
+      toast.success(`Menu ${currentStatus ? 'Off' : 'On'}`);
+      updateMenuInPlace(menu.menu_uid, {
+        status: newStatus,
+        isActive: newStatus,
+        availability: { flags: { ...(menu.availability?.flags || {}), menuStatus: newStatus, menuIsActive: newStatus } },
+      });
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update status');
     } finally {
@@ -497,10 +513,14 @@ const MenuManagement = () => {
   const handleToggleAvailability = async (menu) => {
     setToggleLoading((prev) => ({ ...prev, [menu.menu_uid]: true }));
     const state = getMenuAvailabilityState(menu);
+    const newAvail = !state.menuIsAvailable;
     try {
-      await toggleMenuAvailability(menu.menu_uid, !state.menuIsAvailable, menu.menu_name);
+      await toggleMenuAvailability(menu.menu_uid, newAvail, menu.menu_name);
       toast.success(`Menu marked ${state.menuIsAvailable ? 'unavailable' : 'available'}`);
-      fetchMenus();
+      updateMenuInPlace(menu.menu_uid, {
+        is_available: newAvail,
+        availability: { flags: { ...(menu.availability?.flags || {}), menuIsAvailable: newAvail } },
+      });
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update availability');
     } finally {
@@ -522,7 +542,10 @@ const MenuManagement = () => {
       await toggleMenuAvailability(menu.menu_uid, newAvailability, menu.menu_name);
       toast.success(`Menu ${blockModal.isCurrentlyAvailable ? 'blocked' : 'unblocked'} successfully`);
       setBlockModal({ show: false, menu: null, isCurrentlyAvailable: false });
-      fetchMenus();
+      updateMenuInPlace(menu.menu_uid, {
+        is_available: newAvailability,
+        availability: { flags: { ...(menu.availability?.flags || {}), menuIsAvailable: newAvailability } },
+      });
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update availability');
     } finally {
