@@ -590,6 +590,16 @@ export const deleteDynamicBanner = (id) =>
 
 export const getQuickMenusAdmin = (params = {}) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/quick-search/admin/list', { params });
+export const getQuickMenuOperationalHours = (params = {}) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/quick-menu/operational-hours', { params });
+export const createQuickMenuOperationalHour = (data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/quick-menu/operational-hours', data);
+export const updateQuickMenuOperationalHour = (id, data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/quick-menu/operational-hours/${id}`, data);
+export const updateQuickMenuOperationalHourStatus = (id, isActive) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/quick-menu/operational-hours/${id}/status`, { is_active: isActive });
+export const deleteQuickMenuOperationalHour = (id) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/quick-menu/operational-hours/${id}`);
 export const createQuickMenu = (formData) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/quick-search/admin', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

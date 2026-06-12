@@ -18,10 +18,15 @@ import {
   X,
 } from 'lucide-react';
 import {
+  createQuickMenuOperationalHour,
   createQuickMenu,
+  deleteQuickMenuOperationalHour,
   deleteQuickMenu,
+  getQuickMenuOperationalHours,
   getQuickMenusAdmin,
   reorderQuickMenus,
+  updateQuickMenuOperationalHour,
+  updateQuickMenuOperationalHourStatus,
   updateQuickMenu,
   updateQuickMenuStatus,
 } from '../../services/api';
@@ -38,16 +43,79 @@ const ALL_DAYS = [
   { key: 'sun', label: 'Sun' },
 ];
 
+const OPERATIONAL_SLOTS = [
+  { key: 'always', label: 'Always visible', start: '', end: '' },
+  { key: 'breakfast', label: 'Breakfast', start: '07:00', end: '11:00' },
+  { key: 'lunch', label: 'Lunch', start: '11:00', end: '15:00' },
+  { key: 'snacks', label: 'Snacks', start: '15:00', end: '18:00' },
+  { key: 'dinner', label: 'Dinner', start: '18:00', end: '23:00' },
+  { key: 'custom', label: 'Manual time', start: '07:00', end: '23:00' },
+];
+
+const SYSTEM_SLOT_NAMES = new Set(['breakfast', 'lunch', 'snacks', 'dinner']);
+
+const to12HourTime = (time) => {
+  if (!time) return '';
+  const [hourValue, minuteValue] = String(time).split(':').map(Number);
+  if (!Number.isFinite(hourValue) || !Number.isFinite(minuteValue)) return time;
+  const suffix = hourValue >= 12 ? 'PM' : 'AM';
+  const hour = hourValue % 12 || 12;
+  return `${String(hour).padStart(2, '0')}:${String(minuteValue).padStart(2, '0')} ${suffix}`;
+};
+
+const normalizeOperationalHour = (hour) => ({
+  id: String(hour.id),
+  name: hour.name,
+  startTime: hour.startTime || hour.start_time,
+  endTime: hour.endTime || hour.end_time,
+  isActive: hour.isActive ?? hour.is_active ?? true,
+});
+
+const formatHourOption = (hour) =>
+  `${hour.name} (${to12HourTime(hour.startTime)} - ${to12HourTime(hour.endTime)})`;
+
+const findSchedulePreset = (start, end) => {
+  const match = OPERATIONAL_SLOTS.find(
+    (slot) =>
+      !['always', 'custom'].includes(slot.key) &&
+      slot.start === start &&
+      slot.end === end,
+  );
+  return match?.key || (start && end ? 'custom' : 'always');
+};
+
+const getOperationalSlotLabel = (start, end) => {
+  if (!start || !end) return 'Always visible';
+  const slot = OPERATIONAL_SLOTS.find(
+    (item) => !['always', 'custom'].includes(item.key) && item.start === start && item.end === end,
+  );
+  return slot?.label || 'Manual time';
+};
+
+const getQuickMenuSlotKey = (quickMenu) => {
+  if (!quickMenu.schedule_start || !quickMenu.schedule_end) return 'always';
+  return findSchedulePreset(quickMenu.schedule_start, quickMenu.schedule_end);
+};
+
 const emptyForm = {
   menu_name: '',
   search_keyword: '',
   is_active: true,
   image: null,
+  operational_hour_id: '',
+  schedule_preset: 'always',
   schedule_enabled: false,
   schedule_start: '07:00',
   schedule_end: '23:00',
   days_enabled: false,
   schedule_days: [],
+};
+
+const emptyHourForm = {
+  name: '',
+  start_time: '07:00',
+  end_time: '11:00',
+  is_active: true,
 };
 
 const formatSchedule = (quickMenu) => {
@@ -60,11 +128,17 @@ const formatSchedule = (quickMenu) => {
 
 const QuickMenuManagement = () => {
   const [quickMenus, setQuickMenus] = useState([]);
+  const [operationalHours, setOperationalHours] = useState([]);
+  const [hoursLoading, setHoursLoading] = useState(false);
+  const [hoursSaving, setHoursSaving] = useState(false);
+  const [hourForm, setHourForm] = useState(emptyHourForm);
+  const [editingHour, setEditingHour] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
+  const [operationalHourFilter, setOperationalHourFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [modalOpen, setModalOpen] = useState(false);
@@ -75,7 +149,31 @@ const QuickMenuManagement = () => {
   const [draggedMenuId, setDraggedMenuId] = useState(null);
   const [reorderLoading, setReorderLoading] = useState(false);
 
-  const canReorder = !search.trim() && status === 'all' && quickMenus.length > 1;
+  const filteredQuickMenus = useMemo(() => {
+    if (operationalHourFilter === 'all') return quickMenus;
+    return quickMenus.filter((quickMenu) => {
+      if (operationalHourFilter.startsWith('hour:')) {
+        return String(quickMenu.operational_hour_id || '') === operationalHourFilter.replace('hour:', '');
+      }
+      return getQuickMenuSlotKey(quickMenu) === operationalHourFilter;
+    });
+  }, [quickMenus, operationalHourFilter]);
+
+  const systemHours = useMemo(
+    () => operationalHours.filter((hour) => SYSTEM_SLOT_NAMES.has(hour.name.toLowerCase())),
+    [operationalHours],
+  );
+
+  const customHours = useMemo(
+    () => operationalHours.filter((hour) => !SYSTEM_SLOT_NAMES.has(hour.name.toLowerCase())),
+    [operationalHours],
+  );
+
+  const canReorder =
+    !search.trim() &&
+    status === 'all' &&
+    operationalHourFilter === 'all' &&
+    quickMenus.length > 1;
 
   const imagePreview = useMemo(() => {
     if (formData.image) return URL.createObjectURL(formData.image);
@@ -93,6 +191,10 @@ const QuickMenuManagement = () => {
   useEffect(() => {
     fetchQuickMenus();
   }, [page, status]);
+
+  useEffect(() => {
+    fetchOperationalHours();
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -134,12 +236,19 @@ const QuickMenuManagement = () => {
   const openEditModal = (quickMenu) => {
     const hasSchedule = Boolean(quickMenu.schedule_start && quickMenu.schedule_end);
     const hasDays = Array.isArray(quickMenu.schedule_days) && quickMenu.schedule_days.length > 0;
+    const matchedHour = quickMenu.operational_hour_id
+      ? operationalHours.find((hour) => hour.id === String(quickMenu.operational_hour_id))
+      : operationalHours.find(
+          (hour) => hour.startTime === quickMenu.schedule_start && hour.endTime === quickMenu.schedule_end,
+        );
     setEditingMenu(quickMenu);
     setFormData({
       menu_name: quickMenu.menu_name || '',
       search_keyword: quickMenu.search_keyword || '',
       is_active: Boolean(quickMenu.is_active),
       image: null,
+      operational_hour_id: matchedHour?.id || '',
+      schedule_preset: findSchedulePreset(quickMenu.schedule_start, quickMenu.schedule_end),
       schedule_enabled: hasSchedule,
       schedule_start: quickMenu.schedule_start || '07:00',
       schedule_end: quickMenu.schedule_end || '23:00',
@@ -174,11 +283,57 @@ const QuickMenuManagement = () => {
     return true;
   };
 
+  const fetchOperationalHours = async () => {
+    try {
+      setHoursLoading(true);
+      const response = await getQuickMenuOperationalHours({ includeInactive: 'true' });
+      setOperationalHours((response.data?.data || []).map(normalizeOperationalHour));
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Failed to load operational hours');
+    } finally {
+      setHoursLoading(false);
+    }
+  };
+
+  const handleOperationalSlotChange = (slotKey) => {
+    if (slotKey.startsWith('hour:')) {
+      const hour = operationalHours.find((item) => item.id === slotKey.replace('hour:', ''));
+      if (!hour) return;
+      setFormData((current) => ({
+        ...current,
+        operational_hour_id: hour.id,
+        schedule_preset: 'custom',
+        schedule_enabled: true,
+        schedule_start: hour.startTime,
+        schedule_end: hour.endTime,
+        days_enabled: false,
+        schedule_days: [],
+      }));
+      return;
+    }
+
+    const slot = OPERATIONAL_SLOTS.find((item) => item.key === slotKey) || OPERATIONAL_SLOTS[0];
+
+    setFormData((current) => ({
+      ...current,
+      operational_hour_id: '',
+      schedule_preset: slot.key,
+      schedule_enabled: slot.key !== 'always',
+      schedule_start: slot.key === 'always' ? current.schedule_start : slot.start,
+      schedule_end: slot.key === 'always' ? current.schedule_end : slot.end,
+      days_enabled: slot.key === 'always' ? false : current.days_enabled,
+      schedule_days: slot.key === 'always' ? [] : current.schedule_days,
+    }));
+  };
+
   const buildPayload = () => {
     const payload = new FormData();
     payload.append('menu_name', formData.menu_name.trim());
     payload.append('search_keyword', formData.search_keyword.trim());
     payload.append('is_active', String(formData.is_active));
+    if (formData.operational_hour_id) {
+      payload.append('operational_hour_id', formData.operational_hour_id);
+    }
     if (formData.image) payload.append('image', formData.image);
 
     if (formData.schedule_enabled) {
@@ -322,6 +477,80 @@ const QuickMenuManagement = () => {
     }
   };
 
+  const resetHourForm = () => {
+    setEditingHour(null);
+    setHourForm(emptyHourForm);
+  };
+
+  const handleHourSubmit = async (event) => {
+    event.preventDefault();
+    if (!hourForm.name.trim()) {
+      toast.error('Operational hour name is required');
+      return;
+    }
+
+    try {
+      setHoursSaving(true);
+      const payload = {
+        name: hourForm.name.trim(),
+        start_time: hourForm.start_time,
+        end_time: hourForm.end_time,
+        is_active: String(hourForm.is_active),
+      };
+
+      if (editingHour) {
+        await updateQuickMenuOperationalHour(editingHour.id, payload);
+        toast.success('Operational hour updated');
+      } else {
+        await createQuickMenuOperationalHour(payload);
+        toast.success('Operational hour created');
+      }
+
+      resetHourForm();
+      fetchOperationalHours();
+      fetchQuickMenus();
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Failed to save operational hour');
+    } finally {
+      setHoursSaving(false);
+    }
+  };
+
+  const handleEditHour = (hour) => {
+    setEditingHour(hour);
+    setHourForm({
+      name: hour.name,
+      start_time: hour.startTime,
+      end_time: hour.endTime,
+      is_active: Boolean(hour.isActive),
+    });
+  };
+
+  const handleToggleHour = async (hour) => {
+    try {
+      await updateQuickMenuOperationalHourStatus(hour.id, !hour.isActive);
+      toast.success(!hour.isActive ? 'Operational hour enabled' : 'Operational hour disabled');
+      fetchOperationalHours();
+      fetchQuickMenus();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update operational hour');
+    }
+  };
+
+  const handleDeleteHour = async (hour) => {
+    if (!window.confirm(`Delete ${hour.name}? Existing quick menus will keep their copied time.`)) return;
+
+    try {
+      await deleteQuickMenuOperationalHour(hour.id);
+      toast.success('Operational hour deleted');
+      if (editingHour?.id === hour.id) resetHourForm();
+      fetchOperationalHours();
+      fetchQuickMenus();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete operational hour');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
@@ -332,13 +561,34 @@ const QuickMenuManagement = () => {
               Search shortcut entries for customer discovery.
             </p>
           </div>
-          <button
-            onClick={openCreateModal}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-red-600"
-          >
-            <Plus size={18} />
-            Add Quick Menu
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="min-w-[220px]">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Operational Hour
+              </label>
+              <select
+                value={operationalHourFilter}
+                onChange={(event) => setOperationalHourFilter(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+              >
+                <option value="all">All operational hours</option>
+                <option value="always">Always visible</option>
+                {operationalHours.map((hour) => (
+                  <option key={hour.id} value={`hour:${hour.id}`}>
+                    {formatHourOption(hour)}
+                    {!hour.isActive ? ' - Disabled' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={openCreateModal}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-red-600"
+            >
+              <Plus size={18} />
+              Add Quick Menu
+            </button>
+          </div>
         </div>
       </div>
 
@@ -352,6 +602,131 @@ const QuickMenuManagement = () => {
             </button>
           </div>
         )}
+
+        <div className="mb-6 rounded-lg bg-white p-4 shadow-sm">
+          <div className="mb-4 flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-gray-900">Operational Hour Management</h2>
+            <p className="text-sm text-gray-500">
+              Create and manage reusable quick menu time slots.
+            </p>
+          </div>
+
+          <form onSubmit={handleHourSubmit} className="grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr_auto] lg:items-end">
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Slot Name
+              </label>
+              <input
+                type="text"
+                value={hourForm.name}
+                onChange={(event) => setHourForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Milkshake Time"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                maxLength={120}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Start Time
+              </label>
+              <input
+                type="time"
+                value={hourForm.start_time}
+                onChange={(event) => setHourForm((current) => ({ ...current, start_time: event.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                End Time
+              </label>
+              <input
+                type="time"
+                value={hourForm.end_time}
+                onChange={(event) => setHourForm((current) => ({ ...current, end_time: event.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={hoursSaving}
+                className="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {hoursSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editingHour ? 'Update Slot' : 'Create Slot'}
+              </button>
+              {editingHour && (
+                <button
+                  type="button"
+                  onClick={resetHourForm}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {hoursLoading ? (
+              <div className="col-span-full flex items-center gap-2 rounded-lg border border-gray-200 p-3 text-sm text-gray-500">
+                <Loader2 className="h-4 w-4 animate-spin text-red-500" />
+                Loading operational hours...
+              </div>
+            ) : operationalHours.length === 0 ? (
+              <div className="col-span-full rounded-lg border border-gray-200 p-3 text-sm text-gray-500">
+                No operational hours found.
+              </div>
+            ) : (
+              operationalHours.map((hour) => (
+                <div key={hour.id} className="rounded-lg border border-gray-200 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-gray-900">{hour.name}</p>
+                      <p className="mt-0.5 text-sm text-gray-500">
+                        {to12HourTime(hour.startTime)} - {to12HourTime(hour.endTime)}
+                      </p>
+                      <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        hour.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {hour.isActive ? 'Active' : 'Disabled'}
+                      </span>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleEditHour(hour)}
+                        className="rounded-lg p-1.5 text-blue-600 hover:bg-blue-50"
+                        title="Edit slot"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleHour(hour)}
+                        className={`rounded-lg p-1.5 ${
+                          hour.isActive ? 'text-amber-600 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'
+                        }`}
+                        title={hour.isActive ? 'Disable slot' : 'Enable slot'}
+                      >
+                        {hour.isActive ? <PowerOff size={16} /> : <Power size={16} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteHour(hour)}
+                        className="rounded-lg p-1.5 text-red-600 hover:bg-red-50"
+                        title="Delete slot"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
 
         <div className="mb-6 rounded-lg bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row">
@@ -380,7 +755,7 @@ const QuickMenuManagement = () => {
           </div>
           {!canReorder && quickMenus.length > 1 && (
             <p className="mt-3 text-xs text-gray-500">
-              Clear search and status filters to reorder quick menus.
+              Clear search, status, and operational hour filters to reorder quick menus.
             </p>
           )}
         </div>
@@ -394,7 +769,7 @@ const QuickMenuManagement = () => {
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Menu Image</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Menu Name</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Search Keyword</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Schedule</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Operational Hour</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
                   <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
                 </tr>
@@ -407,7 +782,7 @@ const QuickMenuManagement = () => {
                       Loading quick menus...
                     </td>
                   </tr>
-                ) : quickMenus.length === 0 ? (
+                ) : filteredQuickMenus.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
                       <ImageIcon className="mx-auto mb-2 h-8 w-8 text-gray-300" />
@@ -415,7 +790,7 @@ const QuickMenuManagement = () => {
                     </td>
                   </tr>
                 ) : (
-                  quickMenus.map((quickMenu, index) => (
+                  filteredQuickMenus.map((quickMenu, index) => (
                     <tr
                       key={quickMenu.id}
                       onDragOver={handleDragOver}
@@ -457,13 +832,21 @@ const QuickMenuManagement = () => {
                         {(() => {
                           const sched = formatSchedule(quickMenu);
                           if (!sched) {
-                            return <span className="text-xs text-gray-400">Always</span>;
+                            return (
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs font-medium text-gray-500">Always visible</span>
+                                <span className="text-[11px] text-gray-400">No time restriction</span>
+                              </div>
+                            );
                           }
                           return (
                             <div className="flex flex-col gap-0.5">
+                              <span className="text-xs font-semibold text-gray-800">
+                                {quickMenu.operationalHour?.name || getOperationalSlotLabel(quickMenu.schedule_start, quickMenu.schedule_end)}
+                              </span>
                               <span className={`inline-flex items-center gap-1 text-xs font-medium ${quickMenu.is_schedule_active ? 'text-indigo-700' : 'text-gray-400'}`}>
                                 <Clock size={12} />
-                                {sched.time}
+                                {to12HourTime(quickMenu.schedule_start)} - {to12HourTime(quickMenu.schedule_end)}
                               </span>
                               <span className="text-[11px] text-gray-400">{sched.days}</span>
                               {!quickMenu.is_schedule_active && (
@@ -605,28 +988,60 @@ const QuickMenuManagement = () => {
 
               {/* Schedule Section */}
               <div className="rounded-lg border border-gray-200 p-4 space-y-4">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.schedule_enabled}
-                    onChange={(e) => setFormData((c) => ({ ...c, schedule_enabled: e.target.checked }))}
-                    className="h-4 w-4 rounded border-gray-300 text-red-500 focus:ring-red-500"
-                  />
-                  <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <div>
+                  <label className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-700">
                     <Clock size={15} className="text-indigo-500" />
-                    Enable Time Schedule
-                  </span>
-                </label>
+                    Operational Hour
+                  </label>
+                  <select
+                    value={formData.operational_hour_id ? `hour:${formData.operational_hour_id}` : formData.schedule_preset}
+                    onChange={(event) => handleOperationalSlotChange(event.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                  >
+                    <option value="always">Always Visible</option>
+                    {systemHours.length > 0 && (
+                      <optgroup label="System Slots">
+                        {systemHours.map((hour) => (
+                          <option key={hour.id} value={`hour:${hour.id}`}>
+                            {formatHourOption(hour)}
+                            {!hour.isActive ? ' - Disabled' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {customHours.length > 0 && (
+                      <optgroup label="Custom Slots">
+                        {customHours.map((hour) => (
+                          <option key={hour.id} value={`hour:${hour.id}`}>
+                            {formatHourOption(hour)}
+                            {!hour.isActive ? ' - Disabled' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <option value="custom">
+                      Manual Time ({to12HourTime(formData.schedule_start)} - {to12HourTime(formData.schedule_end)})
+                    </option>
+                  </select>
+                </div>
 
                 {formData.schedule_enabled && (
-                  <div className="space-y-4 pl-7">
+                  <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="mb-1 block text-xs font-medium text-gray-600">Start Time</label>
                         <input
                           type="time"
                           value={formData.schedule_start}
-                          onChange={(e) => setFormData((c) => ({ ...c, schedule_start: e.target.value }))}
+                          onChange={(e) =>
+                            setFormData((c) => ({
+                              ...c,
+                              operational_hour_id: '',
+                              schedule_preset: 'custom',
+                              schedule_enabled: true,
+                              schedule_start: e.target.value,
+                            }))
+                          }
                           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
                         />
                       </div>
@@ -635,7 +1050,15 @@ const QuickMenuManagement = () => {
                         <input
                           type="time"
                           value={formData.schedule_end}
-                          onChange={(e) => setFormData((c) => ({ ...c, schedule_end: e.target.value }))}
+                          onChange={(e) =>
+                            setFormData((c) => ({
+                              ...c,
+                              operational_hour_id: '',
+                              schedule_preset: 'custom',
+                              schedule_enabled: true,
+                              schedule_end: e.target.value,
+                            }))
+                          }
                           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
                         />
                       </div>
