@@ -34,16 +34,93 @@ const CANCEL_REASONS = [
   { label: "Other", value: "other" },
 ];
 
-const formatDate = (d) =>
-  d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-";
+const parseBackendDate = (date, options = {}) => {
+  if (!date) return null;
+  if (date instanceof Date) return date;
+  const value = String(date).trim();
+  if (options.treatClockAsUtc) {
+    const clockDate = new Date(value);
+    if (!Number.isNaN(clockDate.getTime())) {
+      return new Date(Date.UTC(
+        clockDate.getFullYear(),
+        clockDate.getMonth(),
+        clockDate.getDate(),
+        clockDate.getHours(),
+        clockDate.getMinutes(),
+        clockDate.getSeconds(),
+        clockDate.getMilliseconds(),
+      ));
+    }
+    const utcClockValue = value.replace(/(?:z|[+-]\d{2}:?\d{2})$/i, "");
+    return new Date(`${utcClockValue}Z`);
+  }
+  const hasTimezone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(value);
+  return new Date(hasTimezone ? value : `${value}Z`);
+};
+
+const formatDate = (d) => {
+  const parsed = parseBackendDate(d);
+  return parsed && !Number.isNaN(parsed.getTime())
+    ? parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })
+    : "-";
+};
 
 const formatDateTime = (d) => {
-  if (!d) return "-";
-  return new Date(d).toLocaleString("en-IN", {
+  const parsed = parseBackendDate(d);
+  if (!parsed || Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleString("en-IN", {
     day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit", hour12: true,
+    timeZone: "Asia/Kolkata",
   });
 };
+
+const normalizeStatusTimestamp = (order, timestamp) => {
+  if (!timestamp) return timestamp;
+  const parsed = parseBackendDate(timestamp);
+  const placedAt = parseBackendDate(order?.time || order?.createdAt);
+  const utcClockDate = parseBackendDate(timestamp, { treatClockAsUtc: true });
+
+  const parsedHour = parsed
+    ? Number(parsed.toLocaleString("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }))
+    : null;
+  const utcClockHour = utcClockDate
+    ? Number(utcClockDate.toLocaleString("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }))
+    : null;
+  const looksLikeUtcClockStoredAsIst =
+    parsedHour !== null &&
+    utcClockHour !== null &&
+    parsedHour < 10 &&
+    utcClockHour >= 12;
+
+  if (
+    parsed &&
+    placedAt &&
+    utcClockDate &&
+    !Number.isNaN(parsed.getTime()) &&
+    !Number.isNaN(placedAt.getTime()) &&
+    !Number.isNaN(utcClockDate.getTime()) &&
+    parsed < placedAt &&
+    utcClockDate >= placedAt
+  ) {
+    return utcClockDate.toISOString();
+  }
+
+  if (
+    parsed &&
+    utcClockDate &&
+    !Number.isNaN(parsed.getTime()) &&
+    !Number.isNaN(utcClockDate.getTime()) &&
+    looksLikeUtcClockStoredAsIst
+  ) {
+    return utcClockDate.toISOString();
+  }
+
+  return timestamp;
+};
+
+const formatStatusDateTime = (order, timestamp) =>
+  formatDateTime(normalizeStatusTimestamp(order, timestamp));
 
 const getStoredOrderTotal = (order = {}) =>
   Number(order.priceSummary?.total ?? order.price ?? order.totalAmount ?? 0) || 0;
@@ -80,7 +157,88 @@ const resolveDisplayStatus = (order) => {
 
 const STATUS_TERMINAL = new Set(["DELIVERED", "COMPLETED", "CANCELLED", "ADMIN_CANCELLED", "REJECTED"]);
 
-const StatusBadge = ({ status }) => {
+const ORDER_STATUS_TOOLTIP_MESSAGES = {
+  NEW: "Waiting for restaurant acceptance.",
+  PLACED: "Waiting for restaurant acceptance.",
+  PENDING: "Waiting for next action.",
+  PENDING_PAYMENT: "Waiting for payment.",
+  ACCEPTED: "Accepted by restaurant.",
+  PREPARING: "Food is being prepared.",
+  READY: "Ready for pickup.",
+  ASSIGNED: "Executive assigned.",
+  ON_THE_WAY_TO_RESTAURANT: "Executive is going to restaurant.",
+  REACHED_RESTAURANT: "Executive reached restaurant.",
+  PICKED_UP: "Order picked up.",
+  OUT_FOR_DELIVERY: "Out for delivery.",
+  ON_THE_WAY_TO_CUSTOMER: "Executive is going to customer.",
+  CANCELLED: "Order cancelled.",
+  ADMIN_CANCELLED: "Cancelled by admin.",
+  FAILED: "Order failed.",
+};
+
+const appendStatusTime = (message, timestamp, order) =>
+  timestamp ? `${message} ${formatStatusDateTime(order, timestamp)}` : message;
+
+const getTimelineEntry = (timeline = [], statuses = []) => {
+  const statusSet = new Set(statuses.map((item) => String(item).toUpperCase()));
+  return timeline.find((entry) => statusSet.has(String(entry?.status || "").toUpperCase()));
+};
+
+const getOrderStatusTooltip = (order) => {
+  const status = resolveDisplayStatus(order);
+  const timeline =
+    Array.isArray(order?.orderTimeline)
+      ? order.orderTimeline
+      : Array.isArray(order?.statusTimeline)
+        ? order.statusTimeline
+        : Array.isArray(order?.status_timeline)
+          ? order.status_timeline
+          : [];
+  const statusEntry = getTimelineEntry(timeline, [status]);
+  const statusTimestamp = statusEntry?.timestamp || order?.updatedAt || order?.lastUpdated || order?.time || order?.createdAt;
+
+  if (status === "REJECTED") {
+    const reason =
+      order?.rejectionReason ||
+      order?.rejection_reason ||
+      order?.rejectReason ||
+      order?.reject_reason ||
+      order?.cancellationReason ||
+      order?.cancellation_reason ||
+      order?.cancelReason ||
+      order?.cancel_reason ||
+      order?.reason ||
+      "";
+    return appendStatusTime(
+      `Rejected: ${reason || "No reason provided."}`,
+      statusTimestamp,
+      order,
+    );
+  }
+
+  if (status === "DELIVERED" || status === "COMPLETED") {
+    const deliveredEntry = getTimelineEntry(timeline, ["DELIVERED"]);
+    const executiveName =
+      order?.deliveryPartnerInformation?.name ||
+      order?.deliveryPartnerName ||
+      order?.delivery_partner_name ||
+      order?.executiveName ||
+      order?.fleet_name ||
+      order?.partner_name ||
+      "the assigned delivery executive";
+    const deliveredAt = deliveredEntry?.timestamp || statusTimestamp || order?.deliveredAt || order?.delivered_at || order?.time;
+    const timeText = deliveredAt ? ` - ${formatStatusDateTime(order, deliveredAt)}` : "";
+    return `Delivered by ${executiveName}${timeText}`;
+  }
+
+  return appendStatusTime(
+    ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, " ").toLowerCase(),
+    statusTimestamp,
+    order,
+  );
+};
+
+const StatusBadge = ({ status, tooltip, disabledTooltip = false }) => {
   const statusMap = {
     NEW: { label: "New", color: "bg-indigo-50 text-indigo-700 ring-indigo-600/20" },
     PENDING: { label: "Pending", color: "bg-orange-50 text-orange-700 ring-orange-600/20" },
@@ -104,9 +262,21 @@ const StatusBadge = ({ status }) => {
   const s = (status || "").toUpperCase();
   const info = statusMap[s] || { label: s.replace(/_/g, " "), color: "bg-gray-50 text-gray-600 ring-gray-600/20" };
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset ${info.color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${info.color.includes("emerald") ? "bg-emerald-500" : info.color.includes("red") ? "bg-red-500" : info.color.includes("indigo") ? "bg-indigo-500" : info.color.includes("blue") ? "bg-blue-500" : info.color.includes("orange") ? "bg-orange-500" : info.color.includes("amber") ? "bg-amber-500" : info.color.includes("purple") ? "bg-purple-500" : info.color.includes("violet") ? "bg-violet-500" : info.color.includes("rose") ? "bg-rose-500" : info.color.includes("sky") ? "bg-sky-500" : info.color.includes("yellow") ? "bg-yellow-500" : info.color.includes("cyan") ? "bg-cyan-500" : "bg-gray-400"}`} />
-      {info.label}
+    <span className="relative inline-flex group">
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset ${info.color}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${info.color.includes("emerald") ? "bg-emerald-500" : info.color.includes("red") ? "bg-red-500" : info.color.includes("indigo") ? "bg-indigo-500" : info.color.includes("blue") ? "bg-blue-500" : info.color.includes("orange") ? "bg-orange-500" : info.color.includes("amber") ? "bg-amber-500" : info.color.includes("purple") ? "bg-purple-500" : info.color.includes("violet") ? "bg-violet-500" : info.color.includes("rose") ? "bg-rose-500" : info.color.includes("sky") ? "bg-sky-500" : info.color.includes("yellow") ? "bg-yellow-500" : info.color.includes("cyan") ? "bg-cyan-500" : "bg-gray-400"}`} />
+        {info.label}
+      </span>
+      {tooltip && !disabledTooltip && (
+        <span className="pointer-events-none absolute left-1/2 top-full z-[80] mt-2 w-56 -translate-x-1/2 whitespace-normal rounded-xl border border-gray-200 bg-white p-2.5 text-left opacity-0 shadow-lg shadow-gray-200/60 transition-opacity duration-150 group-hover:opacity-100">
+          <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+            Status Update
+          </span>
+          <span className="mt-1 block text-[11px] font-medium leading-snug text-gray-700">
+            {tooltip}
+          </span>
+        </span>
+      )}
     </span>
   );
 };
@@ -282,7 +452,7 @@ const StatCard = ({ icon: Icon, label, value, color, sub, trend, onClick, isActi
   </motion.div>
 );
 
-const MobileOrderCard = ({ order, onView, onCancel, onDelete, isHighlighted, confirmDeleteId, onDeleteConfirm, isDeleting }) => {
+const MobileOrderCard = ({ order, onView, onCancel, onDelete, isHighlighted, confirmDeleteId, onDeleteConfirm, isDeleting, disableStatusTooltip = false }) => {
   const orderId = order.orderId || order.id;
   const customerInitial = (order.customer_name || order.customer || "G").charAt(0).toUpperCase();
   const isTerminal = STATUS_TERMINAL.has(resolveDisplayStatus(order));
@@ -305,7 +475,7 @@ const MobileOrderCard = ({ order, onView, onCancel, onDelete, isHighlighted, con
               #{orderId}
             </p>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <StatusBadge status={resolveDisplayStatus(order)} />
+              <StatusBadge status={resolveDisplayStatus(order)} tooltip={getOrderStatusTooltip(order)} disabledTooltip={disableStatusTooltip} />
             </div>
           </div>
         </div>
@@ -406,10 +576,12 @@ const OrdersList = () => {
   const restaurantAdmin = isRestaurantAdmin();
   const ownRestaurantUid = getCurrentRestaurantUid();
   const searchInputRef = useRef(null);
+  const scrollEndTimerRef = useRef(null);
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
+  const [isPageScrolling, setIsPageScrolling] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -424,6 +596,25 @@ const OrdersList = () => {
     revenue: 0, avgOrderValue: 0, refundAmount: 0,
   });
   const [statsTrend, setStatsTrend] = useState({});
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsPageScrolling(true);
+      if (scrollEndTimerRef.current) window.clearTimeout(scrollEndTimerRef.current);
+      scrollEndTimerRef.current = window.setTimeout(() => setIsPageScrolling(false), 160);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("wheel", handleScroll, { passive: true });
+    window.addEventListener("touchmove", handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("wheel", handleScroll);
+      window.removeEventListener("touchmove", handleScroll);
+      if (scrollEndTimerRef.current) window.clearTimeout(scrollEndTimerRef.current);
+    };
+  }, []);
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [restaurantFilter, setRestaurantFilter] = useState("all");
@@ -1432,7 +1623,7 @@ const OrdersList = () => {
                         <td className="px-4 py-3">
                           <div className="flex flex-col">
                             <span className="text-xs font-medium text-gray-800 leading-tight">
-                              {new Date(order.time || order.createdAt).toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                              {parseBackendDate(order.time || order.createdAt)?.toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }) || "-"}
                             </span>
                             <span className="text-[10px] text-gray-400 leading-tight mt-0.5">{formatDate(order.time || order.createdAt)}</span>
                           </div>
@@ -1445,7 +1636,7 @@ const OrdersList = () => {
 
                         {/* Status */}
                         <td className="px-4 py-3">
-                          <StatusBadge status={resolveDisplayStatus(order)} />
+                          <StatusBadge status={resolveDisplayStatus(order)} tooltip={getOrderStatusTooltip(order)} disabledTooltip={isPageScrolling} />
                         </td>
 
                         {/* Executive */}
@@ -1524,6 +1715,7 @@ const OrdersList = () => {
                 confirmDeleteId={confirmDeleteId}
                 onDeleteConfirm={handleDelete}
                 isDeleting={isDeleting}
+                disableStatusTooltip={isPageScrolling}
               />
             ))}
           </div>

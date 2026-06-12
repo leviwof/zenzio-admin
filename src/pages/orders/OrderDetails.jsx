@@ -144,19 +144,103 @@ const CANCEL_REASONS = [
   { label: "Other", value: "other" },
 ];
 
+const parseBackendDate = (date, options = {}) => {
+  if (!date) return null;
+  if (date instanceof Date) return date;
+  const value = String(date).trim();
+  if (options.treatClockAsUtc) {
+    const clockDate = new Date(value);
+    if (!Number.isNaN(clockDate.getTime())) {
+      return new Date(Date.UTC(
+        clockDate.getFullYear(),
+        clockDate.getMonth(),
+        clockDate.getDate(),
+        clockDate.getHours(),
+        clockDate.getMinutes(),
+        clockDate.getSeconds(),
+        clockDate.getMilliseconds(),
+      ));
+    }
+    const utcClockValue = value.replace(/(?:z|[+-]\d{2}:?\d{2})$/i, '');
+    return new Date(`${utcClockValue}Z`);
+  }
+  const hasTimezone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(value);
+  return new Date(hasTimezone ? value : `${value}Z`);
+};
+
 const formatDateTime = (date) => {
-  if (!date) return 'N/A';
-  return new Date(date).toLocaleString('en-IN', {
+  const parsed = parseBackendDate(date);
+  if (!parsed || Number.isNaN(parsed.getTime())) return 'N/A';
+  return parsed.toLocaleString('en-IN', {
     month: 'short', day: 'numeric', year: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: true,
     timeZone: 'Asia/Kolkata',
   });
 };
 
+const formatTime = (date) => {
+  const parsed = parseBackendDate(date);
+  if (!parsed || Number.isNaN(parsed.getTime())) return 'N/A';
+  return parsed.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
+  });
+};
+
+const normalizeStatusTimestamp = (order, timestamp) => {
+  if (!timestamp) return timestamp;
+  const parsed = parseBackendDate(timestamp);
+  const placedAt = parseBackendDate(order?.orderSummary?.orderPlacement || order?.time || order?.createdAt);
+  const utcClockDate = parseBackendDate(timestamp, { treatClockAsUtc: true });
+
+  const parsedHour = parsed
+    ? Number(parsed.toLocaleString('en-IN', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }))
+    : null;
+  const utcClockHour = utcClockDate
+    ? Number(utcClockDate.toLocaleString('en-IN', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }))
+    : null;
+  const looksLikeUtcClockStoredAsIst =
+    parsedHour !== null &&
+    utcClockHour !== null &&
+    parsedHour < 10 &&
+    utcClockHour >= 12;
+
+  if (
+    parsed &&
+    placedAt &&
+    utcClockDate &&
+    !Number.isNaN(parsed.getTime()) &&
+    !Number.isNaN(placedAt.getTime()) &&
+    !Number.isNaN(utcClockDate.getTime()) &&
+    parsed < placedAt &&
+    utcClockDate >= placedAt
+  ) {
+    return utcClockDate.toISOString();
+  }
+
+  if (
+    parsed &&
+    utcClockDate &&
+    !Number.isNaN(parsed.getTime()) &&
+    !Number.isNaN(utcClockDate.getTime()) &&
+    looksLikeUtcClockStoredAsIst
+  ) {
+    return utcClockDate.toISOString();
+  }
+
+  return timestamp;
+};
+
+const formatStatusDateTime = (order, timestamp) =>
+  formatDateTime(normalizeStatusTimestamp(order, timestamp));
+
 const formatRelativeTime = (dateStr) => {
   if (!dateStr) return '';
   const now = new Date();
-  const date = new Date(dateStr);
+  const date = parseBackendDate(dateStr);
+  if (!date || Number.isNaN(date.getTime())) return '';
   const diffMs = now - date;
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return 'Just now';
@@ -207,12 +291,133 @@ const getStoredTaxAmount = (order, priceSummary = {}) =>
 const getStoredOrderTotal = (order, priceSummary = {}) =>
   Number(priceSummary.total ?? order?.price ?? order?.totalAmount ?? 0) || 0;
 
+const cleanDisplayValue = (value) => {
+  const text = String(value || '').trim();
+  if (!text || ['N/A', 'NA', 'NULL', 'UNDEFINED', '-', '—'].includes(text.toUpperCase())) return '';
+  return text;
+};
+
+const looksLikeCustomerId = (value) => {
+  const text = cleanDisplayValue(value);
+  if (!text || text.includes('@') || /\s/.test(text)) return false;
+  if (/^\+?\d{8,15}$/.test(text)) return false;
+  const uppercaseCount = (text.match(/[A-Z]/g) || []).length;
+  const lowercaseCount = (text.match(/[a-z]/g) || []).length;
+  const digitCount = (text.match(/\d/g) || []).length;
+  return text.length >= 8 && lowercaseCount > 0 && (uppercaseCount >= 2 || digitCount > 0);
+};
+
+const getCustomerDisplayName = (order) => {
+  const info = order?.customerInformation || {};
+  const email = cleanDisplayValue(info.email || order?.customer_email || order?.email);
+  const customerId = cleanDisplayValue(
+    info.customerId || order?.customer || order?.customer_uid || order?.user_uid,
+  );
+  const rawName = cleanDisplayValue(
+    info.name || order?.customer_name || order?.customerName || order?.customer,
+  );
+  const genericNames = new Set(['CUSTOMER', 'GUEST', 'USER']);
+  const emailPrefix = email.includes('@') ? email.split('@')[0] : '';
+  const nameIsFallback =
+    !rawName ||
+    genericNames.has(rawName.toUpperCase()) ||
+    rawName === customerId ||
+    Boolean(emailPrefix && rawName.toLowerCase() === emailPrefix.toLowerCase()) ||
+    looksLikeCustomerId(rawName);
+
+  if (!nameIsFallback) return rawName;
+  return email || 'Guest';
+};
+
 const usesFinalPriceTaxModel = (order, priceSummary = {}) => {
   const tax = getStoredTaxAmount(order, priceSummary);
   const subtotal = Number(priceSummary.subtotal ?? order?.item_total ?? 0) || 0;
   const discount = getDiscountAmount(order, priceSummary);
   const expectedTax = Number((Math.max(subtotal - discount, 0) * 0.05).toFixed(2));
   return tax > 0 && Math.abs(tax - expectedTax) < 0.02;
+};
+
+const getTimelineEntry = (timeline = [], statuses = []) => {
+  const statusSet = new Set(statuses.map((status) => String(status).toUpperCase()));
+  return timeline.find((entry) => statusSet.has(String(entry?.status || '').toUpperCase()));
+};
+
+const getRejectionReason = (order, timeline = []) => {
+  const rejectedEntry = getTimelineEntry(timeline, ['REJECTED', 'CANCELLED', 'ADMIN_CANCELLED']);
+  return (
+    order?.rejectionReason ||
+    order?.rejection_reason ||
+    order?.rejectReason ||
+    order?.reject_reason ||
+    order?.cancellationReason ||
+    order?.cancellation_reason ||
+    order?.cancelReason ||
+    order?.cancel_reason ||
+    rejectedEntry?.reason ||
+    rejectedEntry?.remarks ||
+    rejectedEntry?.note ||
+    rejectedEntry?.message ||
+    ''
+  );
+};
+
+const ORDER_STATUS_TOOLTIP_MESSAGES = {
+  PLACED: 'Waiting for restaurant acceptance.',
+  ACCEPTED: 'Accepted by restaurant.',
+  PREPARING: 'Food is being prepared.',
+  READY: 'Ready for pickup.',
+  ASSIGNED: 'Executive assigned.',
+  ON_THE_WAY_TO_RESTAURANT: 'Executive is going to restaurant.',
+  REACHED_RESTAURANT: 'Executive reached restaurant.',
+  PICKED_UP: 'Order picked up.',
+  OUT_FOR_DELIVERY: 'Out for delivery.',
+  ON_THE_WAY_TO_CUSTOMER: 'Executive is going to customer.',
+  CANCELLED: 'Order cancelled.',
+  ADMIN_CANCELLED: 'Cancelled by admin.',
+  FAILED: 'Order failed.',
+  PENDING_PAYMENT: 'Waiting for payment.',
+};
+
+const appendStatusTime = (message, timestamp, order) =>
+  timestamp ? `${message} ${formatStatusDateTime(order, timestamp)}` : message;
+
+const getOrderStatusTooltip = (order, currentStatus, timeline = []) => {
+  if (!order) return '';
+  const status = String(currentStatus || '').toUpperCase();
+  const statusEntry = getTimelineEntry(timeline, [status]);
+  const statusTimestamp = statusEntry?.timestamp || order?.lastUpdated || order?.updatedAt;
+
+  if (status === 'REJECTED') {
+    const reason = getRejectionReason(order, timeline);
+    return appendStatusTime(
+      `Rejected: ${reason || 'No reason provided.'}`,
+      statusTimestamp,
+      order,
+    );
+  }
+
+  if (status === 'DELIVERED' || status === 'COMPLETED') {
+    const deliveredEntry = getTimelineEntry(timeline, ['DELIVERED']);
+    const deliveredAt =
+      deliveredEntry?.timestamp ||
+      statusTimestamp ||
+      order?.deliveredAt ||
+      order?.delivered_at;
+    const executiveName =
+      order?.deliveryPartnerInformation?.name ||
+      order?.deliveryPartnerInformation?.fullName ||
+      order?.partner?.label ||
+      order?.partner?.name ||
+      'the assigned delivery executive';
+    const timeText = deliveredAt ? ` - ${formatStatusDateTime(order, deliveredAt)}` : '';
+    return `Delivered by ${executiveName}${timeText}`;
+  }
+
+  return appendStatusTime(
+    ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, ' ').toLowerCase(),
+    statusTimestamp,
+    order,
+  );
 };
 
 const getFreeOfferItems = (order) => {
@@ -271,7 +476,7 @@ const AnimatedCounter = ({ value, prefix = '', suffix = '', decimals = 0 }) => {
   return <span ref={ref}>{prefix}{Number(display).toFixed(decimals)}{suffix}</span>;
 };
 
-const StatusBadge = ({ status }) => {
+const StatusBadge = ({ status, tooltip }) => {
   const map = {
     PLACED: { label: 'Placed', color: 'bg-indigo-50 text-indigo-700 border border-indigo-200' },
     ACCEPTED: { label: 'Accepted', color: 'bg-blue-50 text-blue-700 border border-blue-200' },
@@ -295,9 +500,21 @@ const StatusBadge = ({ status }) => {
   const s = String(status || '').toUpperCase();
   const info = map[s] || { label: s, color: 'bg-gray-50 text-gray-600 border border-gray-200' };
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${info.color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${info.color.includes('emerald') ? 'bg-emerald-500' : info.color.includes('red') ? 'bg-red-500' : info.color.includes('blue') ? 'bg-blue-500' : info.color.includes('indigo') ? 'bg-indigo-500' : info.color.includes('sky') ? 'bg-sky-500' : info.color.includes('purple') ? 'bg-purple-500' : info.color.includes('yellow') ? 'bg-yellow-500' : info.color.includes('orange') ? 'bg-orange-500' : info.color.includes('cyan') ? 'bg-cyan-500' : 'bg-gray-400'}`} />
-      {info.label}
+    <span className="relative inline-flex group">
+      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${info.color}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${info.color.includes('emerald') ? 'bg-emerald-500' : info.color.includes('red') ? 'bg-red-500' : info.color.includes('blue') ? 'bg-blue-500' : info.color.includes('indigo') ? 'bg-indigo-500' : info.color.includes('sky') ? 'bg-sky-500' : info.color.includes('purple') ? 'bg-purple-500' : info.color.includes('yellow') ? 'bg-yellow-500' : info.color.includes('orange') ? 'bg-orange-500' : info.color.includes('cyan') ? 'bg-cyan-500' : 'bg-gray-400'}`} />
+        {info.label}
+      </span>
+      {tooltip && (
+        <span className="pointer-events-none absolute left-1/2 top-full z-[80] mt-2 w-56 -translate-x-1/2 whitespace-normal rounded-xl border border-gray-200 bg-white p-2.5 text-left opacity-0 shadow-lg shadow-gray-200/60 transition-opacity duration-150 group-hover:opacity-100">
+          <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+            Status Update
+          </span>
+          <span className="mt-1 block text-[11px] font-medium leading-snug text-gray-700">
+            {tooltip}
+          </span>
+        </span>
+      )}
     </span>
   );
 };
@@ -430,7 +647,7 @@ const OrderDetails = () => {
     const completedUntil = currentIndex >= 0 ? currentIndex : -1;
     const fallbackTimestamp = orderData?.lastUpdated || orderData?.updatedAt || orderData?.orderSummary?.orderPlacement || orderData?.createdAt;
 
-    return ORDER_TIMELINE_STEPS.map((step, index) => {
+    const timeline = ORDER_TIMELINE_STEPS.map((step, index) => {
       const backendItem = timelineByStatus[step.status];
       const isCompleted = Boolean(backendItem?.timestamp) || (completedUntil >= 0 && index <= completedUntil);
       return {
@@ -438,6 +655,29 @@ const OrderDetails = () => {
         message: backendItem?.message || step.message,
         timestamp: backendItem?.timestamp || (isCompleted ? fallbackTimestamp : null),
       };
+    });
+
+    let previousCompletedTime = null;
+    return timeline.map((step) => {
+      if (!step.timestamp) return step;
+
+      const parsed = parseBackendDate(step.timestamp);
+      if (!parsed || Number.isNaN(parsed.getTime())) return step;
+
+      let correctedDate = parsed;
+      if (previousCompletedTime && parsed < previousCompletedTime) {
+        const utcClockDate = parseBackendDate(step.timestamp, { treatClockAsUtc: true });
+        const canUseUtcClock =
+          utcClockDate &&
+          !Number.isNaN(utcClockDate.getTime()) &&
+          utcClockDate >= previousCompletedTime &&
+          utcClockDate.getTime() - previousCompletedTime.getTime() <= 6 * 60 * 60 * 1000;
+
+        correctedDate = canUseUtcClock ? utcClockDate : previousCompletedTime;
+      }
+
+      previousCompletedTime = correctedDate;
+      return { ...step, timestamp: correctedDate.toISOString() };
     });
   };
 
@@ -565,6 +805,7 @@ const OrderDetails = () => {
     const finalAmount = getStoredOrderTotal(order, ps);
     const discountAmount = getDiscountAmount(order, ps);
     const taxLabel = usesFinalPriceTaxModel(order, ps) ? 'Tax 5% on final item price' : 'Tax';
+    const customerDisplayName = getCustomerDisplayName(order);
     const appliedDiscount = getAppliedDiscount(order);
     const freeItems = getFreeOfferItems(order);
     const itemsHtml = (order.items || []).map(item => `
@@ -605,7 +846,7 @@ const OrderDetails = () => {
         <p><strong>Date:</strong> ${formatDateTime(order.orderSummary?.orderPlacement)}</p>
         <p><strong>Restaurant:</strong> ${order.restaurant_name || ''}</p>
         <div class="line"></div>
-        <p><strong>Customer:</strong> ${order.customerInformation?.name || ''}</p>
+        <p><strong>Customer:</strong> ${customerDisplayName}</p>
         <p><strong>Phone:</strong> ${order.customerInformation?.mobile || ''}</p>
         <p><strong>Address:</strong> ${order.customerInformation?.deliveryAddress || ''}</p>
         <div class="line"></div>
@@ -638,6 +879,7 @@ const OrderDetails = () => {
     const finalAmount = getStoredOrderTotal(order, ps);
     const discountAmount = getDiscountAmount(order, ps);
     const taxLabel = usesFinalPriceTaxModel(order, ps) ? 'Tax 5% on final item price' : 'Tax';
+    const customerDisplayName = getCustomerDisplayName(order);
     const appliedDiscount = getAppliedDiscount(order);
     const freeItems = getFreeOfferItems(order);
     const items = (order.items || []).map(item =>
@@ -654,7 +896,7 @@ const OrderDetails = () => {
       `Restaurant: ${order.restaurant_name || 'N/A'}`,
       `================================`,
       `CUSTOMER`,
-      `Name: ${order.customerInformation?.name || 'N/A'}`,
+      `Name: ${customerDisplayName}`,
       `Phone: ${order.customerInformation?.mobile || 'N/A'}`,
       `Address: ${order.customerInformation?.deliveryAddress || 'N/A'}`,
       `================================`,
@@ -768,6 +1010,11 @@ const OrderDetails = () => {
   const currentStatus = getCurrentOrderStatus(order);
   const currentDeliveryStatus = currentStatus.toLowerCase();
   const orderTimeline = buildOrderTimeline(order);
+  const orderStatusTooltip = getOrderStatusTooltip(
+    order,
+    currentStatus,
+    orderTimeline,
+  );
   const isTerminal = TERMINAL_STATUSES.has(currentStatus);
 
   const ps = order.priceSummary || {};
@@ -778,6 +1025,7 @@ const OrderDetails = () => {
   const finalAmount = getStoredOrderTotal(order, ps);
   const discountAmount = getDiscountAmount(order, ps);
   const taxLabel = usesFinalPriceTaxModel(order, ps) ? 'Tax 5% on final item price' : 'Tax';
+  const customerDisplayName = getCustomerDisplayName(order);
   const hasJourneyPricing = Boolean(order.delivery_pricing_version);
   const restaurantToCustomerKm = order.restaurant_to_customer_km ?? order.restaurantToCustomerDistance ?? null;
   const totalJourneyKm = order.total_journey_km ?? null;
@@ -840,7 +1088,7 @@ const OrderDetails = () => {
           <div>
             <h1 className="text-lg font-bold text-gray-900">Order #{orderId}</h1>
             <div className="flex items-center gap-2 mt-0.5">
-              <StatusBadge status={currentStatus} />
+              <StatusBadge status={currentStatus} tooltip={orderStatusTooltip} />
               <span className="text-xs text-gray-400 flex items-center gap-1">
                 <Clock size={11} />
                 Updated {formatRelativeTime(order.lastUpdated || order.updatedAt)}
@@ -963,7 +1211,7 @@ const OrderDetails = () => {
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500">Customer</span>
-                    <span className="text-sm font-semibold text-gray-900">{order.customerInformation?.name || '—'}</span>
+                    <span className="text-sm font-semibold text-gray-900">{customerDisplayName}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500">Items</span>
@@ -1053,7 +1301,7 @@ const OrderDetails = () => {
                       </p>
                       {step.timestamp && (
                         <p className="text-[9px] text-gray-400 text-center mt-0.5 whitespace-nowrap">
-                          {new Date(step.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                          {formatTime(step.timestamp)}
                         </p>
                       )}
                     </div>
@@ -1204,7 +1452,7 @@ const OrderDetails = () => {
                   <User size={22} className="text-blue-600" />
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-900">{order.customerInformation?.name || '—'}</p>
+                  <p className="font-semibold text-gray-900">{customerDisplayName}</p>
                   <p className="text-xs text-gray-500">Customer</p>
                 </div>
               </div>
@@ -1442,7 +1690,7 @@ const OrderDetails = () => {
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Order Status</span>
-                  <StatusBadge status={currentStatus} />
+                  <StatusBadge status={currentStatus} tooltip={orderStatusTooltip} />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Delivery</span>
@@ -1636,7 +1884,7 @@ const OrderDetails = () => {
                     <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold text-xs shrink-0">C</div>
                     <div className="min-w-0">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Customer</p>
-                      <p className="font-semibold text-gray-900 truncate">{order.customerInformation?.name || 'Customer'}</p>
+                      <p className="font-semibold text-gray-900 truncate">{customerDisplayName}</p>
                       <p className="text-xs text-gray-500 line-clamp-2">{order.customerInformation?.deliveryAddress || ''}</p>
                     </div>
                   </div>
@@ -1693,7 +1941,7 @@ const OrderDetails = () => {
               <div className="p-5 space-y-4">
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-1">
                   <p className="text-sm text-gray-600">Order ID: <span className="font-semibold text-gray-900">#{order?.orderId}</span></p>
-                  <p className="text-sm text-gray-600">Customer: <span className="font-semibold text-gray-900">{order?.customer_name || 'Guest'}</span></p>
+                  <p className="text-sm text-gray-600">Customer: <span className="font-semibold text-gray-900">{customerDisplayName}</span></p>
                   <p className="text-sm text-gray-600">Amount: <span className="font-semibold text-gray-900">₹{finalAmount}</span></p>
                 </div>
                 <div>
@@ -1815,7 +2063,7 @@ const OrderDetails = () => {
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Order</p>
                     <p className="font-bold text-gray-900 mt-1">#{order.orderId}</p>
-                    <p className="text-sm text-gray-600 mt-1 truncate">{order.customerInformation?.name || 'Customer'}</p>
+                    <p className="text-sm text-gray-600 mt-1 truncate">{customerDisplayName}</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
