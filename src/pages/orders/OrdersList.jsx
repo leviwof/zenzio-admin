@@ -62,6 +62,24 @@ const getStoredDiscountAmount = (order = {}) =>
   ) || 0;
 
 
+const resolveDisplayStatus = (order) => {
+  const rs = (order?.restaurantStatus || "").toUpperCase();
+  const dp = (order?.deliveryPartnerStatus || "").toUpperCase();
+  const st = (order?.status || "").toUpperCase();
+
+  if (dp === "DELIVERED" || rs === "DELIVERED" || st === "COMPLETED" || rs === "COMPLETED") return "DELIVERED";
+  if (["CANCELLED", "ADMIN_CANCELLED", "REJECTED"].includes(rs) || ["CANCELLED", "ADMIN_CANCELLED"].includes(dp)) return rs || "CANCELLED";
+  if (dp === "ON_THE_WAY_TO_CUSTOMER") return "ON_THE_WAY_TO_CUSTOMER";
+  if (dp === "OUT_FOR_DELIVERY") return "OUT_FOR_DELIVERY";
+  if (dp === "PICKED_UP" || rs === "PICKED_UP") return "PICKED_UP";
+  if (dp === "REACHED_RESTAURANT") return "REACHED_RESTAURANT";
+  if (dp === "ON_THE_WAY_TO_RESTAURANT") return "ON_THE_WAY_TO_RESTAURANT";
+  if (dp === "ASSIGNED") return "ASSIGNED";
+  return rs || st || "NEW";
+};
+
+const STATUS_TERMINAL = new Set(["DELIVERED", "COMPLETED", "CANCELLED", "ADMIN_CANCELLED", "REJECTED"]);
+
 const StatusBadge = ({ status }) => {
   const statusMap = {
     NEW: { label: "New", color: "bg-indigo-50 text-indigo-700 ring-indigo-600/20" },
@@ -70,17 +88,24 @@ const StatusBadge = ({ status }) => {
     ACCEPTED: { label: "Accepted", color: "bg-blue-50 text-blue-700 ring-blue-600/20" },
     PREPARING: { label: "Preparing", color: "bg-sky-50 text-sky-700 ring-sky-600/20" },
     READY: { label: "Ready", color: "bg-cyan-50 text-cyan-700 ring-cyan-600/20" },
+    ASSIGNED: { label: "Assigned", color: "bg-violet-50 text-violet-700 ring-violet-600/20" },
+    ON_THE_WAY_TO_RESTAURANT: { label: "On The Way", color: "bg-yellow-50 text-yellow-700 ring-yellow-600/20" },
+    REACHED_RESTAURANT: { label: "Reached", color: "bg-yellow-50 text-yellow-700 ring-yellow-600/20" },
     PICKED_UP: { label: "Picked Up", color: "bg-purple-50 text-purple-700 ring-purple-600/20" },
+    OUT_FOR_DELIVERY: { label: "Out For Delivery", color: "bg-purple-50 text-purple-700 ring-purple-600/20" },
+    ON_THE_WAY_TO_CUSTOMER: { label: "On The Way", color: "bg-purple-50 text-purple-700 ring-purple-600/20" },
     DELIVERED: { label: "Delivered", color: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
-    COMPLETED: { label: "Completed", color: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
+    COMPLETED: { label: "Delivered", color: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
     CANCELLED: { label: "Cancelled", color: "bg-red-50 text-red-700 ring-red-600/20" },
+    ADMIN_CANCELLED: { label: "Cancelled", color: "bg-red-50 text-red-700 ring-red-600/20" },
+    REJECTED: { label: "Rejected", color: "bg-red-50 text-red-700 ring-red-600/20" },
     REFUNDED: { label: "Refunded", color: "bg-rose-50 text-rose-700 ring-rose-600/20" },
   };
   const s = (status || "").toUpperCase();
-  const info = statusMap[s] || { label: s, color: "bg-gray-50 text-gray-600 ring-gray-600/20" };
+  const info = statusMap[s] || { label: s.replace(/_/g, " "), color: "bg-gray-50 text-gray-600 ring-gray-600/20" };
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset ${info.color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${info.color.includes("emerald") ? "bg-emerald-500" : info.color.includes("red") ? "bg-red-500" : info.color.includes("indigo") ? "bg-indigo-500" : info.color.includes("blue") ? "bg-blue-500" : info.color.includes("orange") ? "bg-orange-500" : info.color.includes("amber") ? "bg-amber-500" : info.color.includes("purple") ? "bg-purple-500" : info.color.includes("rose") ? "bg-rose-500" : info.color.includes("sky") ? "bg-sky-500" : info.color.includes("cyan") ? "bg-cyan-500" : "bg-gray-400"}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${info.color.includes("emerald") ? "bg-emerald-500" : info.color.includes("red") ? "bg-red-500" : info.color.includes("indigo") ? "bg-indigo-500" : info.color.includes("blue") ? "bg-blue-500" : info.color.includes("orange") ? "bg-orange-500" : info.color.includes("amber") ? "bg-amber-500" : info.color.includes("purple") ? "bg-purple-500" : info.color.includes("violet") ? "bg-violet-500" : info.color.includes("rose") ? "bg-rose-500" : info.color.includes("sky") ? "bg-sky-500" : info.color.includes("yellow") ? "bg-yellow-500" : info.color.includes("cyan") ? "bg-cyan-500" : "bg-gray-400"}`} />
       {info.label}
     </span>
   );
@@ -175,7 +200,7 @@ const ActionMenu = ({ order, onView, onCancel, onDelete }) => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const isTerminal = ["DELIVERED", "COMPLETED", "CANCELLED"].includes((order.restaurantStatus || order.status || "").toUpperCase());
+  const isTerminal = STATUS_TERMINAL.has(resolveDisplayStatus(order));
 
   return (
     <div className="relative" ref={ref}>
@@ -260,7 +285,7 @@ const StatCard = ({ icon: Icon, label, value, color, sub, trend, onClick, isActi
 const MobileOrderCard = ({ order, onView, onCancel, onDelete, isHighlighted, confirmDeleteId, onDeleteConfirm, isDeleting }) => {
   const orderId = order.orderId || order.id;
   const customerInitial = (order.customer_name || order.customer || "G").charAt(0).toUpperCase();
-  const isTerminal = ["DELIVERED", "COMPLETED", "CANCELLED"].includes((order.restaurantStatus || order.status || "").toUpperCase());
+  const isTerminal = STATUS_TERMINAL.has(resolveDisplayStatus(order));
   const showingConfirm = confirmDeleteId === orderId;
 
   return (
@@ -280,7 +305,7 @@ const MobileOrderCard = ({ order, onView, onCancel, onDelete, isHighlighted, con
               #{orderId}
             </p>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <StatusBadge status={order.restaurantStatus || order.status} />
+              <StatusBadge status={resolveDisplayStatus(order)} />
             </div>
           </div>
         </div>
@@ -1420,7 +1445,7 @@ const OrdersList = () => {
 
                         {/* Status */}
                         <td className="px-4 py-3">
-                          <StatusBadge status={order.restaurantStatus || order.status} />
+                          <StatusBadge status={resolveDisplayStatus(order)} />
                         </td>
 
                         {/* Executive */}
