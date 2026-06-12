@@ -34,26 +34,10 @@ const CANCEL_REASONS = [
   { label: "Other", value: "other" },
 ];
 
-const parseBackendDate = (date, options = {}) => {
+const parseBackendDate = (date) => {
   if (!date) return null;
   if (date instanceof Date) return date;
-  const value = String(date).trim();
-  if (options.treatClockAsUtc) {
-    const clockDate = new Date(value);
-    if (!Number.isNaN(clockDate.getTime())) {
-      return new Date(Date.UTC(
-        clockDate.getFullYear(),
-        clockDate.getMonth(),
-        clockDate.getDate(),
-        clockDate.getHours(),
-        clockDate.getMinutes(),
-        clockDate.getSeconds(),
-        clockDate.getMilliseconds(),
-      ));
-    }
-    const utcClockValue = value.replace(/(?:z|[+-]\d{2}:?\d{2})$/i, "");
-    return new Date(`${utcClockValue}Z`);
-  }
+  const value = String(date);
   const hasTimezone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(value);
   return new Date(hasTimezone ? value : `${value}Z`);
 };
@@ -74,53 +58,6 @@ const formatDateTime = (d) => {
     timeZone: "Asia/Kolkata",
   });
 };
-
-const normalizeStatusTimestamp = (order, timestamp) => {
-  if (!timestamp) return timestamp;
-  const parsed = parseBackendDate(timestamp);
-  const placedAt = parseBackendDate(order?.time || order?.createdAt);
-  const utcClockDate = parseBackendDate(timestamp, { treatClockAsUtc: true });
-
-  const parsedHour = parsed
-    ? Number(parsed.toLocaleString("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }))
-    : null;
-  const utcClockHour = utcClockDate
-    ? Number(utcClockDate.toLocaleString("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }))
-    : null;
-  const looksLikeUtcClockStoredAsIst =
-    parsedHour !== null &&
-    utcClockHour !== null &&
-    parsedHour < 10 &&
-    utcClockHour >= 12;
-
-  if (
-    parsed &&
-    placedAt &&
-    utcClockDate &&
-    !Number.isNaN(parsed.getTime()) &&
-    !Number.isNaN(placedAt.getTime()) &&
-    !Number.isNaN(utcClockDate.getTime()) &&
-    parsed < placedAt &&
-    utcClockDate >= placedAt
-  ) {
-    return utcClockDate.toISOString();
-  }
-
-  if (
-    parsed &&
-    utcClockDate &&
-    !Number.isNaN(parsed.getTime()) &&
-    !Number.isNaN(utcClockDate.getTime()) &&
-    looksLikeUtcClockStoredAsIst
-  ) {
-    return utcClockDate.toISOString();
-  }
-
-  return timestamp;
-};
-
-const formatStatusDateTime = (order, timestamp) =>
-  formatDateTime(normalizeStatusTimestamp(order, timestamp));
 
 const getStoredOrderTotal = (order = {}) =>
   Number(order.priceSummary?.total ?? order.price ?? order.totalAmount ?? 0) || 0;
@@ -176,26 +113,8 @@ const ORDER_STATUS_TOOLTIP_MESSAGES = {
   FAILED: "Order failed.",
 };
 
-const appendStatusTime = (message, timestamp, order) =>
-  timestamp ? `${message} ${formatStatusDateTime(order, timestamp)}` : message;
-
-const getTimelineEntry = (timeline = [], statuses = []) => {
-  const statusSet = new Set(statuses.map((item) => String(item).toUpperCase()));
-  return timeline.find((entry) => statusSet.has(String(entry?.status || "").toUpperCase()));
-};
-
 const getOrderStatusTooltip = (order) => {
   const status = resolveDisplayStatus(order);
-  const timeline =
-    Array.isArray(order?.orderTimeline)
-      ? order.orderTimeline
-      : Array.isArray(order?.statusTimeline)
-        ? order.statusTimeline
-        : Array.isArray(order?.status_timeline)
-          ? order.status_timeline
-          : [];
-  const statusEntry = getTimelineEntry(timeline, [status]);
-  const statusTimestamp = statusEntry?.timestamp || order?.updatedAt || order?.lastUpdated || order?.time || order?.createdAt;
 
   if (status === "REJECTED") {
     const reason =
@@ -209,15 +128,10 @@ const getOrderStatusTooltip = (order) => {
       order?.cancel_reason ||
       order?.reason ||
       "";
-    return appendStatusTime(
-      `Rejected: ${reason || "No reason provided."}`,
-      statusTimestamp,
-      order,
-    );
+    return `Rejected: ${reason || "No reason provided."}`;
   }
 
   if (status === "DELIVERED" || status === "COMPLETED") {
-    const deliveredEntry = getTimelineEntry(timeline, ["DELIVERED"]);
     const executiveName =
       order?.deliveryPartnerInformation?.name ||
       order?.deliveryPartnerName ||
@@ -226,16 +140,10 @@ const getOrderStatusTooltip = (order) => {
       order?.fleet_name ||
       order?.partner_name ||
       "the assigned delivery executive";
-    const deliveredAt = deliveredEntry?.timestamp || statusTimestamp || order?.deliveredAt || order?.delivered_at || order?.time;
-    const timeText = deliveredAt ? ` - ${formatStatusDateTime(order, deliveredAt)}` : "";
-    return `Delivered by ${executiveName}${timeText}`;
+    return `Delivered by ${executiveName}`;
   }
 
-  return appendStatusTime(
-    ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, " ").toLowerCase(),
-    statusTimestamp,
-    order,
-  );
+  return ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, " ").toLowerCase();
 };
 
 const StatusBadge = ({ status, tooltip, disabledTooltip = false }) => {
@@ -268,13 +176,8 @@ const StatusBadge = ({ status, tooltip, disabledTooltip = false }) => {
         {info.label}
       </span>
       {tooltip && !disabledTooltip && (
-        <span className="pointer-events-none absolute left-1/2 top-full z-[80] mt-2 w-56 -translate-x-1/2 whitespace-normal rounded-xl border border-gray-200 bg-white p-2.5 text-left opacity-0 shadow-lg shadow-gray-200/60 transition-opacity duration-150 group-hover:opacity-100">
-          <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-            Status Update
-          </span>
-          <span className="mt-1 block text-[11px] font-medium leading-snug text-gray-700">
-            {tooltip}
-          </span>
+        <span className="pointer-events-none absolute left-full top-1/2 z-[80] ml-2 -translate-y-1/2 w-max max-w-[200px] whitespace-normal rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[10px] font-medium leading-snug text-gray-700 opacity-0 shadow-md shadow-gray-200/60 transition-opacity duration-100 group-hover:opacity-100">
+          {tooltip}
         </span>
       )}
     </span>
@@ -597,24 +500,24 @@ const OrdersList = () => {
   });
   const [statsTrend, setStatsTrend] = useState({});
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setIsPageScrolling(true);
-      if (scrollEndTimerRef.current) window.clearTimeout(scrollEndTimerRef.current);
-      scrollEndTimerRef.current = window.setTimeout(() => setIsPageScrolling(false), 160);
-    };
+  const suppressHoverTooltips = useCallback(() => {
+    setIsPageScrolling(true);
+    if (scrollEndTimerRef.current) window.clearTimeout(scrollEndTimerRef.current);
+    scrollEndTimerRef.current = window.setTimeout(() => setIsPageScrolling(false), 420);
+  }, []);
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    window.addEventListener("wheel", handleScroll, { passive: true });
-    window.addEventListener("touchmove", handleScroll, { passive: true });
+  useEffect(() => {
+    window.addEventListener("scroll", suppressHoverTooltips, { passive: true });
+    window.addEventListener("wheel", suppressHoverTooltips, { passive: true });
+    window.addEventListener("touchmove", suppressHoverTooltips, { passive: true });
 
     return () => {
-      window.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("wheel", handleScroll);
-      window.removeEventListener("touchmove", handleScroll);
+      window.removeEventListener("scroll", suppressHoverTooltips);
+      window.removeEventListener("wheel", suppressHoverTooltips);
+      window.removeEventListener("touchmove", suppressHoverTooltips);
       if (scrollEndTimerRef.current) window.clearTimeout(scrollEndTimerRef.current);
     };
-  }, []);
+  }, [suppressHoverTooltips]);
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [restaurantFilter, setRestaurantFilter] = useState("all");
@@ -1528,7 +1431,11 @@ const OrdersList = () => {
       ) : (
         <>
           {/* ── Desktop Table ── */}
-          <div className="hidden md:block bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div
+            className="hidden md:block bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden"
+            onWheelCapture={suppressHoverTooltips}
+            onTouchMoveCapture={suppressHoverTooltips}
+          >
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -1703,7 +1610,11 @@ const OrdersList = () => {
           </div>
 
           {/* ── Mobile Card View ── */}
-          <div className="md:hidden space-y-3">
+          <div
+            className="md:hidden space-y-3"
+            onWheelCapture={suppressHoverTooltips}
+            onTouchMoveCapture={suppressHoverTooltips}
+          >
             {orders.map((order, idx) => (
               <MobileOrderCard
                 key={order.orderId || order.id || idx}

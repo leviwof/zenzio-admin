@@ -144,28 +144,12 @@ const CANCEL_REASONS = [
   { label: "Other", value: "other" },
 ];
 
-const parseBackendDate = (date, options = {}) => {
+const parseBackendDate = (date) => {
   if (!date) return null;
   if (date instanceof Date) return date;
   const value = String(date).trim();
-  if (options.treatClockAsUtc) {
-    const clockDate = new Date(value);
-    if (!Number.isNaN(clockDate.getTime())) {
-      return new Date(Date.UTC(
-        clockDate.getFullYear(),
-        clockDate.getMonth(),
-        clockDate.getDate(),
-        clockDate.getHours(),
-        clockDate.getMinutes(),
-        clockDate.getSeconds(),
-        clockDate.getMilliseconds(),
-      ));
-    }
-    const utcClockValue = value.replace(/(?:z|[+-]\d{2}:?\d{2})$/i, '');
-    return new Date(`${utcClockValue}Z`);
-  }
   const hasTimezone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(value);
-  return new Date(hasTimezone ? value : `${value}Z`);
+  return new Date(hasTimezone ? value : value.replace(' ', 'T'));
 };
 
 const formatDateTime = (date) => {
@@ -188,53 +172,6 @@ const formatTime = (date) => {
     timeZone: 'Asia/Kolkata',
   });
 };
-
-const normalizeStatusTimestamp = (order, timestamp) => {
-  if (!timestamp) return timestamp;
-  const parsed = parseBackendDate(timestamp);
-  const placedAt = parseBackendDate(order?.orderSummary?.orderPlacement || order?.time || order?.createdAt);
-  const utcClockDate = parseBackendDate(timestamp, { treatClockAsUtc: true });
-
-  const parsedHour = parsed
-    ? Number(parsed.toLocaleString('en-IN', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }))
-    : null;
-  const utcClockHour = utcClockDate
-    ? Number(utcClockDate.toLocaleString('en-IN', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }))
-    : null;
-  const looksLikeUtcClockStoredAsIst =
-    parsedHour !== null &&
-    utcClockHour !== null &&
-    parsedHour < 10 &&
-    utcClockHour >= 12;
-
-  if (
-    parsed &&
-    placedAt &&
-    utcClockDate &&
-    !Number.isNaN(parsed.getTime()) &&
-    !Number.isNaN(placedAt.getTime()) &&
-    !Number.isNaN(utcClockDate.getTime()) &&
-    parsed < placedAt &&
-    utcClockDate >= placedAt
-  ) {
-    return utcClockDate.toISOString();
-  }
-
-  if (
-    parsed &&
-    utcClockDate &&
-    !Number.isNaN(parsed.getTime()) &&
-    !Number.isNaN(utcClockDate.getTime()) &&
-    looksLikeUtcClockStoredAsIst
-  ) {
-    return utcClockDate.toISOString();
-  }
-
-  return timestamp;
-};
-
-const formatStatusDateTime = (order, timestamp) =>
-  formatDateTime(normalizeStatusTimestamp(order, timestamp));
 
 const formatRelativeTime = (dateStr) => {
   if (!dateStr) return '';
@@ -378,46 +315,26 @@ const ORDER_STATUS_TOOLTIP_MESSAGES = {
   PENDING_PAYMENT: 'Waiting for payment.',
 };
 
-const appendStatusTime = (message, timestamp, order) =>
-  timestamp ? `${message} ${formatStatusDateTime(order, timestamp)}` : message;
-
 const getOrderStatusTooltip = (order, currentStatus, timeline = []) => {
   if (!order) return '';
   const status = String(currentStatus || '').toUpperCase();
-  const statusEntry = getTimelineEntry(timeline, [status]);
-  const statusTimestamp = statusEntry?.timestamp || order?.lastUpdated || order?.updatedAt;
 
   if (status === 'REJECTED') {
     const reason = getRejectionReason(order, timeline);
-    return appendStatusTime(
-      `Rejected: ${reason || 'No reason provided.'}`,
-      statusTimestamp,
-      order,
-    );
+    return `Rejected: ${reason || 'No reason provided.'}`;
   }
 
   if (status === 'DELIVERED' || status === 'COMPLETED') {
-    const deliveredEntry = getTimelineEntry(timeline, ['DELIVERED']);
-    const deliveredAt =
-      deliveredEntry?.timestamp ||
-      statusTimestamp ||
-      order?.deliveredAt ||
-      order?.delivered_at;
     const executiveName =
       order?.deliveryPartnerInformation?.name ||
       order?.deliveryPartnerInformation?.fullName ||
       order?.partner?.label ||
       order?.partner?.name ||
       'the assigned delivery executive';
-    const timeText = deliveredAt ? ` - ${formatStatusDateTime(order, deliveredAt)}` : '';
-    return `Delivered by ${executiveName}${timeText}`;
+    return `Delivered by ${executiveName}`;
   }
 
-  return appendStatusTime(
-    ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, ' ').toLowerCase(),
-    statusTimestamp,
-    order,
-  );
+  return ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, ' ').toLowerCase();
 };
 
 const getFreeOfferItems = (order) => {
@@ -645,39 +562,19 @@ const OrderDetails = () => {
     const currentStatus = getCurrentOrderStatus(orderData);
     const currentIndex = ORDER_TIMELINE_STEPS.findIndex((step) => step.status === currentStatus);
     const completedUntil = currentIndex >= 0 ? currentIndex : -1;
-    const fallbackTimestamp = orderData?.lastUpdated || orderData?.updatedAt || orderData?.orderSummary?.orderPlacement || orderData?.createdAt;
+    const orderPlacementTimestamp = orderData?.orderSummary?.orderPlacement || orderData?.time || orderData?.createdAt;
 
-    const timeline = ORDER_TIMELINE_STEPS.map((step, index) => {
+    return ORDER_TIMELINE_STEPS.map((step, index) => {
       const backendItem = timelineByStatus[step.status];
       const isCompleted = Boolean(backendItem?.timestamp) || (completedUntil >= 0 && index <= completedUntil);
+      const timestamp = backendItem?.timestamp || (step.status === 'PLACED' ? orderPlacementTimestamp : null);
       return {
         status: step.status,
         message: backendItem?.message || step.message,
-        timestamp: backendItem?.timestamp || (isCompleted ? fallbackTimestamp : null),
+        timestamp,
+        isCompleted,
+        isCurrent: index === currentIndex,
       };
-    });
-
-    let previousCompletedTime = null;
-    return timeline.map((step) => {
-      if (!step.timestamp) return step;
-
-      const parsed = parseBackendDate(step.timestamp);
-      if (!parsed || Number.isNaN(parsed.getTime())) return step;
-
-      let correctedDate = parsed;
-      if (previousCompletedTime && parsed < previousCompletedTime) {
-        const utcClockDate = parseBackendDate(step.timestamp, { treatClockAsUtc: true });
-        const canUseUtcClock =
-          utcClockDate &&
-          !Number.isNaN(utcClockDate.getTime()) &&
-          utcClockDate >= previousCompletedTime &&
-          utcClockDate.getTime() - previousCompletedTime.getTime() <= 6 * 60 * 60 * 1000;
-
-        correctedDate = canUseUtcClock ? utcClockDate : previousCompletedTime;
-      }
-
-      previousCompletedTime = correctedDate;
-      return { ...step, timestamp: correctedDate.toISOString() };
     });
   };
 
@@ -940,7 +837,7 @@ const OrderDetails = () => {
     (orderTimeline || []).forEach(step => { timelineByStatus[step.status] = step; });
     return LIFECYCLE_STEPS.map((step, i) => {
       const matched = timelineByStatus[step.status];
-      const isCompleted = Boolean(matched?.timestamp);
+      const isCompleted = Boolean(matched?.isCompleted || matched?.timestamp);
       const isCurrent = i === idx && !isCancelled;
       return { ...step, timestamp: matched?.timestamp || null, isCompleted, isCurrent };
     });
