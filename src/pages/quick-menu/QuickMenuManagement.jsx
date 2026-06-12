@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Edit2,
   GripVertical,
   Image as ImageIcon,
@@ -27,12 +28,34 @@ import {
 
 const PAGE_SIZE = 10;
 
+const ALL_DAYS = [
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+  { key: 'sun', label: 'Sun' },
+];
+
 const emptyForm = {
   menu_name: '',
   search_keyword: '',
-  priority: '',
   is_active: true,
   image: null,
+  schedule_enabled: false,
+  schedule_start: '07:00',
+  schedule_end: '23:00',
+  days_enabled: false,
+  schedule_days: [],
+};
+
+const formatSchedule = (quickMenu) => {
+  if (!quickMenu.schedule_start || !quickMenu.schedule_end) return null;
+  const days = Array.isArray(quickMenu.schedule_days) && quickMenu.schedule_days.length
+    ? quickMenu.schedule_days.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')
+    : 'All days';
+  return { time: `${quickMenu.schedule_start} – ${quickMenu.schedule_end}`, days };
 };
 
 const QuickMenuManagement = () => {
@@ -104,21 +127,24 @@ const QuickMenuManagement = () => {
 
   const openCreateModal = () => {
     setEditingMenu(null);
-    setFormData({
-      ...emptyForm,
-      priority: String((meta.total || 0) + 1),
-    });
+    setFormData({ ...emptyForm });
     setModalOpen(true);
   };
 
   const openEditModal = (quickMenu) => {
+    const hasSchedule = Boolean(quickMenu.schedule_start && quickMenu.schedule_end);
+    const hasDays = Array.isArray(quickMenu.schedule_days) && quickMenu.schedule_days.length > 0;
     setEditingMenu(quickMenu);
     setFormData({
       menu_name: quickMenu.menu_name || '',
       search_keyword: quickMenu.search_keyword || '',
-      priority: String(quickMenu.priority || ''),
       is_active: Boolean(quickMenu.is_active),
       image: null,
+      schedule_enabled: hasSchedule,
+      schedule_start: quickMenu.schedule_start || '07:00',
+      schedule_end: quickMenu.schedule_end || '23:00',
+      days_enabled: hasDays,
+      schedule_days: hasDays ? [...quickMenu.schedule_days] : [],
     });
     setModalOpen(true);
   };
@@ -140,12 +166,6 @@ const QuickMenuManagement = () => {
       return false;
     }
 
-    const priority = Number(formData.priority);
-    if (!Number.isInteger(priority) || priority < 1) {
-      toast.error('Priority must be a positive number');
-      return false;
-    }
-
     if (!editingMenu && !formData.image) {
       toast.error('Menu image is required');
       return false;
@@ -158,9 +178,22 @@ const QuickMenuManagement = () => {
     const payload = new FormData();
     payload.append('menu_name', formData.menu_name.trim());
     payload.append('search_keyword', formData.search_keyword.trim());
-    payload.append('priority', formData.priority);
     payload.append('is_active', String(formData.is_active));
     if (formData.image) payload.append('image', formData.image);
+
+    if (formData.schedule_enabled) {
+      payload.append('schedule_start', formData.schedule_start);
+      payload.append('schedule_end', formData.schedule_end);
+      const days = formData.days_enabled && formData.schedule_days.length
+        ? JSON.stringify(formData.schedule_days)
+        : 'null';
+      payload.append('schedule_days', days);
+    } else {
+      payload.append('schedule_start', '');
+      payload.append('schedule_end', '');
+      payload.append('schedule_days', 'null');
+    }
+
     return payload;
   };
 
@@ -354,13 +387,14 @@ const QuickMenuManagement = () => {
 
         <div className="overflow-hidden rounded-lg bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[840px]">
+            <table className="w-full min-w-[1000px]">
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Priority</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Menu Image</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Menu Name</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Search Keyword</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Schedule</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
                   <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
                 </tr>
@@ -368,14 +402,14 @@ const QuickMenuManagement = () => {
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
                       <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-red-500" />
                       Loading quick menus...
                     </td>
                   </tr>
                 ) : quickMenus.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
                       <ImageIcon className="mx-auto mb-2 h-8 w-8 text-gray-300" />
                       No quick menus found.
                     </td>
@@ -419,6 +453,26 @@ const QuickMenuManagement = () => {
                         <p className="font-medium text-gray-900">{quickMenu.menu_name}</p>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{quickMenu.search_keyword}</td>
+                      <td className="px-6 py-4">
+                        {(() => {
+                          const sched = formatSchedule(quickMenu);
+                          if (!sched) {
+                            return <span className="text-xs text-gray-400">Always</span>;
+                          }
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <span className={`inline-flex items-center gap-1 text-xs font-medium ${quickMenu.is_schedule_active ? 'text-indigo-700' : 'text-gray-400'}`}>
+                                <Clock size={12} />
+                                {sched.time}
+                              </span>
+                              <span className="text-[11px] text-gray-400">{sched.days}</span>
+                              {!quickMenu.is_schedule_active && (
+                                <span className="text-[10px] text-amber-600 font-medium">Outside window</span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                           quickMenu.is_active
@@ -549,16 +603,90 @@ const QuickMenuManagement = () => {
                 />
               </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={formData.priority}
-                  onChange={(event) => setFormData((current) => ({ ...current, priority: event.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                />
+              {/* Schedule Section */}
+              <div className="rounded-lg border border-gray-200 p-4 space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.schedule_enabled}
+                    onChange={(e) => setFormData((c) => ({ ...c, schedule_enabled: e.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300 text-red-500 focus:ring-red-500"
+                  />
+                  <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <Clock size={15} className="text-indigo-500" />
+                    Enable Time Schedule
+                  </span>
+                </label>
+
+                {formData.schedule_enabled && (
+                  <div className="space-y-4 pl-7">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">Start Time</label>
+                        <input
+                          type="time"
+                          value={formData.schedule_start}
+                          onChange={(e) => setFormData((c) => ({ ...c, schedule_start: e.target.value }))}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">End Time</label>
+                        <input
+                          type="time"
+                          value={formData.schedule_end}
+                          onChange={(e) => setFormData((c) => ({ ...c, schedule_end: e.target.value }))}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        />
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.days_enabled}
+                        onChange={(e) => setFormData((c) => ({ ...c, days_enabled: e.target.checked, schedule_days: e.target.checked ? c.schedule_days : [] }))}
+                        className="h-4 w-4 rounded border-gray-300 text-red-500 focus:ring-red-500"
+                      />
+                      <span className="text-xs font-medium text-gray-600">Specific days only</span>
+                    </label>
+
+                    {formData.days_enabled && (
+                      <div className="flex flex-wrap gap-2">
+                        {ALL_DAYS.map((day) => {
+                          const selected = formData.schedule_days.includes(day.key);
+                          return (
+                            <button
+                              key={day.key}
+                              type="button"
+                              onClick={() => setFormData((c) => ({
+                                ...c,
+                                schedule_days: selected
+                                  ? c.schedule_days.filter((d) => d !== day.key)
+                                  : [...c.schedule_days, day.key],
+                              }))}
+                              className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                                selected
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              {day.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <p className="text-[11px] text-gray-400 flex items-center gap-1">
+                      <Clock size={11} />
+                      Visible to customers only between {formData.schedule_start} and {formData.schedule_end} IST
+                      {formData.days_enabled && formData.schedule_days.length > 0 && (
+                        <> on {formData.schedule_days.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}</>
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
