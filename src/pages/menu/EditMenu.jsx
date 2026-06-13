@@ -73,6 +73,9 @@ const EditMenu = () => {
     );
 
     const getMenuListState = (restaurantUid = location.state?.selectedRestaurant || restaurantFromUrl || formData.restaurant_uid) => (
+        returnToPath
+            ? undefined
+            :
         restaurantUid
             ? {
                 selectedRestaurant: restaurantUid,
@@ -315,11 +318,11 @@ const EditMenu = () => {
             // Show success message for 1 seconds, then go back
             setTimeout(() => {
                 const selectedRestaurant = location.state?.selectedRestaurant || restaurantFromUrl || formData.restaurant_uid;
+                const menuListState = getMenuListState(selectedRestaurant);
                 navigate(getMenuListPath(selectedRestaurant), {
-                    state: {
-                        ...getMenuListState(selectedRestaurant),
-                        updatedMenuUid: menuUid,
-                    },
+                    state: menuListState
+                        ? { ...menuListState, updatedMenuUid: menuUid }
+                        : { updatedMenuUid: menuUid },
                 });
             }, 1000);
 
