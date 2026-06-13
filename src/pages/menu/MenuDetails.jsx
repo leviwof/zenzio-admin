@@ -140,7 +140,9 @@ const MenuDetails = () => {
   const menuListPath = selectedRestaurantUid
     ? (returnToPath || `/menu?restaurant=${encodeURIComponent(selectedRestaurantUid)}`)
     : (returnToPath || '/menu');
-  const menuListState = selectedRestaurantUid
+  const menuListState = returnToPath
+    ? undefined
+    : selectedRestaurantUid
     ? {
         selectedRestaurant: selectedRestaurantUid,
         selectedRestaurantName: location.state?.selectedRestaurantName || detailSearchParams.get('name') || undefined,
