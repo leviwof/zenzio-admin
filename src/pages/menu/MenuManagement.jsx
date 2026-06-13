@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Download, Edit, Trash2, Loader2, AlertCircle,
@@ -212,60 +212,87 @@ const StatCard = ({ icon: Icon, label, value, color, sub }) => (
 const MenuManagement = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const restaurantAdmin = isRestaurantAdmin();
   const ownRestaurantUid = getCurrentRestaurantUid();
   const searchInputRef = useRef(null);
 
+  // ── UI-only state ──
   const [menus, setMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
-
-  const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-
-  const [pagination, setPagination] = useState({
-    total: 0,
-    page: 1,
-    limit: 10,
-    totalPages: 1,
-  });
-
+  const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 10, totalPages: 1 });
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ show: false, menu: null });
   const [blockModal, setBlockModal] = useState({ show: false, menu: null, isCurrentlyAvailable: false });
   const [blockLoading, setBlockLoading] = useState(false);
   const [toggleLoading, setToggleLoading] = useState({});
-
   const [restaurants, setRestaurants] = useState([]);
   const [restaurantDropdownOpen, setRestaurantDropdownOpen] = useState(false);
   const [restaurantSearch, setRestaurantSearch] = useState('');
-
-  const [sortBy, setSortBy] = useState('updatedAt');
-  const [sortOrder, setSortOrder] = useState('DESC');
-
-  const restaurantFromUrl = new URLSearchParams(location.search).get('restaurant');
-  const restaurantFromState = location.state?.selectedRestaurant;
-  const [restaurantFilter, setRestaurantFilter] = useState(
-    restaurantAdmin ? 'all' : (restaurantFromState || restaurantFromUrl || 'all')
-  );
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [cuisineFilter, setCuisineFilter] = useState('all');
-  const [foodTypeFilter, setFoodTypeFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [availFilter, setAvailFilter] = useState('all');
-  const [bestsellerFilter, setBestsellerFilter] = useState('all');
-  const [mealTypeFilter, setMealTypeFilter] = useState('all');
-  const [priceMinFilter, setPriceMinFilter] = useState('');
-  const [priceMaxFilter, setPriceMaxFilter] = useState('');
-  const [ratingFilter, setRatingFilter] = useState('all');
-  const [fromDateFilter, setFromDateFilter] = useState('');
-  const [toDateFilter, setToDateFilter] = useState('');
-
   const [categories, setCategories] = useState([]);
   const [cuisines, setCuisines] = useState([]);
+
+  // ── URL-persisted state (page, filters, sort, search) ──
+  const currentPage      = Number(searchParams.get('page'))      || 1;
+  const itemsPerPage     = Number(searchParams.get('limit'))     || 10;
+  const sortBy           = searchParams.get('sort')              || 'updatedAt';
+  const sortOrder        = searchParams.get('sortOrder')         || 'DESC';
+  const restaurantFilter = restaurantAdmin ? 'all' : (searchParams.get('restaurant') || location.state?.selectedRestaurant || 'all');
+  const categoryFilter   = searchParams.get('category')          || 'all';
+  const cuisineFilter    = searchParams.get('cuisine')           || 'all';
+  const foodTypeFilter   = searchParams.get('foodType')          || 'all';
+  const statusFilter     = searchParams.get('status')            || 'all';
+  const availFilter      = searchParams.get('avail')             || 'all';
+  const bestsellerFilter = searchParams.get('bestseller')        || 'all';
+  const mealTypeFilter   = searchParams.get('mealType')          || 'all';
+  const priceMinFilter   = searchParams.get('priceMin')          || '';
+  const priceMaxFilter   = searchParams.get('priceMax')          || '';
+  const ratingFilter     = searchParams.get('rating')            || 'all';
+  const fromDateFilter   = searchParams.get('fromDate')          || '';
+  const toDateFilter     = searchParams.get('toDate')            || '';
+  const debouncedSearch  = searchParams.get('search')            || '';
+
+  // searchTerm drives the input; syncs to URL after 300 ms debounce
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
+  const skipSearchUrlSyncRef = useRef(false);
+
+  // ── Atomic URL param updater (preserves unrelated params) ──
+  const setUrlParams = useCallback((updates) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value === null || value === undefined || value === '' || value === 'all') {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      });
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const setCurrentPage      = (page) => {
+    const p = typeof page === 'function' ? page(currentPage) : page;
+    setUrlParams({ page: p <= 1 ? null : p });
+  };
+  const setItemsPerPage     = (v) => setUrlParams({ limit: v === 10 ? null : v, page: null });
+  const setSortBy           = (v) => setUrlParams({ sort: v === 'updatedAt' ? null : v, page: null });
+  const setSortOrder        = (v) => setUrlParams({ sortOrder: v === 'DESC' ? null : v });
+  const setRestaurantFilter = (v) => setUrlParams({ restaurant: v, page: null });
+  const setCategoryFilter   = (v) => setUrlParams({ category: v, page: null });
+  const setCuisineFilter    = (v) => setUrlParams({ cuisine: v, page: null });
+  const setFoodTypeFilter   = (v) => setUrlParams({ foodType: v, page: null });
+  const setStatusFilter     = (v) => setUrlParams({ status: v, page: null });
+  const setAvailFilter      = (v) => setUrlParams({ avail: v, page: null });
+  const setBestsellerFilter = (v) => setUrlParams({ bestseller: v, page: null });
+  const setMealTypeFilter   = (v) => setUrlParams({ mealType: v, page: null });
+  const setPriceMinFilter   = (v) => setUrlParams({ priceMin: v || null, page: null });
+  const setPriceMaxFilter   = (v) => setUrlParams({ priceMax: v || null, page: null });
+  const setRatingFilter     = (v) => setUrlParams({ rating: v, page: null });
+  const setFromDateFilter   = (v) => setUrlParams({ fromDate: v || null, page: null });
+  const setToDateFilter     = (v) => setUrlParams({ toDate: v || null, page: null });
 
   const hasActiveFilters = debouncedSearch ||
     restaurantFilter !== 'all' || categoryFilter !== 'all' || cuisineFilter !== 'all' ||
@@ -273,28 +300,32 @@ const MenuManagement = () => {
     bestsellerFilter !== 'all' || mealTypeFilter !== 'all' || priceMinFilter || priceMaxFilter ||
     ratingFilter !== 'all' || fromDateFilter || toDateFilter;
 
+  // ── Debounced search → URL ──
+  const isFirstSearch = useRef(true);
   useEffect(() => {
-    fetchRestaurantsList();
-  }, []);
+    const nextSearch = searchParams.get('search') || '';
+    setSearchTerm((prev) => {
+      if (prev === nextSearch) return prev;
+      skipSearchUrlSyncRef.current = true;
+      return nextSearch;
+    });
+  }, [debouncedSearch]);
 
   useEffect(() => {
-    if (restaurantAdmin) return;
-    const params = new URLSearchParams(location.search);
-    const fromUrl = params.get('restaurant');
-    const fromState = location.state?.selectedRestaurant;
-    const target = fromState || fromUrl || 'all';
-    if (target !== restaurantFilter) {
-      setRestaurantFilter(target);
+    if (isFirstSearch.current) { isFirstSearch.current = false; return; }
+    if (skipSearchUrlSyncRef.current) {
+      skipSearchUrlSyncRef.current = false;
+      return;
     }
-  }, [location.search, location.state?.selectedRestaurant]);
-
-  useEffect(() => {
     const t = setTimeout(() => {
-      setDebouncedSearch(searchTerm);
-      setCurrentPage(1);
+      setUrlParams({ search: searchTerm.trim() || null, page: null });
     }, 300);
     return () => clearTimeout(t);
   }, [searchTerm]);
+
+  useEffect(() => {
+    fetchRestaurantsList();
+  }, []);
 
   const fetchRestaurantsList = async () => {
     if (restaurantAdmin) {
@@ -437,14 +468,21 @@ const MenuManagement = () => {
     return `${basePath}?${params.toString()}`;
   };
 
+  const withReturnTo = (path) => {
+    const returnTo = `${location.pathname}${location.search}`;
+    const [pathname, query = ''] = path.split('?');
+    const params = new URLSearchParams(query);
+    params.set('returnTo', returnTo);
+    return `${pathname}?${params.toString()}`;
+  };
+
   const handleSort = (column) => {
-    if (sortBy === column) {
-      setSortOrder((prev) => (prev === 'ASC' ? 'DESC' : 'ASC'));
-    } else {
-      setSortBy(column);
-      setSortOrder('DESC');
-    }
-    setCurrentPage(1);
+    const newOrder = sortBy === column ? (sortOrder === 'ASC' ? 'DESC' : 'ASC') : 'DESC';
+    setUrlParams({
+      sort: column === 'updatedAt' ? null : column,
+      sortOrder: newOrder === 'DESC' ? null : newOrder,
+      page: null,
+    });
   };
 
   const SortHeader = ({ column, label, className }) => {
@@ -633,20 +671,24 @@ const MenuManagement = () => {
 
   const handleView = (menu) => {
     const selectedRestaurant = restaurantFilter !== 'all' ? restaurantFilter : undefined;
-    navigate(getRestaurantScopedPath(`/menu/view/${menu.menu_uid}`), {
+    const returnTo = `${location.pathname}${location.search}`;
+    navigate(withReturnTo(getRestaurantScopedPath(`/menu/view/${menu.menu_uid}`)), {
       state: {
         selectedRestaurant,
         selectedRestaurantName: selectedRestaurant ? getRestaurantName(selectedRestaurant) : undefined,
+        returnTo,
       }
     });
   };
 
   const handleEdit = (menu) => {
     const selectedRestaurant = restaurantFilter !== 'all' ? restaurantFilter : undefined;
-    navigate(getRestaurantScopedPath(`/menu/edit/${menu.menu_uid}`), {
+    const returnTo = `${location.pathname}${location.search}`;
+    navigate(withReturnTo(getRestaurantScopedPath(`/menu/edit/${menu.menu_uid}`)), {
       state: {
         selectedRestaurant,
         selectedRestaurantName: selectedRestaurant ? getRestaurantName(selectedRestaurant) : undefined,
+        returnTo,
       }
     });
   };
@@ -704,34 +746,15 @@ const MenuManagement = () => {
   };
 
   const handleRestaurantChange = (uid) => {
-    setRestaurantFilter(uid);
-    setCurrentPage(1);
+    setSearchParams(uid === 'all' ? new URLSearchParams() : new URLSearchParams({ restaurant: uid }), { replace: true });
     setSelectedIds(new Set());
     setRestaurantDropdownOpen(false);
     setRestaurantSearch('');
-    navigate(uid === 'all' ? '/menu' : `/menu?restaurant=${uid}`, { replace: true });
   };
 
   const resetFilters = () => {
+    setSearchParams(new URLSearchParams(), { replace: true });
     setSearchTerm('');
-    setDebouncedSearch('');
-    setRestaurantFilter('all');
-    setCategoryFilter('all');
-    setCuisineFilter('all');
-    setFoodTypeFilter('all');
-    setStatusFilter('all');
-    setAvailFilter('all');
-    setBestsellerFilter('all');
-    setMealTypeFilter('all');
-    setPriceMinFilter('');
-    setPriceMaxFilter('');
-    setRatingFilter('all');
-    setFromDateFilter('');
-    setToDateFilter('');
-    setCurrentPage(1);
-    setSortBy('updatedAt');
-    setSortOrder('DESC');
-    navigate('/menu', { replace: true });
     if (searchInputRef.current) searchInputRef.current.value = '';
   };
 
@@ -887,7 +910,7 @@ const MenuManagement = () => {
               <input
                 ref={searchInputRef}
                 type="text"
-                defaultValue={searchTerm}
+                value={searchTerm}
                 placeholder="Search by name, cuisine, category, restaurant..."
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-gray-50/50 hover:bg-white transition-colors placeholder:text-gray-400"
@@ -963,7 +986,7 @@ const MenuManagement = () => {
             <FilterDropdown
               label="Sort"
               icon={ArrowUpDown}
-              value={sortBy}
+              value={sortBy === 'updatedAt' ? 'updatedAt' : `${sortBy}_${sortOrder}`}
               options={[
                 { label: 'Last Updated', value: 'updatedAt' },
                 { label: 'Name (A-Z)', value: 'menu_name_ASC' },
@@ -978,13 +1001,10 @@ const MenuManagement = () => {
               onChange={(v) => {
                 if (v.includes('_')) {
                   const [col, order] = v.split('_');
-                  setSortBy(col);
-                  setSortOrder(order);
+                  setUrlParams({ sort: col === 'updatedAt' ? null : col, sortOrder: order === 'DESC' ? null : order, page: null });
                 } else {
-                  setSortBy(v);
-                  setSortOrder('DESC');
+                  setUrlParams({ sort: v === 'updatedAt' ? null : v, sortOrder: null, page: null });
                 }
-                setCurrentPage(1);
               }}
             />
 

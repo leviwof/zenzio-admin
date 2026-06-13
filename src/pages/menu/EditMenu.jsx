@@ -15,7 +15,12 @@ const EditMenu = () => {
     const topRef = useRef(null);
     const restaurantAdmin = isRestaurantAdmin();
     const ownRestaurantUid = getCurrentRestaurantUid();
-    const restaurantFromUrl = new URLSearchParams(location.search).get('restaurant');
+    const editSearchParams = new URLSearchParams(location.search);
+    const restaurantFromUrl = editSearchParams.get('restaurant');
+    const returnToParam = editSearchParams.get('returnTo');
+    const returnToPath = (location.state?.returnTo || returnToParam || '').startsWith('/menu')
+        ? (location.state?.returnTo || returnToParam)
+        : '';
 
     const [loading, setLoading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -64,7 +69,7 @@ const EditMenu = () => {
     const foodTypes = ['Veg', 'Non-Veg', 'Vegan', 'Egg'];
 
     const getMenuListPath = (restaurantUid = location.state?.selectedRestaurant || restaurantFromUrl || formData.restaurant_uid) => (
-        restaurantUid ? `/menu?restaurant=${encodeURIComponent(restaurantUid)}` : '/menu'
+        returnToPath || (restaurantUid ? `/menu?restaurant=${encodeURIComponent(restaurantUid)}` : '/menu')
     );
 
     const getMenuListState = (restaurantUid = location.state?.selectedRestaurant || restaurantFromUrl || formData.restaurant_uid) => (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Download, Edit3, MoreVertical, Trash2,
@@ -378,38 +378,81 @@ const MobileRestaurantCard = ({ restaurant, details, detailsLoading, selected, o
 // ─── Main Component ──────────────────────────────────
 const RestaurantsList = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const restaurantAdmin = isRestaurantAdmin();
   const ownRestaurantUid = getCurrentRestaurantUid();
   const searchInputRef = useRef(null);
 
-  // ── State ──
+  // ── UI-only state ──
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [toggleLoading, setToggleLoading] = useState({});
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState({});
   const [restaurantDetails, setRestaurantDetails] = useState({});
-
-  // Filters
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [cityFilter, setCityFilter] = useState("all");
-  const [ratingFilter, setRatingFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("name");
-
-  // Selection
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  // ── Debounced Search ──
+  // ── URL-persisted state (page, filters, sort, search) ──
+  const currentPage     = Number(searchParams.get("page"))   || 1;
+  const itemsPerPage    = Number(searchParams.get("limit"))  || 10;
+  const sortBy          = searchParams.get("sort")           || "name";
+  const statusFilter    = searchParams.get("status")        || "all";
+  const cityFilter      = searchParams.get("city")          || "all";
+  const ratingFilter    = searchParams.get("rating")        || "all";
+  const dateFilter      = searchParams.get("date")          || "all";
+  const debouncedSearch = searchParams.get("search")        || "";
+
+  // searchTerm drives the input; syncs to URL after 300 ms debounce
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get("search") || "");
+  const skipSearchUrlSyncRef = useRef(false);
+
+  // ── Atomic URL param updater (preserves unrelated params) ──
+  const setUrlParams = useCallback((updates) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value === null || value === undefined || value === "" || value === "all") {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      });
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const setCurrentPage  = (page) => {
+    const p = typeof page === "function" ? page(currentPage) : page;
+    setUrlParams({ page: p <= 1 ? null : p });
+  };
+  const setItemsPerPage = (v) => setUrlParams({ limit: v === 10 ? null : v, page: null });
+  const setSortBy       = (v) => setUrlParams({ sort: v === "name" ? null : v, page: null });
+  const setStatusFilter = (v) => setUrlParams({ status: v, page: null });
+  const setCityFilter   = (v) => setUrlParams({ city: v, page: null });
+  const setRatingFilter = (v) => setUrlParams({ rating: v, page: null });
+  const setDateFilter   = (v) => setUrlParams({ date: v, page: null });
+
+  // ── Debounced search → URL ──
+  const isFirstSearch = useRef(true);
   useEffect(() => {
+    const nextSearch = searchParams.get("search") || "";
+    setSearchTerm((prev) => {
+      if (prev === nextSearch) return prev;
+      skipSearchUrlSyncRef.current = true;
+      return nextSearch;
+    });
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    if (isFirstSearch.current) { isFirstSearch.current = false; return; }
+    if (skipSearchUrlSyncRef.current) {
+      skipSearchUrlSyncRef.current = false;
+      return;
+    }
     const t = setTimeout(() => {
-      setDebouncedSearch(searchTerm);
-      setCurrentPage(1);
+      setUrlParams({ search: searchTerm.trim() || null, page: null });
     }, 300);
     return () => clearTimeout(t);
   }, [searchTerm]);
@@ -650,7 +693,10 @@ const RestaurantsList = () => {
       toast.error("Invalid restaurant UID");
       return;
     }
-    navigate(`/restaurants/${restaurant.uid}`);
+    const returnTo = `${location.pathname}${location.search}`;
+    navigate(`/restaurants/${restaurant.uid}?returnTo=${encodeURIComponent(returnTo)}`, {
+      state: { returnTo },
+    });
   };
 
   const handleDeleteClick = (restaurant) => setDeleteTarget(restaurant);
@@ -735,13 +781,8 @@ const RestaurantsList = () => {
   };
 
   const resetFilters = () => {
-    setStatusFilter("all");
-    setCityFilter("all");
-    setRatingFilter("all");
-    setDateFilter("all");
+    setSearchParams(new URLSearchParams(), { replace: true });
     setSearchTerm("");
-    setDebouncedSearch("");
-    setCurrentPage(1);
     if (searchInputRef.current) searchInputRef.current.value = "";
   };
 
@@ -828,7 +869,7 @@ const RestaurantsList = () => {
               <input
                 ref={searchInputRef}
                 type="text"
-                defaultValue={searchTerm}
+                value={searchTerm}
                 placeholder="Search by name, city, email..."
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-gray-50/50 hover:bg-white transition-colors placeholder:text-gray-400"

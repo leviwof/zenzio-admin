@@ -127,18 +127,23 @@ const MenuDetails = () => {
     }
   };
 
-  const restaurantFromUrl = new URLSearchParams(location.search).get('restaurant');
+  const detailSearchParams = new URLSearchParams(location.search);
+  const returnToParam = detailSearchParams.get('returnTo');
+  const returnToPath = (location.state?.returnTo || returnToParam || '').startsWith('/menu')
+    ? (location.state?.returnTo || returnToParam)
+    : '';
+  const restaurantFromUrl = detailSearchParams.get('restaurant');
   const restaurantFromState = location.state?.selectedRestaurant;
   const selectedRestaurantUid = restaurantAdmin
     ? ownRestaurantUid
     : (restaurantFromState || restaurantFromUrl || menu?.restaurant_uid);
   const menuListPath = selectedRestaurantUid
-    ? `/menu?restaurant=${encodeURIComponent(selectedRestaurantUid)}`
-    : '/menu';
+    ? (returnToPath || `/menu?restaurant=${encodeURIComponent(selectedRestaurantUid)}`)
+    : (returnToPath || '/menu');
   const menuListState = selectedRestaurantUid
     ? {
         selectedRestaurant: selectedRestaurantUid,
-        selectedRestaurantName: location.state?.selectedRestaurantName || new URLSearchParams(location.search).get('name') || undefined,
+        selectedRestaurantName: location.state?.selectedRestaurantName || detailSearchParams.get('name') || undefined,
       }
     : undefined;
 
