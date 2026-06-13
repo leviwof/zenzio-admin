@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useLocation, useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Building2, Download, IndianRupee,
@@ -211,6 +211,7 @@ const buildMealTimesFromRestaurant = (restaurant) => {
 const RestaurantDetails = () => {
   const { uid } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const restaurantAdmin = isRestaurantAdmin()
   const ownRestaurantUid = getCurrentRestaurantUid()
 
@@ -243,6 +244,10 @@ const RestaurantDetails = () => {
 
   const displayEmail = restaurant?.profile?.contact_email || restaurant?.contact?.encryptedEmail || restaurant?.contact?.email || restaurant?.contact?.encryptedUsername || 'Not provided'
   const displayPhone = restaurant?.profile?.contact_number || restaurant?.contact?.encryptedPhone || restaurant?.contact?.phone || '-'
+  const returnToParam = new URLSearchParams(location.search).get('returnTo')
+  const restaurantListPath = (location.state?.returnTo || returnToParam || '').startsWith('/restaurants')
+    ? (location.state?.returnTo || returnToParam)
+    : '/restaurants'
 
   useEffect(() => {
     if (!uid || uid === 'undefined') { setError('Invalid restaurant ID'); setLoading(false); return }
@@ -633,7 +638,7 @@ const RestaurantDetails = () => {
             <AlertCircle size={48} className="text-red-400 mx-auto mb-4" />
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Restaurant Details</h2>
             <p className="text-sm text-gray-500 mb-6">{error || 'Restaurant not found'}</p>
-            <Button variant="primary" onClick={() => navigate('/restaurants')}>
+            <Button variant="primary" onClick={() => navigate(restaurantListPath)}>
               <ArrowLeft size={16} /> Back to List
             </Button>
           </CardContent>
@@ -648,7 +653,7 @@ const RestaurantDetails = () => {
     <div className="p-4 lg:p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/restaurants')} className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all">
+          <button onClick={() => navigate(restaurantListPath)} className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all">
             <ArrowLeft size={20} />
           </button>
           <div>
