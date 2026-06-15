@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const CreateCouponPage = ({ onClose, onSave, initialData }) => {
   const [makeActive, setMakeActive] = useState(false);
@@ -51,7 +52,7 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
   const handleSubmit = () => {
     // Basic validation
     if (!formData.code || !formData.name || !formData.discountValue || !formData.minOrderValue) {
-      alert("Please fill in all required fields (Name, Code, Discount, Min Order)");
+      toast.error('Please fill in all required fields (Name, Code, Discount, Min Order)');
       return;
     }
 

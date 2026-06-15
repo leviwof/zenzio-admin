@@ -10,6 +10,7 @@ import {
     Calendar, Clock, Users, IndianRupee, FileText, ImageIcon, CheckCircle, PartyPopper
 } from 'lucide-react';
 import { getAllRestaurants, createEventByAdmin } from '../../services/api';
+import toast from 'react-hot-toast';
 
 const AddEvent = () => {
     const navigate = useNavigate();
@@ -110,12 +111,12 @@ const AddEvent = () => {
         e.preventDefault();
 
         if (!formData.restaurant_id) {
-            alert('Please select a restaurant');
+            toast.error('Please select a restaurant');
             return;
         }
 
         if (!formData.name || !formData.date || !formData.startTime || !formData.endTime || !formData.price || !formData.capacity) {
-            alert('Please fill in all required fields');
+            toast.error('Please fill in all required fields');
             return;
         }
 
@@ -142,7 +143,7 @@ const AddEvent = () => {
 
         } catch (error) {
             console.error('Failed to create event:', error);
-            alert('Failed to create event: ' + (error.response?.data?.message || error.message));
+            toast.error(error.response?.data?.message || 'Failed to create event');
         } finally {
             setLoading(false);
         }

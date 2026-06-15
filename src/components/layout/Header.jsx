@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -587,7 +588,7 @@ const Header = ({ onLogout }) => {
               <button
                 onClick={async (e) => {
                   e.stopPropagation();
-                  alert('Desktop notifications are blocked in your browser. Please go to Site Settings > Notifications and set to "Allow".');
+                  toast.error('Notifications are blocked. Go to browser Site Settings → Notifications → Allow.');
                 }}
                 className="mr-1 px-2 py-1.5 rounded-xl bg-red-50 border border-red-200 text-[10px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
                 title="Notifications blocked — click for instructions"

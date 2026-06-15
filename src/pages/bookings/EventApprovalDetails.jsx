@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 import { getEventForApproval, approveEvent, rejectEvent } from '../../services/api';
+import toast from 'react-hot-toast';
 import { isRestaurantAdmin } from '../../utils/auth';
 
 const EventApprovalDetails = () => {
@@ -40,7 +41,7 @@ const EventApprovalDetails = () => {
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Failed to load event');
+      toast.error('Failed to load event');
     } finally {
       setLoading(false);
     }
@@ -48,38 +49,38 @@ const EventApprovalDetails = () => {
 
   const handleApprove = async () => {
     if (event.isAdminVerified) {
-      alert('Already approved!');
+      toast.error('Already approved');
       return;
     }
     if (!window.confirm('Approve this event?')) return;
 
     try {
       await approveEvent(id);
-      alert('Event approved!');
+      toast.success('Event approved');
       navigate('/bookings/approval');
     } catch (error) {
       console.error('Error:', error);
-      alert('Failed to approve');
+      toast.error('Failed to approve event');
     }
   };
 
   const handleReject = async () => {
     if (!rejectionReason.trim()) {
-      alert('Please provide a reason');
+      toast.error('Please provide a rejection reason');
       return;
     }
     if (!event.isActive && !event.isAdminVerified) {
-      alert('Already rejected!');
+      toast.error('Already rejected');
       return;
     }
 
     try {
       await rejectEvent(id, { reason: rejectionReason });
-      alert('Event rejected');
+      toast.success('Event rejected');
       navigate('/bookings/approval');
     } catch (error) {
       console.error('Error:', error);
-      alert('Failed to reject');
+      toast.error('Failed to reject event');
     }
   };
 

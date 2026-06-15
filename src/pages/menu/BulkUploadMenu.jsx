@@ -5,6 +5,7 @@ import {
     AlertCircle, Search, ChevronDown, UtensilsCrossed, FileSpreadsheet
 } from 'lucide-react';
 import { getAllRestaurants, bulkUploadMenu, downloadMenuTemplate } from '../../services/api';
+import toast from 'react-hot-toast';
 
 const BulkUploadMenu = () => {
     const navigate = useNavigate();
@@ -76,7 +77,7 @@ const BulkUploadMenu = () => {
             window.URL.revokeObjectURL(url);
         } catch (error) {
             console.error('Failed to download template:', error);
-            alert('Failed to download template. Please try again.');
+            toast.error('Failed to download template. Please try again.');
         } finally {
             setDownloading(false);
         }
@@ -87,7 +88,7 @@ const BulkUploadMenu = () => {
         if (file) {
             const fileExt = file.name.split('.').pop().toLowerCase();
             if (fileExt !== 'xlsx' && fileExt !== 'csv') {
-                alert('Only Excel (.xlsx) and CSV (.csv) files are allowed.');
+                toast.error('Only Excel (.xlsx) and CSV (.csv) files are allowed.');
                 e.target.value = null;
                 return;
             }
@@ -105,12 +106,12 @@ const BulkUploadMenu = () => {
         e.preventDefault();
 
         if (!formData.restaurant_uid) {
-            alert('Please select a restaurant first.');
+            toast.error('Please select a restaurant first.');
             return;
         }
 
         if (!formData.file) {
-            alert('Please attach an Excel or CSV file.');
+            toast.error('Please attach an Excel or CSV file.');
             return;
         }
 

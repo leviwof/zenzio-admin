@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, Edit2, Trash2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import CreatePlanPage from './CreatePlanPage';
 import {
   getAllSubscriptions,
@@ -80,7 +81,7 @@ const SubscriptionManagement = () => {
     } catch (error) {
       console.error('Error creating plan:', error);
       const msg = error.response?.data?.message || error.message || 'Failed to create plan';
-      alert(`Error: ${msg}`);
+      toast.error(msg);
     }
   };
 
