@@ -146,7 +146,7 @@ const EditMenu = () => {
             if (menuData) {
                 const restaurantUid = menuData.restaurant_uid || menuData.restaurantUid;
                 if (restaurantAdmin && ownRestaurantUid && restaurantUid && restaurantUid !== ownRestaurantUid) {
-                    alert('You can only edit menus for your own restaurant.');
+                    toast.error('You can only edit menus for your own restaurant.');
                     navigate('/menu');
                     return;
                 }
@@ -188,7 +188,7 @@ const EditMenu = () => {
             setPageLoading(false);
         } catch (error) {
             console.error('Failed to fetch initial data:', error);
-            alert('Failed to load menu details: ' + (error.response?.data?.message || error.message));
+            toast.error(error.response?.data?.message || 'Failed to load menu details');
             setPageLoading(false);
         }
     };
@@ -243,12 +243,12 @@ const EditMenu = () => {
         e.preventDefault();
 
         if (!formData.restaurant_uid) {
-            alert('Please select a restaurant');
+            toast.error('Please select a restaurant');
             return;
         }
 
         if (!formData.menu_name || !formData.price) {
-            alert('Please fill in required fields');
+            toast.error('Please fill in required fields');
             return;
         }
 
@@ -328,7 +328,7 @@ const EditMenu = () => {
 
         } catch (error) {
             console.error('Failed to update menu:', error);
-            alert('Failed to update menu item: ' + (error.response?.data?.message || error.message));
+            toast.error(error.response?.data?.message || 'Failed to update menu item');
         } finally {
             setLoading(false);
         }

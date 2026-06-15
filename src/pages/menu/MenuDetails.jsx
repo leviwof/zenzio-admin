@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, Loader2, AlertCircle, IndianRupee, Tag, Utensils, Calendar, Image as ImageIcon, Power, PowerOff } from 'lucide-react';
 import { getMenuAvailability, getMenuByUid, toggleMenuAvailability, toggleMenuStatus } from '../../services/api';
+import toast from 'react-hot-toast';
 import { getImageUrl } from '../../utils/imageUtils';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 import { getMenuAvailabilityState, mergeMenuAvailability } from '../../utils/menuAvailability';
@@ -110,7 +111,7 @@ const MenuDetails = () => {
           : (newStatus ? 'enabled' : 'disabled');
         
         
-        alert(`Menu ${successLabel} successfully!`);
+        toast.success(`Menu ${successLabel} successfully`);
       } else {
         throw new Error('Toggle failed - unexpected response');
       }
@@ -118,7 +119,7 @@ const MenuDetails = () => {
     } catch (error) {
       console.error('❌ Error toggling menu:', error);
       console.error('Error response:', error.response?.data);
-      alert(`❌ Failed to toggle: ${error.response?.data?.message || error.message}`);
+      toast.error(error.response?.data?.message || 'Failed to toggle menu item');
       
       
       fetchMenuDetails();

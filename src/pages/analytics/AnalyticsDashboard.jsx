@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, TrendingUp, TrendingDown } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { getAdminAnalytics } from '../../services/api';
 
@@ -93,7 +94,7 @@ const AnalyticsDashboard = () => {
             <button
               onClick={() => {
                 if (!categoryData.length && !dailySalesData.length) {
-                  alert("No data to export");
+                  toast.error('No data to export');
                   return;
                 }
                 const csvContent = [

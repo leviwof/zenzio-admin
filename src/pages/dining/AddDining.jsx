@@ -10,6 +10,7 @@ import {
     Armchair, Users, Clock, FileText, ImageIcon, CheckCircle
 } from 'lucide-react';
 import { getAllRestaurants, createDiningByAdmin } from '../../services/api';
+import toast from 'react-hot-toast';
 
 const AddDining = () => {
     const navigate = useNavigate();
@@ -142,12 +143,12 @@ const AddDining = () => {
         e.preventDefault();
 
         if (!formData.restaurantId) {
-            alert('Please select a restaurant');
+            toast.error('Please select a restaurant');
             return;
         }
 
         if (!formData.areaName || !formData.seatingCapacity) {
-            alert('Please fill in required fields');
+            toast.error('Please fill in required fields');
             return;
         }
 
@@ -180,7 +181,7 @@ const AddDining = () => {
 
         } catch (error) {
             console.error('Failed to create dining space:', error);
-            alert('Failed to create dining space: ' + (error.response?.data?.message || error.message));
+            toast.error(error.response?.data?.message || 'Failed to create dining space');
         } finally {
             setLoading(false);
         }
