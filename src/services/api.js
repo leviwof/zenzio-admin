@@ -542,6 +542,11 @@ export const updateCoupon = (id, data) => api.patch(`/coupons/${id}`, data);
 export const deleteCoupon = (id) => api.delete(`/coupons/${id}`);
 export const downloadCouponReport = () => api.get('/coupons/report', { responseType: 'blob' });
 
+export const getReferralAdminStats = () => api.get('/referral/admin/stats');
+export const getReferralAdminList = (params) => api.get('/referral/admin/list', { params });
+export const getReferralAdminById = (id) => api.get(`/referral/admin/${id}`);
+export const exportReferralsData = (params) => api.get('/referral/admin/export', { params });
+
 
 
 
