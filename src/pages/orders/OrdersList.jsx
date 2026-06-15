@@ -113,22 +113,25 @@ const ORDER_STATUS_TOOLTIP_MESSAGES = {
   FAILED: "Order failed.",
 };
 
+const getCancellationReason = (order) =>
+  order?.cancellationReason ||
+  order?.cancellation_reason ||
+  order?.rejectionReason ||
+  order?.rejection_reason ||
+  order?.rejectReason ||
+  order?.reject_reason ||
+  order?.cancelReason ||
+  order?.cancel_reason ||
+  order?.reason ||
+  "";
+
 const getOrderStatusTooltip = (order) => {
   const status = resolveDisplayStatus(order);
 
-  if (status === "REJECTED") {
-    const reason =
-      order?.rejectionReason ||
-      order?.rejection_reason ||
-      order?.rejectReason ||
-      order?.reject_reason ||
-      order?.cancellationReason ||
-      order?.cancellation_reason ||
-      order?.cancelReason ||
-      order?.cancel_reason ||
-      order?.reason ||
-      "";
-    return `Rejected: ${reason || "No reason provided."}`;
+  if (["CANCELLED", "ADMIN_CANCELLED", "REJECTED"].includes(status)) {
+    const reason = getCancellationReason(order);
+    const label = status === "REJECTED" ? "Rejected" : "Cancelled";
+    return `${label}: ${reason || "No reason provided."}`;
   }
 
   if (status === "DELIVERED" || status === "COMPLETED") {
@@ -872,6 +875,8 @@ const OrdersList = () => {
         "Discount (Offer)",
         "Total Order Value",
         "18% GST on Commission + Delivery + Packing",
+        "Payment Method",
+        "Order Status",
       ];
 
       const rows = data.map((o) => {
@@ -892,6 +897,9 @@ const OrdersList = () => {
         const totalOrderValue = getStoredOrderTotal(o);
         const gst18 = Math.round((commission + deliveryCharges + packingCharges) * GST_RATE * 100) / 100;
 
+        const paymentMethod = o.payment_mode || o.paymentMethod || o.payment_method || "N/A";
+        const orderStatus = resolveDisplayStatus(o) || o.status || o.orderStatus || "N/A";
+
         return [
           o.orderId || o.id || "N/A",
           formatDateTime(o.createdAt),
@@ -908,6 +916,8 @@ const OrdersList = () => {
           discount,
           totalOrderValue,
           gst18,
+          paymentMethod,
+          orderStatus,
         ];
       });
 
@@ -919,6 +929,7 @@ const OrdersList = () => {
         { wch: 18 }, { wch: 22 }, { wch: 24 }, { wch: 40 }, { wch: 12 },
         { wch: 45 }, { wch: 18 }, { wch: 28 }, { wch: 24 }, { wch: 28 },
         { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 42 },
+        { wch: 20 }, { wch: 22 },
       ];
 
       // Bold header row
@@ -1543,7 +1554,12 @@ const OrdersList = () => {
 
                         {/* Status */}
                         <td className="px-4 py-3">
-                          <StatusBadge status={resolveDisplayStatus(order)} tooltip={getOrderStatusTooltip(order)} disabledTooltip={isPageScrolling} />
+                          <div className="flex flex-col gap-1">
+                            <StatusBadge status={resolveDisplayStatus(order)} tooltip={getOrderStatusTooltip(order)} disabledTooltip={isPageScrolling} />
+                            {["CANCELLED", "ADMIN_CANCELLED", "REJECTED"].includes(resolveDisplayStatus(order)) && getCancellationReason(order) && (
+                              <span className="text-[10px] text-red-500 leading-tight max-w-[180px]">{getCancellationReason(order)}</span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Executive */}
