@@ -55,6 +55,7 @@ import { ROLES } from "./utils/auth";
 import { clearAuthStorage, getStoredAccessToken, logout as logoutApi, refreshAccessToken } from "./services/api";
 
 import ActivityLog from "./pages/activity/ActivityLog";
+import DownloadRedirect from "./pages/download/DownloadRedirect";
 
 function App() {
   const [authReady, setAuthReady] = useState(false);
@@ -111,6 +112,7 @@ function App() {
         {}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/download" element={<DownloadRedirect />} />
 
         {}
         <Route element={<ProtectedRoute />}>
