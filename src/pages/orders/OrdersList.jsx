@@ -887,9 +887,10 @@ const OrdersList = () => {
         const itemCount = items.reduce((sum, i) => sum + Number(i.qty || 1), 0);
         const itemPrices = items.map((i) => `${i.name}: ₹${Number(i.price || 0).toFixed(2)}`).join(", ");
 
-        const totalMenuPrice = items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 1), 0);
-        const commission = Math.round(totalMenuPrice * COMMISSION_RATE * 100) / 100;
-        const totalWithCommission = Math.round((totalMenuPrice + commission) * 100) / 100;
+        const customerSubtotal = items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 1), 0);
+        const totalMenuPrice = Math.round((customerSubtotal / 1.10) * 100) / 100;
+        const commission = Math.round((customerSubtotal - totalMenuPrice) * 100) / 100;
+        const totalWithCommission = customerSubtotal;
         const foodTax = getStoredTaxAmount(o);
         const deliveryCharges = Number(o.final_delivery_charge ?? o.delivery_fee ?? 0);
         const packingCharges = Number(o.packing_charge ?? 0);
@@ -907,7 +908,7 @@ const OrdersList = () => {
           itemNames,
           itemCount,
           itemPrices,
-          totalWithCommission,
+          totalMenuPrice,
           commission,
           totalWithCommission,
           foodTax,
