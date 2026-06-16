@@ -212,10 +212,14 @@ const getAppliedDiscount = (order) => order?.applied_discount || order?.appliedD
 
 const getDiscountAmount = (order, priceSummary = {}) => {
   const appliedDiscount = getAppliedDiscount(order);
+  // Coupon discounts are stored directly; try those first
+  const couponDiscount = Number(
+    priceSummary.discount ?? priceSummary.couponDiscount ?? order?.coupon_discount ?? 0,
+  );
+  if (couponDiscount > 0) return couponDiscount;
+  // Offer discounts are stored in applied_discount JSONB (coupon_discount stays 0 for offers)
   return Number(
-    priceSummary.discount ??
-      priceSummary.couponDiscount ??
-      order?.coupon_discount ??
+    appliedDiscount?.billingDiscountAmount ??
       appliedDiscount?.discountAmount ??
       appliedDiscount?.value ??
       0,
@@ -705,6 +709,10 @@ const OrderDetails = () => {
     const customerDisplayName = getCustomerDisplayName(order);
     const appliedDiscount = getAppliedDiscount(order);
     const freeItems = getFreeOfferItems(order);
+    const printIsOfferDiscount = appliedDiscount?.source === 'offer';
+    const printOriginalItemTotal = printIsOfferDiscount
+      ? Number(appliedDiscount?.originalItemTotal) || (Number(ps.subtotal || 0) + discountAmount)
+      : 0;
     const itemsHtml = (order.items || []).map(item => `
       <tr>
         <td>${getItemDisplayName(item)}${item.variant ? ` (${item.variant})` : ''}</td>
@@ -751,10 +759,14 @@ const OrderDetails = () => {
         ${freeItems.length > 0 ? `<p style="font-size:11px;color:#059669;"><strong>Offer:</strong> ${appliedDiscount?.title || appliedDiscount?.code || 'Free item offer applied'}</p>` : ''}
         <div class="line"></div>
         <table>
-          ${ps.subtotal ? `<tr><td>Subtotal</td><td class="right">₹${ps.subtotal}</td></tr>` : ''}
+          ${printIsOfferDiscount && printOriginalItemTotal > 0 ? `
+            <tr><td>Item Total</td><td class="right">₹${printOriginalItemTotal.toFixed(2)}</td></tr>
+            <tr style="color:#059669"><td>${appliedDiscount?.title ? `Offer – ${appliedDiscount.title}` : 'Offer Discount'}</td><td class="right">-₹${discountAmount.toFixed(2)}</td></tr>
+            <tr><td>After Offer</td><td class="right">₹${Number(ps.subtotal || 0).toFixed(2)}</td></tr>
+          ` : ps.subtotal ? `<tr><td>Subtotal</td><td class="right">₹${ps.subtotal}</td></tr>` : ''}
           ${taxAmount ? `<tr><td>${taxLabel}</td><td class="right">₹${taxAmount}</td></tr>` : ''}
           ${ps.deliveryFee ? `<tr><td>Delivery</td><td class="right">₹${ps.deliveryFee}</td></tr>` : ''}
-          ${discountAmount > 0 ? `<tr><td>Discount</td><td class="right">-₹${discountAmount}</td></tr>` : ''}
+          ${!printIsOfferDiscount && discountAmount > 0 ? `<tr style="color:#059669"><td>${appliedDiscount?.code ? `Coupon – ${appliedDiscount.code}` : 'Discount'}</td><td class="right">-₹${discountAmount.toFixed(2)}</td></tr>` : ''}
           <tr class="total"><td>TOTAL</td><td class="right">₹${finalAmount}</td></tr>
           ${deliveryTip > 0 ? `<tr><td>Delivery Tip</td><td class="right">${formatCurrency(deliveryTip)}</td></tr>` : ''}
         </table>
@@ -779,6 +791,10 @@ const OrderDetails = () => {
     const customerDisplayName = getCustomerDisplayName(order);
     const appliedDiscount = getAppliedDiscount(order);
     const freeItems = getFreeOfferItems(order);
+    const dlIsOfferDiscount = appliedDiscount?.source === 'offer';
+    const dlOriginalItemTotal = dlIsOfferDiscount
+      ? Number(appliedDiscount?.originalItemTotal) || (Number(ps.subtotal || 0) + discountAmount)
+      : 0;
     const items = (order.items || []).map(item =>
       `${item.qty}x ${item.name}${item.addOns?.length ? ' (+ ' + item.addOns.join(', ') + ')' : ''} - ₹${(item.price * item.qty).toFixed(2)}`
     ).join('\n');
@@ -804,10 +820,20 @@ const OrderDetails = () => {
       freeItems.length > 0 ? `Offer: ${appliedDiscount?.title || appliedDiscount?.code || 'Free item offer applied'}` : '',
       `================================`,
       `BILLING`,
-      `Subtotal: ₹${ps.subtotal || 0}`,
+      dlIsOfferDiscount && dlOriginalItemTotal > 0
+        ? `Item Total: ₹${dlOriginalItemTotal.toFixed(2)}`
+        : `Subtotal: ₹${ps.subtotal || 0}`,
+      dlIsOfferDiscount && discountAmount > 0
+        ? `${appliedDiscount?.title ? `Offer – ${appliedDiscount.title}` : 'Offer Discount'}: -₹${discountAmount.toFixed(2)}`
+        : null,
+      dlIsOfferDiscount && dlOriginalItemTotal > 0
+        ? `After Offer: ₹${Number(ps.subtotal || 0).toFixed(2)}`
+        : null,
       `${taxLabel}: ₹${taxAmount}`,
       `Delivery Fee: ₹${ps.deliveryFee || 0}`,
-      discountAmount > 0 ? `Discount: -₹${discountAmount}` : '',
+      !dlIsOfferDiscount && discountAmount > 0
+        ? `${appliedDiscount?.code ? `Coupon – ${appliedDiscount.code}` : 'Discount'}: -₹${discountAmount.toFixed(2)}`
+        : null,
       `Packaging Charge: ${formatCurrency(ps.packingCharge || 0)}`,
       deliveryTip > 0 ? `Delivery Tip: ${formatCurrency(deliveryTip)}` : '',
       `--------------------------------`,
@@ -921,6 +947,10 @@ const OrderDetails = () => {
   const taxAmount = getStoredTaxAmount(order, ps);
   const finalAmount = getStoredOrderTotal(order, ps);
   const discountAmount = getDiscountAmount(order, ps);
+  const isOfferDiscount = appliedDiscount?.source === 'offer';
+  const originalItemTotal = isOfferDiscount
+    ? Number(appliedDiscount?.originalItemTotal) || (Number(ps.subtotal || 0) + discountAmount)
+    : 0;
   const taxLabel = usesFinalPriceTaxModel(order, ps) ? 'Tax 5% on final item price' : 'Tax';
   const customerDisplayName = getCustomerDisplayName(order);
   const hasJourneyPricing = Boolean(order.delivery_pricing_version);
@@ -1446,10 +1476,27 @@ const OrderDetails = () => {
               {/* Pricing Breakdown */}
               {ps.subtotal !== undefined && (
                 <div className="mt-4 pt-4 border-t border-gray-100 space-y-1.5 text-sm">
-                  <div className="flex justify-between text-gray-600">
-                    <span>Subtotal</span>
-                    <span>₹{ps.subtotal || 0}</span>
-                  </div>
+                  {isOfferDiscount && originalItemTotal > 0 ? (
+                    <>
+                      <div className="flex justify-between text-gray-600">
+                        <span>Item Total</span>
+                        <span>₹{originalItemTotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-600 font-medium">
+                        <span>{appliedDiscount?.title ? `Offer – ${appliedDiscount.title}` : 'Offer Discount'}</span>
+                        <span>-₹{discountAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-gray-600">
+                        <span>After Offer</span>
+                        <span>₹{Number(ps.subtotal || 0).toFixed(2)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between text-gray-600">
+                      <span>Subtotal</span>
+                      <span>₹{ps.subtotal || 0}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-gray-600">
                     <span>{taxLabel}</span>
                     <span>₹{taxAmount}</span>
@@ -1470,10 +1517,14 @@ const OrderDetails = () => {
                       <span>{formatCurrency(deliveryTip)}</span>
                     </div>
                   )}
-                  {discountAmount > 0 && (
-                    <div className="flex justify-between text-red-500">
-                      <span>Discount</span>
-                      <span>-₹{discountAmount}</span>
+                  {!isOfferDiscount && discountAmount > 0 && (
+                    <div className="flex justify-between text-emerald-600 font-medium">
+                      <span>
+                        {appliedDiscount?.code
+                          ? `Coupon – ${appliedDiscount.code}`
+                          : 'Discount'}
+                      </span>
+                      <span>-₹{discountAmount.toFixed(2)}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-100 pt-2 mt-2 text-base">
