@@ -341,6 +341,22 @@ const getOrderStatusTooltip = (order, currentStatus, timeline = []) => {
   return ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, ' ').toLowerCase();
 };
 
+const getOfferDiscountLabel = (appliedDiscount) => {
+  if (!appliedDiscount || appliedDiscount.source !== 'offer') return 'Offer Discount';
+  const title = appliedDiscount.title || '';
+  const offerType = appliedDiscount.offerType || '';
+  const discountType = (appliedDiscount.discountType || '').toUpperCase();
+  const discountValue = Number(appliedDiscount.discountValue || 0);
+  let suffix = '';
+  if (discountValue > 0) {
+    const isPercentage =
+      discountType === 'PERCENTAGE' ||
+      ['PERCENTAGE_DISCOUNT', 'PLATFORM_CAMPAIGN', 'FESTIVAL_OFFER'].includes(offerType);
+    suffix = isPercentage ? ` (${discountValue}% off)` : ` (₹${discountValue} off)`;
+  }
+  return title ? `Offer – ${title}${suffix}` : `Offer${suffix}`;
+};
+
 const getFreeOfferItems = (order) => {
   const appliedDiscount = getAppliedDiscount(order);
   return Array.isArray(appliedDiscount?.freeItems) ? appliedDiscount.freeItems : [];
@@ -761,7 +777,7 @@ const OrderDetails = () => {
         <table>
           ${printIsOfferDiscount && printOriginalItemTotal > 0 ? `
             <tr><td>Item Total</td><td class="right">₹${printOriginalItemTotal.toFixed(2)}</td></tr>
-            <tr style="color:#059669"><td>${appliedDiscount?.title ? `Offer – ${appliedDiscount.title}` : 'Offer Discount'}</td><td class="right">-₹${discountAmount.toFixed(2)}</td></tr>
+            <tr style="color:#059669"><td>${getOfferDiscountLabel(appliedDiscount)}</td><td class="right">-₹${discountAmount.toFixed(2)}</td></tr>
             <tr><td>After Offer</td><td class="right">₹${Number(ps.subtotal || 0).toFixed(2)}</td></tr>
           ` : ps.subtotal ? `<tr><td>Subtotal</td><td class="right">₹${ps.subtotal}</td></tr>` : ''}
           ${taxAmount ? `<tr><td>${taxLabel}</td><td class="right">₹${taxAmount}</td></tr>` : ''}
@@ -824,7 +840,7 @@ const OrderDetails = () => {
         ? `Item Total: ₹${dlOriginalItemTotal.toFixed(2)}`
         : `Subtotal: ₹${ps.subtotal || 0}`,
       dlIsOfferDiscount && discountAmount > 0
-        ? `${appliedDiscount?.title ? `Offer – ${appliedDiscount.title}` : 'Offer Discount'}: -₹${discountAmount.toFixed(2)}`
+        ? `${getOfferDiscountLabel(appliedDiscount)}: -₹${discountAmount.toFixed(2)}`
         : null,
       dlIsOfferDiscount && dlOriginalItemTotal > 0
         ? `After Offer: ₹${Number(ps.subtotal || 0).toFixed(2)}`
@@ -1483,7 +1499,7 @@ const OrderDetails = () => {
                         <span>₹{originalItemTotal.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-emerald-600 font-medium">
-                        <span>{appliedDiscount?.title ? `Offer – ${appliedDiscount.title}` : 'Offer Discount'}</span>
+                        <span>{getOfferDiscountLabel(appliedDiscount)}</span>
                         <span>-₹{discountAmount.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-gray-600">
