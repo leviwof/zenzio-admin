@@ -424,7 +424,7 @@ const RestaurantDetails = () => {
           itemNames,
           itemCount,
           itemPrices,
-          totalMenuPrice,
+          totalWithCommission,
           commission,
           totalWithCommission,
           foodTax,

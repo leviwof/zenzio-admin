@@ -907,7 +907,7 @@ const OrdersList = () => {
           itemNames,
           itemCount,
           itemPrices,
-          totalMenuPrice,
+          totalWithCommission,
           commission,
           totalWithCommission,
           foodTax,
