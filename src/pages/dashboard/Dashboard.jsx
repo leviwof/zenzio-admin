@@ -65,6 +65,16 @@ const getRevenueFromOrder = (order) => {
   return Math.max(0, num(order.delivery_fee) + num(order.packing_charge) + num(order.taxes) - num(order.refundedAmount));
 };
 
+const isOrderEarned = (order) => {
+  if (!order) return false;
+  const deliveryStatus = String(order.deliveryPartnerStatus || "").toLowerCase();
+  const orderStatus = String(order.status || "").toLowerCase();
+  const restaurantStatus = String(order.restaurantStatus || "").toLowerCase();
+  const isDelivered = deliveryStatus === "delivered" || orderStatus === "delivered" || orderStatus === "completed";
+  const isCancelled = ["rejected", "cancelled"].includes(restaurantStatus) || ["rejected", "cancelled"].includes(orderStatus);
+  return isDelivered && !isCancelled;
+};
+
 const getOrderDate = (order) => {
   const candidate = order?.createdAt || order?.time || order?.created_at || order?.updatedAt;
   const date = candidate ? new Date(candidate) : null;
@@ -372,6 +382,7 @@ const Dashboard = () => {
     if (data.adminAnalytics?.dailySalesData?.length) return data.adminAnalytics.dailySalesData;
     const map = {};
     data.currentOrders.forEach((order) => {
+      if (!isOrderEarned(order)) return;
       const date = getOrderDate(order);
       if (!date) return;
       const key = date.toISOString().split("T")[0];
@@ -485,6 +496,7 @@ const Dashboard = () => {
     const yesterdayStr = formatDate(yesterday);
 
     data.currentOrders.forEach((order) => {
+      if (!isOrderEarned(order)) return;
       const orderDate = getOrderDate(order);
       if (!orderDate) return;
       const revenue = getRevenueFromOrder(order);
