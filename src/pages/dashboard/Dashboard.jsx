@@ -153,18 +153,28 @@ const calculateMetrics = (orders) => {
 
   orders.forEach((order) => {
     const revenue = getRevenueFromOrder(order);
-    metrics.totalRevenue += revenue;
     metrics.refundAmount += num(order.refundedAmount);
     if (order.customer) metrics.uniqueCustomers.add(order.customer);
 
     const status = String(order.restaurantStatus || "").toLowerCase();
+    const orderStatus = String(order.status || "").toLowerCase();
     const deliveryStatus = String(order.deliveryPartnerStatus || "").toLowerCase();
     const paymentStatus = String(order.paymentStatus || order.payment_status || "").toLowerCase();
+
+    const isDelivered =
+      deliveryStatus === "delivered" ||
+      orderStatus === "delivered" ||
+      orderStatus === "completed";
+    const isCancelledOrRejected = ["rejected", "cancelled"].includes(status) || ["rejected", "cancelled"].includes(orderStatus);
+
+    if (isDelivered && !isCancelledOrRejected) {
+      metrics.totalRevenue += revenue;
+    }
 
     if (["accepted", "preparing", "ready", "picked_up"].includes(status)) {
       metrics.activeOrders += 1;
     }
-    if (["rejected", "cancelled"].includes(status)) {
+    if (isCancelledOrRejected) {
       metrics.cancelledOrders += 1;
     }
     if (["accepted", "preparing", "ready", "completed", "delivered"].includes(status)) {
