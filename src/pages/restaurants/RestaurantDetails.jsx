@@ -402,7 +402,7 @@ const RestaurantDetails = () => {
 
         const itemNames = items.map((i) => i.name).join(', ') || 'N/A'
         const itemCount = items.reduce((sum, i) => sum + Number(i.qty || 1), 0)
-        const itemPrices = items.map((i) => `${i.name}: ₹${Number(i.price || 0).toFixed(2)}`).join(', ')
+        const itemPrices = items.map((i) => `${i.name}: ₹${(Number(i.price || 0) / 1.10).toFixed(2)}`).join(', ')
 
         const customerSubtotal = items.reduce((sum, i) => sum + Number(i.price || 0) * Number(i.qty || 1), 0)
         const totalMenuPrice = Math.round((customerSubtotal / 1.10) * 100) / 100
