@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar, ChevronLeft, Gift, ImagePlus, Loader2, RotateCcw, Save, Store, Tag } from "lucide-react";
 import toast from "react-hot-toast";
@@ -115,7 +115,7 @@ const OfferConfiguration = () => {
       try {
         const requests = [
           getMenuCategories().catch(() => ({ data: [] })),
-          getAllMenus({ restaurant: restaurantAdmin ? ownRestaurantUid : undefined }).catch(() => ({ data: [] })),
+          getAllMenus({ restaurant: restaurantAdmin ? ownRestaurantUid : undefined, limit: 1000 }).catch(() => ({ data: [] })),
         ];
         if (!restaurantAdmin) requests.unshift(getAllRestaurants({}).catch(() => ({ data: [] })));
         const responses = await Promise.all(requests);
@@ -138,8 +138,8 @@ const OfferConfiguration = () => {
     const fetchMenusForRestaurant = async () => {
       try {
         const params = formData.restaurantId && formData.restaurantId !== "all"
-          ? { restaurant: formData.restaurantId }
-          : {};
+          ? { restaurant: formData.restaurantId, limit: 1000 }
+          : { limit: 1000 };
         const response = await getAllMenus(params);
         setMenus(normalizeArray(response));
       } catch {
@@ -396,24 +396,111 @@ const OfferConfiguration = () => {
   const MenuSelect = ({ name, value, placeholder, category }) => {
     const filteredMenus = getFilteredMenus(category);
     const disabled = itemOfferNeedsRestaurant || filteredMenus.length === 0;
+    const [search, setSearch] = useState("");
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+      const handleOutside = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+      document.addEventListener("mousedown", handleOutside);
+      return () => document.removeEventListener("mousedown", handleOutside);
+    }, []);
+
+    const lowerSearch = search.trim().toLowerCase();
+    const visibleMenus = lowerSearch
+      ? filteredMenus.filter((m) =>
+          getMenuName(m)?.toLowerCase().includes(lowerSearch) ||
+          getMenuCategory(m)?.toLowerCase().includes(lowerSearch)
+        )
+      : filteredMenus;
+
+    const selectedMenu = filteredMenus.find((m) => getMenuId(m) === value);
+    const selectedLabel = selectedMenu
+      ? `${getMenuName(selectedMenu)}${selectedMenu.price ? ` · ₹${selectedMenu.price}` : ""}`
+      : "";
+
+    const handleSelect = (menuId) => {
+      handleRuleChange({ target: { name, value: menuId } });
+      setOpen(false);
+      setSearch("");
+    };
+
+    const handleClear = (e) => {
+      e.stopPropagation();
+      handleRuleChange({ target: { name, value: "" } });
+      setSearch("");
+    };
+
+    if (disabled) {
+      return (
+        <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-100 text-gray-400 text-sm">
+          {itemOfferNeedsRestaurant ? "Select restaurant first" : "No menu items found"}
+        </div>
+      );
+    }
+
     return (
-      <select
-        name={name}
-        value={value}
-        onChange={handleRuleChange}
-        disabled={disabled}
-        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white disabled:bg-gray-100 disabled:text-gray-400"
-      >
-        <option value="">{itemOfferNeedsRestaurant ? "Select restaurant first" : filteredMenus.length ? placeholder : "No menu items found"}</option>
-        {filteredMenus.map((menu) => {
-          const value = getMenuId(menu);
-          return (
-            <option key={value} value={value}>
-              {getMenuName(menu)}{getMenuCategory(menu) ? ` - ${getMenuCategory(menu)}` : ""}{menu.price ? ` - Rs.${menu.price}` : ""}
-            </option>
-          );
-        })}
-      </select>
+      <div ref={ref} className="relative">
+        <div
+          onClick={() => setOpen((o) => !o)}
+          className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-white cursor-pointer flex items-center justify-between gap-2 hover:border-indigo-400 transition-colors"
+        >
+          <span className={`flex-1 truncate text-sm ${value ? "text-gray-800" : "text-gray-400"}`}>
+            {value ? selectedLabel : placeholder}
+          </span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {value && (
+              <button type="button" onClick={handleClear} className="text-gray-400 hover:text-red-500 text-xs w-4 h-4 flex items-center justify-center">✕</button>
+            )}
+            <span className="text-gray-400 text-xs">{open ? "▲" : "▼"}</span>
+          </div>
+        </div>
+
+        {open && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+            <div className="p-2 border-b border-gray-100">
+              <input
+                autoFocus
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name or category..."
+                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+              />
+            </div>
+            <ul className="max-h-52 overflow-y-auto">
+              {visibleMenus.length === 0 ? (
+                <li className="px-4 py-3 text-sm text-gray-400 text-center">No results</li>
+              ) : (
+                visibleMenus.map((menu) => {
+                  const id = getMenuId(menu);
+                  const isSelected = id === value;
+                  return (
+                    <li
+                      key={id}
+                      onClick={() => handleSelect(id)}
+                      className={`px-4 py-2.5 cursor-pointer flex items-center justify-between gap-2 hover:bg-indigo-50 ${isSelected ? "bg-indigo-50 text-indigo-700" : "text-gray-700"}`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{getMenuName(menu)}</div>
+                        {getMenuCategory(menu) && (
+                          <div className="text-xs text-gray-400">{getMenuCategory(menu)}</div>
+                        )}
+                      </div>
+                      {menu.price && (
+                        <span className="text-xs font-medium text-gray-600 flex-shrink-0">₹{menu.price}</span>
+                      )}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+            <div className="px-4 py-1.5 border-t border-gray-100 text-xs text-gray-400 text-right">
+              {visibleMenus.length} of {filteredMenus.length} items
+            </div>
+          </div>
+        )}
+      </div>
     );
   };
 
