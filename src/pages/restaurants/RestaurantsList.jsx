@@ -336,9 +336,12 @@ const MobileRestaurantCard = ({ restaurant, details, detailsLoading, selected, o
           {restaurant.restaurant_name?.charAt(0) || "?"}
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate flex items-center gap-1.5">
+          <p className="text-sm font-semibold text-gray-900 truncate flex items-center gap-1.5 flex-wrap">
             {restaurant.restaurant_name}
             <VerificationBadge verified={restaurant.verified} />
+            {restaurant.createdAt && Date.now() - new Date(restaurant.createdAt).getTime() < 7 * 86400000 && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500 text-white leading-none">NEW</span>
+            )}
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <StatusPill restaurant={restaurant} />
@@ -397,7 +400,7 @@ const RestaurantsList = () => {
   // ── URL-persisted state (page, filters, sort, search) ──
   const currentPage     = Number(searchParams.get("page"))   || 1;
   const itemsPerPage    = Number(searchParams.get("limit"))  || 10;
-  const sortBy          = searchParams.get("sort")           || "name";
+  const sortBy          = searchParams.get("sort")           || "date";
   const statusFilter    = searchParams.get("status")        || "all";
   const cityFilter      = searchParams.get("city")          || "all";
   const ratingFilter    = searchParams.get("rating")        || "all";
@@ -472,6 +475,7 @@ const RestaurantsList = () => {
           id: r.id,
           uid: r.uid || `NO_UID_${r.id}`,
           createdAt: r.createdAt,
+          updatedAt: r.updatedAt || r.updated_at || r.createdAt,
           restaurant_name: r.profile?.restaurant_name || r.restaurant_name || "-",
           verified: r.verified || r.profile?.verified || false,
           city: "-",
@@ -612,6 +616,8 @@ const RestaurantsList = () => {
           return a.restaurant_name?.localeCompare(b.restaurant_name);
         case "date":
           return (b.createdAt || "").localeCompare(a.createdAt || "");
+        case "updated":
+          return (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || "");
         case "rating":
           return (restaurantDetails[b.uid]?.rating || 0) - (restaurantDetails[a.uid]?.rating || 0);
         case "status": {
@@ -788,6 +794,9 @@ const RestaurantsList = () => {
 
   const hasActiveFilters = statusFilter !== "all" || cityFilter !== "all" || ratingFilter !== "all" || dateFilter !== "all" || debouncedSearch;
 
+  const isNewRestaurant = (r) => r.createdAt && Date.now() - new Date(r.createdAt).getTime() < 7 * 86400000;
+  const isRecentlyUpdated = (r) => r.updatedAt && r.updatedAt !== r.createdAt && Date.now() - new Date(r.updatedAt).getTime() < 2 * 86400000;
+
   // ── Redirect for Restaurant Admins ──
   if (restaurantAdmin) {
     if (ownRestaurantUid) return <Navigate to={`/restaurants/${ownRestaurantUid}`} replace />;
@@ -882,8 +891,9 @@ const RestaurantsList = () => {
               icon={ArrowUpDown}
               value={sortBy}
               options={[
-                { label: "Name (A-Z)", value: "name" },
                 { label: "Newest First", value: "date" },
+                { label: "Recently Updated", value: "updated" },
+                { label: "Name (A-Z)", value: "name" },
                 { label: "Highest Rated", value: "rating" },
                 { label: "Active First", value: "status" },
               ]}
@@ -1068,9 +1078,9 @@ const RestaurantsList = () => {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: idx * 0.02, duration: 0.2 }}
                         onClick={() => handleView(restaurant)}
-                        className={`group cursor-pointer transition-all duration-150
-                          ${selected ? "bg-indigo-50/40" : "hover:bg-gray-50"}
-                          ${idx % 2 === 1 && !selected ? "bg-gray-50/30" : ""}
+                        className={`group cursor-pointer transition-all duration-150 relative
+                          ${selected ? "bg-indigo-50/40" : isNewRestaurant(restaurant) ? "bg-emerald-50/30 hover:bg-emerald-50/50" : "hover:bg-gray-50"}
+                          ${idx % 2 === 1 && !selected && !isNewRestaurant(restaurant) ? "bg-gray-50/30" : ""}
                         `}
                       >
                         {/* Checkbox */}
@@ -1089,11 +1099,17 @@ const RestaurantsList = () => {
                               {restaurant.restaurant_name?.charAt(0) || "?"}
                             </div>
                             <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-sm font-semibold text-gray-900 truncate max-w-[160px] group-hover:text-indigo-600 transition-colors">
                                   {restaurant.restaurant_name}
                                 </span>
                                 <VerificationBadge verified={restaurant.verified} />
+                                {isNewRestaurant(restaurant) && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500 text-white leading-none">NEW</span>
+                                )}
+                                {!isNewRestaurant(restaurant) && isRecentlyUpdated(restaurant) && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-white leading-none">UPDATED</span>
+                                )}
                               </div>
                               {detail?.cuisines?.length > 0 && (
                                 <div className="flex items-center gap-1 mt-0.5 flex-wrap">
@@ -1150,8 +1166,13 @@ const RestaurantsList = () => {
                         {/* Registration Date */}
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                            <Calendar size={13} className="text-gray-300" />
-                            {formatDate(restaurant.createdAt)}
+                            <Calendar size={13} className="text-gray-300 shrink-0" />
+                            <div>
+                              <div>{formatDate(restaurant.createdAt)}</div>
+                              {getTimeAgo(restaurant.createdAt) && (
+                                <div className="text-[11px] text-gray-400">{getTimeAgo(restaurant.createdAt)}</div>
+                              )}
+                            </div>
                           </div>
                         </td>
 
