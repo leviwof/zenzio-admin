@@ -8,6 +8,7 @@ import {
 import {
   cancelHomeFoodClosure,
   createMenuByAdminWithImage,
+  createCloudKitchen,
   createHomeFoodClosure,
   createHomeFoodPlan,
   deleteMenu,
@@ -15,7 +16,6 @@ import {
   deleteHomeFoodPlan,
   deleteHomeFoodProvider,
   deleteHomeFoodSubscription,
-  getAllRestaurants,
   getHomeFoodAnalytics,
   getHomeFoodClosures,
   getHomeFoodDeliveries,
@@ -112,14 +112,18 @@ export default function HomeFoodsManagement() {
   const [items, setItems] = useState([]);
   const [meta, setMeta] = useState({});
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [filters, setFilters] = useState({
     search: '', status: '', provider_uid: '', plan_type: '',
     payment_status: '', meal_type: '', from_date: '', to_date: '', date: '',
   });
   const [modal, setModal] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [weeklyMenuProviders, setWeeklyMenuProviders] = useState([]);
 
   useEffect(() => {
+    setPage(1);
     setFilters({
       search: '', status: '', provider_uid: '', plan_type: '',
       payment_status: '', meal_type: '', from_date: '', to_date: '', date: '',
@@ -133,11 +137,23 @@ export default function HomeFoodsManagement() {
         const response = await getHomeFoodAnalytics();
         setAnalytics(response.data?.data || {});
         setItems([]);
+        setWeeklyMenuProviders([]);
+        return;
+      }
+      if (section === 'menus') {
+        const providersResponse = await getHomeFoodProviders({ limit: 100 });
+        setWeeklyMenuProviders(unwrapItems(providersResponse));
+        setItems([]);
+        setMeta({});
         return;
       }
       const params = Object.fromEntries(
         Object.entries(filters).filter(([, value]) => value !== ''),
       );
+      if (['providers', 'plans', 'deliveries'].includes(section)) {
+        params.page = page;
+        params.limit = pageSize;
+      }
       if (section === 'deliveries' && params.status) {
         params.status = deliveryStatuses.includes(params.status) ? params.status : '';
       }
@@ -152,14 +168,20 @@ export default function HomeFoodsManagement() {
       const response = await loaders[section](params);
       setItems(unwrapItems(response));
       setMeta(response.data?.meta || {});
+      setWeeklyMenuProviders([]);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not load Home Foods data');
     } finally {
       setLoading(false);
     }
-  }, [filters, section]);
+  }, [filters, page, pageSize, section]);
 
   useEffect(() => { load(); }, [load]);
+
+  const updateFilters = useCallback((updater) => {
+    setPage(1);
+    setFilters(updater);
+  }, []);
 
   const sectionModalType = {
     providers: 'provider',
@@ -168,7 +190,16 @@ export default function HomeFoodsManagement() {
     deliveries: 'delivery',
     menus: 'menu',
   }[section];
-  const openCreate = () => setModal({ type: sectionModalType });
+  const openCreate = () => {
+    if (section === 'menus' && !filters.provider_uid) {
+      toast.error('Select a provider before adding a dish');
+      return;
+    }
+    setModal({
+      type: sectionModalType,
+      providerUid: section === 'menus' ? filters.provider_uid : undefined,
+    });
+  };
 
   const updateDelivery = async (id, status) => {
     try {
@@ -186,6 +217,18 @@ export default function HomeFoodsManagement() {
     load();
   };
 
+  const approveSubscription = async (id) => {
+    if (!window.confirm('Approve this subscription and mark its payment as successful?')) return;
+    try {
+      await updateHomeFoodSubscription(id, { status: 'ACTIVE' });
+      toast.success('Subscription approved');
+      load();
+    } catch (error) {
+      const message = error.response?.data?.message;
+      toast.error(Array.isArray(message) ? message.join(', ') : message || 'Approval failed');
+    }
+  };
+
   const extendSubscription = async (id) => {
     const days = Number(window.prompt('Extend by how many days?', '7'));
     if (!Number.isInteger(days) || days < 1) return;
@@ -195,11 +238,11 @@ export default function HomeFoodsManagement() {
   };
 
   const headers = useMemo(() => ({
-    providers: ['Restaurant', 'Status', 'Capacity', 'Active Subscribers', 'Radius', 'Meal Types', 'Plans', 'Created', 'Actions'],
-    plans: ['Plan', 'Type', 'Restaurant', 'Duration', 'Price', 'Meal Types', 'Status', 'Actions'],
+    providers: ['Restaurant', 'Status', 'Capacity', 'Active Subscribers', 'Radius', 'Meal Types', 'Created', 'Actions'],
+    plans: ['Plan', 'Type', 'Restaurant', 'Duration', 'Price', 'Meal Types', 'Plan Menu', 'Status', 'Actions'],
     subscriptions: ['Subscription', 'Customer', 'Phone', 'Restaurant', 'Plan', 'Amount', 'Status', 'Payment', 'Dates', 'Actions'],
     deliveries: ['Delivery', 'Subscription', 'Customer', 'Restaurant', 'Meal', 'Date', 'Status', 'Actions'],
-    menus: ['Image', 'Title', 'Provider', 'Description', 'Week Days', 'Meal Slot', 'Serving Time', 'Actions'],
+    menus: ['Image', 'Title', 'Provider', 'Description', 'Home Foods', 'Week Days', 'Meal Slot', 'Serving Time', 'Actions'],
   })[section] || [], [section]);
 
   return (
@@ -227,10 +270,14 @@ export default function HomeFoodsManagement() {
           <PageFilters
             section={section}
             filters={filters}
-            setFilters={setFilters}
-            total={meta.total ?? items.length}
+            setFilters={updateFilters}
+            total={section === 'menus' ? undefined : (meta.total ?? items.length)}
+            menuProviders={weeklyMenuProviders}
           />
-          <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+          {section === 'menus' && (
+            <ProviderWeeklyMenus providers={weeklyMenuProviders} filters={filters} />
+          )}
+          {section !== 'menus' && <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px]">
                 <thead className="border-b bg-slate-50/80">
@@ -249,6 +296,7 @@ export default function HomeFoodsManagement() {
                       onEdit={() => setModal({ type: sectionModalType, item })}
                       onDelivery={updateDelivery}
                       onCancelSubscription={cancelSubscription}
+                      onApproveSubscription={approveSubscription}
                       onExtendSubscription={extendSubscription}
                       onDeleteProvider={async () => {
                         if (!window.confirm(`Delete ${item.restaurant_name || 'this provider'} from Home Foods?`)) return;
@@ -286,12 +334,32 @@ export default function HomeFoodsManagement() {
                         toast.success('Kitchen dish deleted');
                         load();
                       }}
+                      onToggleHomeFoodMenu={async (enabled) => {
+                        const payload = new FormData();
+                        payload.append('is_home_food_item', String(enabled));
+                        await editMenuByAdminWithImage(item.menu_uid, payload);
+                        toast.success(enabled ? 'Dish added to Home Foods' : 'Dish removed from Home Foods');
+                        load();
+                      }}
                     />
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
+          {['providers', 'plans', 'deliveries'].includes(section) && (
+            <ListPagination
+              meta={meta}
+              page={page}
+              pageSize={pageSize}
+              loading={loading}
+              onPageChange={setPage}
+              onPageSizeChange={(value) => {
+                setPage(1);
+                setPageSize(value);
+              }}
+            />
+          )}
         </>
       )}
 
@@ -300,12 +368,241 @@ export default function HomeFoodsManagement() {
       {modal?.type === 'subscription' && <SubscriptionDetail item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {modal?.type === 'delivery' && <DeliveryDetail item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {modal?.type === 'closure' && <ClosureForm item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
-      {modal?.type === 'menu' && <KitchenMenuForm item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
+      {modal?.type === 'menu' && (
+        <ProviderWeeklyMenuForm
+          providerUid={modal.providerUid}
+          providers={weeklyMenuProviders}
+          onClose={() => setModal(null)}
+          onSaved={(weeklyMenu) => {
+            setWeeklyMenuProviders((current) => current.map((provider) => (
+              provider.provider_uid === modal.providerUid
+                ? { ...provider, weekly_menu: weeklyMenu }
+                : provider
+            )));
+            setModal(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onExtendSubscription, onDeleteProvider, onDeletePlan, onDeleteSubscription, onDeleteDelivery, onCancelClosure, onDeleteMenu }) {
+function ListPagination({ meta, page, pageSize, loading, onPageChange, onPageSizeChange }) {
+  const totalPages = Math.max(1, Number(meta.pages || 1));
+  const total = Number(meta.total || 0);
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-2 text-xs text-slate-500">
+        <span>{total} records</span>
+        <select
+          value={pageSize}
+          onChange={(event) => onPageSizeChange(Number(event.target.value))}
+          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 outline-none"
+          disabled={loading}
+        >
+          {[10, 20, 50].map((value) => <option key={value} value={value}>{value} per page</option>)}
+        </select>
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={loading || page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Previous
+        </button>
+        <span className="text-xs font-semibold text-slate-600">Page {page} of {totalPages}</span>
+        <button
+          type="button"
+          disabled={loading || page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ProviderWeeklyMenuForm({ providerUid, providers, onClose, onSaved }) {
+  const provider = providers.find((entry) => entry.provider_uid === providerUid);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    menu_name: '',
+    meal_type: provider?.meal_types?.[0] || 'LUNCH',
+    week_days: provider?.working_days?.length ? [...provider.working_days] : workingDays.slice(0, 6),
+  });
+
+  const toggleDay = (day) => setForm((current) => ({
+    ...current,
+    week_days: current.week_days.includes(day)
+      ? current.week_days.filter((value) => value !== day)
+      : [...current.week_days, day],
+  }));
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const dish = form.menu_name.trim();
+    if (!dish || !form.week_days.length) {
+      toast.error('Dish title and at least one week day are required');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await getHomeFoodProviderSettings(providerUid);
+      const settings = response.data?.data || {};
+      const weeklyMenu = { ...(settings.weekly_menu || {}) };
+
+      form.week_days.forEach((day) => {
+        const dayMenu = { ...(weeklyMenu[day] || {}) };
+        const existing = String(dayMenu[form.meal_type] || '')
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean);
+        if (!existing.some((value) => value.toLowerCase() === dish.toLowerCase())) {
+          existing.push(dish);
+        }
+        dayMenu[form.meal_type] = existing.join(', ');
+        weeklyMenu[day] = dayMenu;
+      });
+
+      const saveResponse = await saveHomeFoodProviderSettings({
+        provider_uid: providerUid,
+        is_active: settings.is_active ?? provider?.is_active ?? true,
+        max_active_subscribers: Number(settings.max_active_subscribers ?? provider?.capacity ?? 100),
+        delivery_radius_km: Number(settings.delivery_radius_km ?? provider?.delivery_radius_km ?? 5),
+        meal_types: settings.meal_types || provider?.meal_types || mealTypes,
+        delivery_slots: settings.delivery_slots || provider?.delivery_slots || [],
+        working_days: settings.working_days || provider?.working_days || workingDays,
+        weekly_menu: weeklyMenu,
+        trial_available: settings.trial_available ?? true,
+      });
+      const savedWeeklyMenu = saveResponse.data?.data?.weekly_menu || weeklyMenu;
+      toast.success(`Dish added to ${provider?.restaurant_name || providerUid}`);
+      onSaved(savedWeeklyMenu);
+    } catch (error) {
+      const message = error.response?.data?.message;
+      toast.error(Array.isArray(message) ? message.join(', ') : message || 'Could not add dish');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Add Provider Dish" onClose={onClose}>
+      <form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
+        <div className="md:col-span-2 rounded-xl border bg-slate-50 px-4 py-3">
+          <p className="text-xs font-medium text-slate-500">Selected Provider</p>
+          <p className="text-sm font-semibold text-slate-800">{provider?.restaurant_name || providerUid}</p>
+          <p className="font-mono text-xs text-slate-400">{providerUid}</p>
+        </div>
+        <Field label="Dish Title">
+          <input value={form.menu_name} onChange={(event) => setForm({ ...form, menu_name: event.target.value })} className={inputClass} placeholder="e.g. Idly, Sambar and Chutney" required />
+        </Field>
+        <Field label="Meal Type">
+          <select value={form.meal_type} onChange={(event) => setForm({ ...form, meal_type: event.target.value })} className={inputClass}>
+            {(provider?.meal_types?.length ? provider.meal_types : mealTypes).map((meal) => <option key={meal}>{meal}</option>)}
+          </select>
+        </Field>
+        <div className="md:col-span-2">
+          <Field label="Week Days">
+            <div className="flex flex-wrap gap-2">
+              {(provider?.working_days?.length ? provider.working_days : workingDays).map((day) => (
+                <label key={day} className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs">
+                  <input type="checkbox" checked={form.week_days.includes(day)} onChange={() => toggleDay(day)} />
+                  {day.slice(0, 3)}
+                </label>
+              ))}
+            </div>
+          </Field>
+        </div>
+        <div className="md:col-span-2 flex justify-end gap-2 border-t pt-4">
+          <button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button>
+          <button disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+            {saving ? 'Adding…' : 'Add Dish'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ProviderWeeklyMenus({ providers, filters }) {
+  const rows = useMemo(() => {
+    const search = filters.search.trim().toLowerCase();
+
+    return providers.flatMap((provider) => {
+      if (filters.provider_uid && provider.provider_uid !== filters.provider_uid) return [];
+      if (filters.status === 'active' && !provider.is_active) return [];
+      if (filters.status === 'inactive' && provider.is_active) return [];
+
+      const providerName = provider.restaurant_name || provider.provider_uid;
+      return Object.entries(provider.weekly_menu || {}).flatMap(([day, meals]) =>
+        Object.entries(meals || {}).map(([meal, dishes]) => ({
+          key: `${provider.provider_uid}-${day}-${meal}`,
+          providerName,
+          providerUid: provider.provider_uid,
+          day,
+          meal,
+          dishes: String(dishes || ''),
+          isActive: provider.is_active,
+        })),
+      ).filter((row) => (
+        !search
+        || `${row.providerName} ${row.providerUid} ${row.day} ${row.meal} ${row.dishes}`
+          .toLowerCase()
+          .includes(search)
+      ));
+    });
+  }, [providers, filters.provider_uid, filters.search, filters.status]);
+
+  if (!rows.length) return null;
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-2xl border border-indigo-100 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100 bg-indigo-50/60 px-4 py-3">
+        <div>
+          <h2 className="text-sm font-bold text-slate-800">Provider Weekly Menu</h2>
+          <p className="text-xs text-slate-500">Dishes configured in each provider&apos;s weekly menu.</p>
+        </div>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-indigo-600">
+          {rows.length} scheduled meals
+        </span>
+      </div>
+      <div className="max-h-[420px] overflow-auto">
+        <table className="w-full min-w-[760px]">
+          <thead className="sticky top-0 border-b bg-white">
+            <tr>
+              {['Provider', 'Day', 'Meal', 'Dishes', 'Status'].map((header) => (
+                <th key={header} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">{header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((row) => (
+              <tr key={row.key} className="hover:bg-indigo-50/30">
+                <td className="px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-800">{row.providerName}</p>
+                  <p className="font-mono text-[11px] text-slate-400">{row.providerUid}</p>
+                </td>
+                <td className="px-4 py-3 text-xs font-semibold text-slate-600">{row.day}</td>
+                <td className="px-4 py-3"><Status value={row.meal} /></td>
+                <td className="px-4 py-3 text-sm text-slate-700">{row.dishes}</td>
+                <td className="px-4 py-3"><Status value={row.isActive ? 'ACTIVE' : 'INACTIVE'} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApproveSubscription, onExtendSubscription, onDeleteProvider, onDeletePlan, onDeleteSubscription, onDeleteDelivery, onCancelClosure, onDeleteMenu, onToggleHomeFoodMenu }) {
   if (section === 'providers') return (
     <tr onClick={onEdit} className="cursor-pointer hover:bg-indigo-50/40">
       <td className="px-4 py-3 text-sm font-semibold text-slate-800">{item.restaurant_name}</td>
@@ -313,25 +610,6 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onExtend
       <td className="px-4 py-3 text-sm">{item.capacity}</td><td className="px-4 py-3 text-sm">{item.active_subscribers}</td>
       <td className="px-4 py-3 text-sm">{Number(item.delivery_radius_km)} km</td>
       <td className="px-4 py-3 text-xs text-slate-500">{(item.meal_types || []).join(', ')}</td>
-      <td className="px-4 py-3">
-        {(item.plans || []).length === 0 ? (
-          <span className="text-xs text-slate-400">No plans</span>
-        ) : (
-          <div className="flex flex-wrap gap-1">
-            {(item.plans || []).slice(0, 3).map((plan, idx) => (
-              <span key={idx} className="inline-flex flex-col items-start rounded-lg bg-indigo-50 px-2 py-1 text-[11px]">
-                <span className="font-semibold text-indigo-700">{money(plan.price)}</span>
-                <span className="text-indigo-400">{plan.plan_type}</span>
-              </span>
-            ))}
-            {(item.plans || []).length > 3 && (
-              <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-500">
-                +{item.plans.length - 3}
-              </span>
-            )}
-          </div>
-        )}
-      </td>
       <td className="px-4 py-3 text-sm text-slate-500">{date(item.created_at)}</td>
       <td className="px-4 py-3"><button onClick={(event) => { event.stopPropagation(); onDeleteProvider(); }} className="text-xs font-semibold text-red-600">Delete</button></td>
     </tr>
@@ -341,6 +619,9 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onExtend
       <td className="px-4 py-3 text-sm font-semibold">{item.name}</td><td className="px-4 py-3 text-xs">{item.plan_type}</td>
       <td className="px-4 py-3 text-sm">{item.restaurant_name || item.provider_uid}</td><td className="px-4 py-3 text-sm">{item.duration_days} days</td>
       <td className="px-4 py-3 text-sm font-semibold">{money(item.price)}</td><td className="px-4 py-3 text-xs">{(item.meal_types || []).join(', ')}</td>
+      <td className="px-4 py-3 text-xs text-slate-500">
+        {Object.values(item.weekly_menu || {}).reduce((count, meals) => count + Object.keys(meals || {}).length, 0)} scheduled meals
+      </td>
       <td className="px-4 py-3"><Status value={item.is_active ? 'ACTIVE' : 'INACTIVE'} /></td>
       <td className="px-4 py-3"><button onClick={(event) => { event.stopPropagation(); onDeletePlan(); }} className="text-xs font-semibold text-red-600">Delete</button></td>
     </tr>
@@ -352,7 +633,14 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onExtend
       <td className="px-4 py-3 text-sm">{item.plan_name}</td><td className="px-4 py-3 text-sm">{money(item.amount_paid)}</td>
       <td className="px-4 py-3"><Status value={item.status} /></td><td className="px-4 py-3"><Status value={item.payment_status} /></td>
       <td className="px-4 py-3 text-xs">{date(item.start_date)} – {date(item.end_date)}</td>
-      <td className="px-4 py-3"><button onClick={(event) => { event.stopPropagation(); onDeleteSubscription(); }} className="text-xs font-semibold text-red-600">Delete</button></td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          {item.status === 'PENDING' && (
+            <button onClick={(event) => { event.stopPropagation(); onApproveSubscription(item.id); }} className="text-xs font-semibold text-emerald-600">Approve</button>
+          )}
+          <button onClick={(event) => { event.stopPropagation(); onDeleteSubscription(); }} className="text-xs font-semibold text-red-600">Delete</button>
+        </div>
+      </td>
     </tr>
   );
   if (section === 'deliveries') return (
@@ -376,6 +664,17 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onExtend
       <td className="px-4 py-3 text-sm font-semibold text-slate-800">{item.menu_name}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{item.restaurant_name}</td>
       <td className="max-w-64 px-4 py-3 text-xs text-slate-500"><p className="line-clamp-2">{item.description || '—'}</p></td>
+      <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
+        <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600">
+          <input
+            type="checkbox"
+            checked={Boolean(item.is_home_food_item)}
+            onChange={(event) => onToggleHomeFoodMenu(event.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+          />
+          {item.is_home_food_item ? 'Included' : 'Not included'}
+        </label>
+      </td>
       <td className="px-4 py-3 text-xs text-slate-500">{(item.home_food_week_days || []).map((day) => day.slice(0, 3)).join(', ') || 'All days'}</td>
       <td className="px-4 py-3"><Status value={item.home_food_meal_slot || 'UNASSIGNED'} /></td>
       <td className="px-4 py-3 text-xs text-slate-600">{item.home_food_serving_start && item.home_food_serving_end ? `${item.home_food_serving_start.slice(0, 5)} – ${item.home_food_serving_end.slice(0, 5)}` : '—'}</td>
@@ -392,7 +691,7 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onExtend
   );
 }
 
-function PageFilters({ section, filters, setFilters, total }) {
+function PageFilters({ section, filters, setFilters, total, menuProviders = [] }) {
   const set = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const reset = () => setFilters({
     search: '', status: '', provider_uid: '', plan_type: '',
@@ -403,6 +702,7 @@ function PageFilters({ section, filters, setFilters, total }) {
     plans: 'Search plan, restaurant, or UID',
     subscriptions: 'Search subscription, customer, restaurant, or plan',
     deliveries: 'Search delivery, subscription, customer, or restaurant',
+    menus: 'Search dish name or provider',
     closures: 'Search provider or closure reason',
   };
 
@@ -433,8 +733,20 @@ function PageFilters({ section, filters, setFilters, total }) {
           {section === 'subscriptions' && ['PENDING', 'ACTIVE', 'EXPIRED', 'CANCELLED'].map((value) => <option key={value}>{value}</option>)}
           {section === 'deliveries' && deliveryStatuses.map((value) => <option key={value}>{value}</option>)}
           {section === 'closures' && ['ACTIVE', 'CANCELLED'].map((value) => <option key={value}>{value}</option>)}
+          {section === 'menus' && <>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </>}
         </select>
 
+        {section === 'menus' && (
+          <select value={filters.provider_uid} onChange={(event) => set('provider_uid', event.target.value)} className={inputClass}>
+            <option value="">All providers</option>
+            {menuProviders.map((p) => (
+              <option key={p.provider_uid} value={p.provider_uid}>{p.restaurant_name}</option>
+            ))}
+          </select>
+        )}
         {section === 'plans' && (
           <select value={filters.plan_type} onChange={(event) => set('plan_type', event.target.value)} className={inputClass}>
             <option value="">All plan types</option>
@@ -456,7 +768,7 @@ function PageFilters({ section, filters, setFilters, total }) {
         {section === 'deliveries' && (
           <input type="date" value={filters.date} onChange={(event) => set('date', event.target.value)} className={inputClass} title="Exact delivery date" />
         )}
-        {section !== 'deliveries' && (
+        {!['deliveries', 'menus'].includes(section) && (
           <>
             <input type="date" value={filters.from_date} onChange={(event) => set('from_date', event.target.value)} className={inputClass} title="From date" />
             <input type="date" value={filters.to_date} onChange={(event) => set('to_date', event.target.value)} className={inputClass} title="To date" />
@@ -464,7 +776,7 @@ function PageFilters({ section, filters, setFilters, total }) {
         )}
       </div>
       <div className="mt-3 flex items-center justify-between">
-        <span className="text-xs text-slate-400">{total} records</span>
+        <span className="text-xs text-slate-400">{total === undefined ? '' : `${total} records`}</span>
         <button type="button" onClick={reset} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Clear filters</button>
       </div>
     </div>
@@ -472,441 +784,563 @@ function PageFilters({ section, filters, setFilters, total }) {
 }
 
 function ProviderForm({ item, onClose, onSaved }) {
-  const [restaurants, setRestaurants] = useState([]);
-  const [restaurantSearch, setRestaurantSearch] = useState('');
+  if (!item) return <CreateCloudKitchenForm onClose={onClose} onSaved={onSaved} />;
+  return <EditProviderSettingsForm item={item} onClose={onClose} onSaved={onSaved} />;
+}
+
+function CreateCloudKitchenForm({ onClose, onSaved }) {
+  const [saving, setSaving] = useState(false);
+  const [selectedMenuDay, setSelectedMenuDay] = useState('MONDAY');
+  const [slotOptions, setSlotOptions] = useState([]);
+  const [slotDraft, setSlotDraft] = useState({ start: '', end: '' });
+  const [form, setForm] = useState({
+    kitchen_name: '',
+    locality: '',
+    city: '',
+    max_active_subscribers: 100,
+    delivery_radius_km: 5,
+    meal_types: ['LUNCH', 'DINNER'],
+    working_days: workingDays.slice(0, 6),
+    delivery_slots: [],
+    weekly_menu: {},
+    trial_available: true,
+  });
+  const [plan, setPlan] = useState({
+    name: '',
+    plan_type: 'MONTHLY',
+    price: '',
+    meal_types: ['LUNCH'],
+    duration_days: 30,
+  });
+
+  const activeDay = (form.working_days || []).includes(selectedMenuDay)
+    ? selectedMenuDay
+    : form.working_days[0] || '';
+
+  const toggleMeal = (meal) => setForm((f) => ({
+    ...f,
+    meal_types: f.meal_types.includes(meal) ? f.meal_types.filter((m) => m !== meal) : [...f.meal_types, meal],
+  }));
+
+  const toggleWorkingDay = (day) => {
+    setForm((f) => {
+      const next = f.working_days.includes(day)
+        ? f.working_days.filter((d) => d !== day)
+        : [...f.working_days, day];
+      if (!next.includes(selectedMenuDay)) setSelectedMenuDay(next[0] || '');
+      return { ...f, working_days: next };
+    });
+  };
+
+  const addSlot = () => {
+    if (!slotDraft.start || !slotDraft.end) { toast.error('Select both start and end times'); return; }
+    if (slotDraft.start >= slotDraft.end) { toast.error('End time must be after start time'); return; }
+    const slot = `${slotDraft.start}-${slotDraft.end}`;
+    if (slotOptions.includes(slot)) { toast.error('Slot already exists'); return; }
+    setSlotOptions((s) => [...s, slot]);
+    setForm((f) => ({ ...f, delivery_slots: [...f.delivery_slots, slot] }));
+    setSlotDraft({ start: '', end: '' });
+  };
+
+  const toggleSlot = (slot) => setForm((f) => ({
+    ...f,
+    delivery_slots: f.delivery_slots.includes(slot)
+      ? f.delivery_slots.filter((s) => s !== slot)
+      : [...f.delivery_slots, slot],
+  }));
+
+  const removeSlot = (slot) => {
+    setSlotOptions((s) => s.filter((x) => x !== slot));
+    setForm((f) => ({ ...f, delivery_slots: f.delivery_slots.filter((s) => s !== slot) }));
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.kitchen_name.trim()) { toast.error('Kitchen name is required'); return; }
+    if (!form.meal_types.length) { toast.error('Select at least one meal type'); return; }
+    const hasPlan = plan.name.trim() || plan.price !== '';
+    if (hasPlan && (!plan.name.trim() || !plan.price || !plan.meal_types.length)) {
+      toast.error('Fill all plan fields or leave plan section empty');
+      return;
+    }
+    setSaving(true);
+    try {
+      await createCloudKitchen({
+        ...form,
+        max_active_subscribers: Number(form.max_active_subscribers),
+        delivery_radius_km: Number(form.delivery_radius_km),
+        ...(hasPlan ? {
+          plan: {
+            ...plan,
+            price: Number(plan.price),
+            duration_days: Number(plan.duration_days),
+          },
+        } : {}),
+      });
+      toast.success('Cloud kitchen created');
+      onSaved();
+    } catch (error) {
+      const msg = error.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg.join(', ') : msg || 'Could not create kitchen');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Add Cloud Kitchen" onClose={onClose}>
+      <form onSubmit={submit} className="grid gap-5 md:grid-cols-2">
+        {/* Basic Info */}
+        <div className="md:col-span-2">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">Kitchen Details</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Kitchen Name *">
+              <input value={form.kitchen_name} onChange={(e) => setForm({ ...form, kitchen_name: e.target.value })} className={inputClass} placeholder="e.g. Maa Ki Rasoi" required />
+            </Field>
+            <Field label="Locality / Area">
+              <input value={form.locality} onChange={(e) => setForm({ ...form, locality: e.target.value })} className={inputClass} placeholder="e.g. Koramangala, HSR Layout" />
+            </Field>
+            <Field label="City">
+              <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className={inputClass} placeholder="e.g. Bangalore" />
+            </Field>
+          </div>
+        </div>
+
+        {/* Operations */}
+        <div className="md:col-span-2">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">Operations</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Capacity (max subscribers)">
+              <input type="number" min="1" value={form.max_active_subscribers} onChange={(e) => setForm({ ...form, max_active_subscribers: e.target.value })} className={inputClass} />
+            </Field>
+            <Field label="Delivery Radius (km)">
+              <input type="number" min="0.1" step="0.1" value={form.delivery_radius_km} onChange={(e) => setForm({ ...form, delivery_radius_km: e.target.value })} className={inputClass} />
+            </Field>
+          </div>
+        </div>
+
+        {/* Meal Types */}
+        <div className="md:col-span-2">
+          <Field label="Meal Types">
+            <div className="flex flex-wrap gap-2">
+              {mealTypes.map((meal) => (
+                <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer">
+                  <input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => toggleMeal(meal)} />
+                  {meal}
+                </label>
+              ))}
+            </div>
+          </Field>
+        </div>
+
+        {/* Working Days */}
+        <div className="md:col-span-2">
+          <Field label="Working Days">
+            <div className="flex flex-wrap gap-2">
+              {workingDays.map((day) => (
+                <label key={day} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer">
+                  <input type="checkbox" checked={form.working_days.includes(day)} onChange={() => toggleWorkingDay(day)} />
+                  {day.slice(0, 3)}
+                </label>
+              ))}
+            </div>
+          </Field>
+        </div>
+
+        {/* Delivery Slots */}
+        <div className="md:col-span-2">
+          <Field label="Delivery Slots">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
+              <div className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                <Field label="Start"><input type="time" value={slotDraft.start} onChange={(e) => setSlotDraft({ ...slotDraft, start: e.target.value })} className={inputClass} /></Field>
+                <Field label="End"><input type="time" value={slotDraft.end} onChange={(e) => setSlotDraft({ ...slotDraft, end: e.target.value })} className={inputClass} /></Field>
+                <button type="button" onClick={addSlot} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"><Plus size={14} /> Add</button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {slotOptions.map((slot) => {
+                  const selected = form.delivery_slots.includes(slot);
+                  return (
+                    <div key={slot} className={`inline-flex items-center overflow-hidden rounded-xl border text-xs font-semibold ${selected ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500'}`}>
+                      <button type="button" onClick={() => toggleSlot(slot)} className="flex items-center gap-2 px-3 py-2">
+                        <input type="checkbox" checked={selected} readOnly />{slot}
+                      </button>
+                      <button type="button" onClick={() => removeSlot(slot)} className="border-l border-current/10 px-2 py-2 hover:bg-red-50 hover:text-red-600"><X size={12} /></button>
+                    </div>
+                  );
+                })}
+                {!slotOptions.length && <p className="text-xs text-slate-400">Add a slot above then check it to enable.</p>}
+              </div>
+            </div>
+          </Field>
+        </div>
+
+        {/* Weekly Menu */}
+        <div className="md:col-span-2">
+          <Field label="Weekly Menu">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
+              {form.working_days.length ? (
+                <>
+                  <Field label="Day">
+                    <select value={activeDay} onChange={(e) => setSelectedMenuDay(e.target.value)} className={inputClass}>
+                      {form.working_days.map((d) => <option key={d}>{d}</option>)}
+                    </select>
+                  </Field>
+                  {activeDay && (
+                    <div className="grid gap-3 md:grid-cols-2 rounded-xl border bg-white p-3">
+                      {form.meal_types.map((meal) => (
+                        <Field key={`${activeDay}-${meal}`} label={meal}>
+                          <input
+                            value={form.weekly_menu?.[activeDay]?.[meal] || ''}
+                            onChange={(e) => setForm({ ...form, weekly_menu: updateWeeklyMenu(form.weekly_menu, activeDay, meal, e.target.value) })}
+                            className={inputClass}
+                            placeholder={`${meal.toLowerCase()} items`}
+                          />
+                        </Field>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="py-3 text-center text-xs text-slate-400">Select working days first.</p>
+              )}
+            </div>
+          </Field>
+        </div>
+
+        {/* Initial Subscription Plan */}
+        <div className="md:col-span-2">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">Subscription Plan <span className="normal-case font-normal text-slate-400">(optional — can add later)</span></p>
+          <div className="grid gap-3 md:grid-cols-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+            <Field label="Plan Name">
+              <input value={plan.name} onChange={(e) => setPlan({ ...plan, name: e.target.value })} className={inputClass} placeholder="e.g. Monthly Lunch Plan" />
+            </Field>
+            <Field label="Plan Type">
+              <select value={plan.plan_type} onChange={(e) => setPlan({ ...plan, plan_type: e.target.value, duration_days: planDurationDays[e.target.value] })} className={inputClass}>
+                {planTypes.map((t) => <option key={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Price (₹)">
+              <input type="number" min="0" step="0.01" value={plan.price} onChange={(e) => setPlan({ ...plan, price: e.target.value })} className={inputClass} placeholder="0.00" />
+            </Field>
+            <Field label="Duration (days)">
+              <input type="number" min="1" value={plan.duration_days} onChange={(e) => setPlan({ ...plan, duration_days: e.target.value })} className={inputClass} />
+            </Field>
+            <div className="md:col-span-2">
+              <Field label="Meals Included">
+                <div className="flex flex-wrap gap-2">
+                  {mealTypes.map((meal) => (
+                    <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer">
+                      <input type="checkbox" checked={plan.meal_types.includes(meal)} onChange={() => setPlan((p) => ({ ...p, meal_types: p.meal_types.includes(meal) ? p.meal_types.filter((m) => m !== meal) : [...p.meal_types, meal] }))} />
+                      {meal}
+                    </label>
+                  ))}
+                </div>
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        <div className="md:col-span-2 flex justify-end gap-2 border-t pt-4">
+          <button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button>
+          <button disabled={saving} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+            {saving ? 'Creating…' : 'Create Cloud Kitchen'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditProviderSettingsForm({ item, onClose, onSaved }) {
   const [selectedMenuDay, setSelectedMenuDay] = useState('MONDAY');
   const [slotOptions, setSlotOptions] = useState([]);
   const [slotDraft, setSlotDraft] = useState({ start: '', end: '' });
   const [providerPlans, setProviderPlans] = useState([]);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [planSaving, setPlanSaving] = useState(false);
-  const [planEditor, setPlanEditor] = useState({
-    name: '', plan_type: 'MONTHLY', duration_days: 30,
-    price: 0, meal_types: ['LUNCH'], is_active: true,
-  });
+  const [planEditor, setPlanEditor] = useState({ name: '', plan_type: 'MONTHLY', duration_days: 30, price: 0, meal_types: ['LUNCH'], is_active: true });
   const [form, setForm] = useState({
-    provider_uid: item?.provider_uid || '', is_active: item?.is_active ?? true,
-    max_active_subscribers: Number(item?.capacity || 100), delivery_radius_km: Number(item?.delivery_radius_km || 5),
-    meal_types: item?.meal_types || mealTypes, working_days: workingDays, delivery_slots: [], weekly_menu: {},
+    provider_uid: item.provider_uid,
+    is_active: item.is_active ?? true,
+    max_active_subscribers: Number(item.capacity || 100),
+    delivery_radius_km: Number(item.delivery_radius_km || 5),
+    meal_types: item.meal_types || mealTypes,
+    working_days: workingDays,
+    delivery_slots: [],
+    weekly_menu: {},
   });
-  const providerPayload = () => ({
-    provider_uid: form.provider_uid,
-    is_active: Boolean(form.is_active),
-    max_active_subscribers: Number(form.max_active_subscribers),
-    delivery_radius_km: Number(form.delivery_radius_km),
-    meal_types: Array.isArray(form.meal_types) ? form.meal_types : [],
-    delivery_slots: Array.isArray(form.delivery_slots) ? form.delivery_slots : [],
-    working_days: Array.isArray(form.working_days) ? form.working_days : [],
-    weekly_menu: form.weekly_menu && typeof form.weekly_menu === 'object'
-      ? form.weekly_menu
-      : {},
-    trial_available: form.trial_available ?? true,
-  });
-  const validateProviderPayload = (payload) => {
-    if (!Number.isInteger(payload.max_active_subscribers) || payload.max_active_subscribers < 1) {
-      throw new Error('Capacity must be a whole number greater than zero');
-    }
-    if (
-      !Number.isFinite(payload.delivery_radius_km)
-      || payload.delivery_radius_km < 0.1
-      || payload.delivery_radius_km > 100
-    ) {
-      throw new Error('Delivery radius must be between 0.1 and 100 km');
-    }
-  };
-  const loadProviderPlans = useCallback(async (providerUid) => {
-    if (!providerUid) {
-      setProviderPlans([]);
-      return;
-    }
-    try {
-      const response = await getHomeFoodPlans({ provider_uid: providerUid });
-      setProviderPlans(unwrapItems(response));
-    } catch {
-      setProviderPlans([]);
-    }
+
+  const loadProviderPlans = useCallback(async (uid) => {
+    try { setProviderPlans(unwrapItems(await getHomeFoodPlans({ provider_uid: uid }))); }
+    catch { setProviderPlans([]); }
   }, []);
+
   useEffect(() => {
-    getAllRestaurants({ limit: 500 }).then((response) => {
-      const rows = Array.isArray(response.data) ? response.data : response.data?.data;
-      setRestaurants(Array.isArray(rows) ? rows : []);
-    }).catch(() => {});
-    if (item?.provider_uid) getHomeFoodProviderSettings(item.provider_uid).then((response) => {
-      const settings = response.data?.data;
-      if (settings) {
-        setForm((current) => ({
-          ...current,
-          provider_uid: settings.provider_uid || current.provider_uid,
-          is_active: settings.is_active ?? current.is_active,
-          max_active_subscribers: Number(
-            settings.max_active_subscribers ?? current.max_active_subscribers,
-          ),
-          delivery_radius_km: Number(
-            settings.delivery_radius_km ?? current.delivery_radius_km,
-          ),
-          meal_types: settings.meal_types || current.meal_types,
-          delivery_slots: settings.delivery_slots || [],
-          working_days: settings.working_days || current.working_days,
-          weekly_menu: settings.weekly_menu || {},
-          trial_available: settings.trial_available ?? true,
-        }));
-        setSlotOptions(settings.delivery_slots || []);
-        setSelectedMenuDay(settings.working_days?.[0] || 'MONDAY');
+    getHomeFoodProviderSettings(item.provider_uid).then((res) => {
+      const s = res.data?.data;
+      if (s) {
+        setForm((f) => ({ ...f, is_active: s.is_active ?? f.is_active, max_active_subscribers: Number(s.max_active_subscribers ?? f.max_active_subscribers), delivery_radius_km: Number(s.delivery_radius_km ?? f.delivery_radius_km), meal_types: s.meal_types || f.meal_types, delivery_slots: s.delivery_slots || [], working_days: s.working_days || f.working_days, weekly_menu: s.weekly_menu || {}, trial_available: s.trial_available ?? true }));
+        setSlotOptions(s.delivery_slots || []);
+        setSelectedMenuDay(s.working_days?.[0] || 'MONDAY');
       }
     }).catch(() => {});
-    if (item?.provider_uid) loadProviderPlans(item.provider_uid);
+    loadProviderPlans(item.provider_uid);
   }, [item, loadProviderPlans]);
+
+  useEffect(() => {
+    if (providerPlans.length && !providerPlans.some((p) => p.id === editingPlanId)) {
+      const p = providerPlans[0];
+      setEditingPlanId(p.id);
+      setPlanEditor({ name: p.name || '', plan_type: p.plan_type, duration_days: Number(p.duration_days), price: Number(p.price), meal_types: p.meal_types || [], is_active: p.is_active });
+    }
+    if (!providerPlans.length) setEditingPlanId(null);
+  }, [providerPlans, editingPlanId]);
+
+  const activeDay = (form.working_days || []).includes(selectedMenuDay) ? selectedMenuDay : (form.working_days || [])[0] || '';
+
   const toggleWorkingDay = (day) => {
-    const enabled = (form.working_days || []).includes(day);
-    const nextDays = enabled
-      ? form.working_days.filter((value) => value !== day)
-      : [...(form.working_days || []), day];
-    setForm({ ...form, working_days: nextDays });
-    if (enabled && selectedMenuDay === day) setSelectedMenuDay(nextDays[0] || '');
-    if (!enabled && !selectedMenuDay) setSelectedMenuDay(day);
+    const next = form.working_days.includes(day) ? form.working_days.filter((d) => d !== day) : [...form.working_days, day];
+    setForm({ ...form, working_days: next });
+    if (!next.includes(selectedMenuDay)) setSelectedMenuDay(next[0] || '');
   };
-  const addDeliverySlot = () => {
-    if (!slotDraft.start || !slotDraft.end) {
-      toast.error('Select both slot start and end times');
-      return;
-    }
-    if (slotDraft.start >= slotDraft.end) {
-      toast.error('Slot end time must be later than start time');
-      return;
-    }
+
+  const addSlot = () => {
+    if (!slotDraft.start || !slotDraft.end) { toast.error('Select both times'); return; }
+    if (slotDraft.start >= slotDraft.end) { toast.error('End must be after start'); return; }
     const slot = `${slotDraft.start}-${slotDraft.end}`;
-    if (slotOptions.includes(slot)) {
-      toast.error('This delivery slot already exists');
-      return;
-    }
+    if (slotOptions.includes(slot)) { toast.error('Slot already exists'); return; }
     setSlotOptions([...slotOptions, slot]);
-    setForm({ ...form, delivery_slots: [...(form.delivery_slots || []), slot] });
+    setForm({ ...form, delivery_slots: [...form.delivery_slots, slot] });
     setSlotDraft({ start: '', end: '' });
   };
-  const toggleDeliverySlot = (slot) => {
-    const selected = (form.delivery_slots || []).includes(slot);
-    setForm({
-      ...form,
-      delivery_slots: selected
-        ? form.delivery_slots.filter((value) => value !== slot)
-        : [...(form.delivery_slots || []), slot],
-    });
-  };
-  const removeDeliverySlot = (slot) => {
-    setSlotOptions(slotOptions.filter((value) => value !== slot));
-    setForm({
-      ...form,
-      delivery_slots: (form.delivery_slots || []).filter((value) => value !== slot),
-    });
-  };
-  const editProviderPlan = (plan) => {
-    setEditingPlanId(plan.id);
-    setPlanEditor({
-      name: plan.name || '',
-      plan_type: plan.plan_type,
-      duration_days: Number(plan.duration_days),
-      price: Number(plan.price),
-      meal_types: plan.meal_types || [],
-      is_active: plan.is_active,
-    });
-  };
-  useEffect(() => {
-    if (!providerPlans.length) {
-      setEditingPlanId(null);
-      return;
-    }
-    if (!providerPlans.some((plan) => plan.id === editingPlanId)) {
-      editProviderPlan(providerPlans[0]);
-    }
-  }, [providerPlans, editingPlanId]);
+
+  const toggleSlot = (slot) => setForm({ ...form, delivery_slots: form.delivery_slots.includes(slot) ? form.delivery_slots.filter((s) => s !== slot) : [...form.delivery_slots, slot] });
+  const removeSlot = (slot) => { setSlotOptions(slotOptions.filter((s) => s !== slot)); setForm({ ...form, delivery_slots: form.delivery_slots.filter((s) => s !== slot) }); };
+
+  const providerPayload = () => ({ provider_uid: form.provider_uid, is_active: Boolean(form.is_active), max_active_subscribers: Number(form.max_active_subscribers), delivery_radius_km: Number(form.delivery_radius_km), meal_types: form.meal_types, delivery_slots: form.delivery_slots, working_days: form.working_days, weekly_menu: form.weekly_menu || {}, trial_available: form.trial_available ?? true });
+
   const saveProviderPlan = async () => {
-    if (!form.provider_uid) {
-      toast.error('Select a restaurant first');
-      return;
-    }
-    if (!planEditor.name.trim() || !planEditor.meal_types.length) {
-      toast.error('Plan name and at least one meal type are required');
-      return;
-    }
-    if (!editingPlanId) {
-      toast.error('Select an existing subscription plan');
-      return;
-    }
+    if (!planEditor.name.trim() || !planEditor.meal_types.length) { toast.error('Plan name and meal types required'); return; }
+    if (!editingPlanId) return;
     setPlanSaving(true);
     try {
-      // Ensures settings exist when a plan is created during initial provider onboarding.
-      const payload = providerPayload();
-      validateProviderPayload(payload);
-      await saveHomeFoodProviderSettings(payload);
+      await saveHomeFoodProviderSettings(providerPayload());
       await updateHomeFoodPlan(editingPlanId, planEditor);
       await loadProviderPlans(form.provider_uid);
-      toast.success('Subscription plan updated');
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Could not save subscription plan');
-    } finally {
-      setPlanSaving(false);
-    }
+      toast.success('Plan updated');
+    } catch (error) { toast.error(error.response?.data?.message || 'Could not save plan'); }
+    finally { setPlanSaving(false); }
   };
-  const submit = async (event) => {
-    event.preventDefault();
+
+  const submit = async (e) => {
+    e.preventDefault();
     try {
-      const payload = providerPayload();
-      validateProviderPayload(payload);
-      await saveHomeFoodProviderSettings(payload);
+      await saveHomeFoodProviderSettings(providerPayload());
       toast.success('Provider settings saved');
       onSaved();
     } catch (error) {
-      const message = error.response?.data?.message;
-      toast.error(
-        Array.isArray(message)
-          ? message.join(', ')
-          : message || error.message || 'Could not save provider',
-      );
+      const msg = error.response?.data?.message;
+      toast.error(Array.isArray(msg) ? msg.join(', ') : msg || error.message || 'Could not save');
     }
   };
-  const filteredRestaurants = restaurants.filter((restaurant) => {
-    const query = restaurantSearch.trim().toLowerCase();
-    if (!query) return true;
-    const name = restaurant.restaurant_name || restaurant.profile?.restaurant_name || '';
-    return `${name} ${restaurant.uid || ''}`.toLowerCase().includes(query);
-  });
-  return <Modal title="Provider Settings" onClose={onClose}><form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
-    <Field label="Restaurant">
-      <div className="space-y-2">
-        {!item && (
-          <div className="relative">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={restaurantSearch}
-              onChange={(event) => setRestaurantSearch(event.target.value)}
-              className={`${inputClass} pl-9`}
-              placeholder="Search restaurant name or UID"
-            />
-          </div>
-        )}
-        <select disabled={Boolean(item)} value={form.provider_uid} onChange={(e) => { setForm({ ...form, provider_uid: e.target.value }); loadProviderPlans(e.target.value); }} className={inputClass} required>
-          <option value="">Select restaurant</option>
-          {filteredRestaurants.map((restaurant) => <option key={restaurant.uid} value={restaurant.uid}>{restaurant.restaurant_name || restaurant.profile?.restaurant_name || restaurant.uid} ({restaurant.uid})</option>)}
-        </select>
-        {!item && restaurantSearch && filteredRestaurants.length === 0 && (
-          <p className="text-xs text-amber-600">No matching restaurants found.</p>
-        )}
-      </div>
-    </Field>
-    <Field label="Status"><select value={String(form.is_active)} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
-    <Field label="Capacity"><input type="number" min="1" value={form.max_active_subscribers} onChange={(e) => setForm({ ...form, max_active_subscribers: Number(e.target.value) })} className={inputClass} /></Field>
-    <Field label="Delivery radius (km)"><input type="number" min="0.1" step="0.1" value={form.delivery_radius_km} onChange={(e) => setForm({ ...form, delivery_radius_km: Number(e.target.value) })} className={inputClass} /></Field>
-    <div className="md:col-span-2"><Field label="Meal Types"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs"><input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => setForm({ ...form, meal_types: form.meal_types.includes(meal) ? form.meal_types.filter((value) => value !== meal) : [...form.meal_types, meal] })} />{meal}</label>)}</div></Field></div>
-    <div className="md:col-span-2"><Field label="Working Days"><div className="flex flex-wrap gap-2">{workingDays.map((day) => <label key={day} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs"><input type="checkbox" checked={(form.working_days || []).includes(day)} onChange={() => toggleWorkingDay(day)} />{day.slice(0, 3)}</label>)}</div></Field></div>
-    <div className="md:col-span-2">
-      <Field label="Delivery Slots">
-        <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-          <div className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
-            <Field label="Start Time"><input type="time" value={slotDraft.start} onChange={(e) => setSlotDraft({ ...slotDraft, start: e.target.value })} className={inputClass} /></Field>
-            <Field label="End Time"><input type="time" value={slotDraft.end} onChange={(e) => setSlotDraft({ ...slotDraft, end: e.target.value })} className={inputClass} /></Field>
-            <button type="button" onClick={addDeliverySlot} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"><Plus size={15} /> Add Slot</button>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {slotOptions.map((slot) => {
-              const selected = (form.delivery_slots || []).includes(slot);
-              return (
-                <div key={slot} className={`inline-flex items-center overflow-hidden rounded-xl border text-xs font-semibold ${selected ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500'}`}>
-                  <button type="button" onClick={() => toggleDeliverySlot(slot)} className="flex items-center gap-2 px-3 py-2">
-                    <input type="checkbox" checked={selected} readOnly />
-                    {slot}
-                  </button>
-                  <button type="button" onClick={() => removeDeliverySlot(slot)} className="border-l border-current/10 px-2 py-2 hover:bg-red-50 hover:text-red-600" title="Delete slot"><X size={13} /></button>
-                </div>
-              );
-            })}
-            {!slotOptions.length && <p className="py-2 text-xs text-slate-400">Create a delivery slot, then select it for this provider.</p>}
-          </div>
-        </div>
-      </Field>
-    </div>
-    <div className="md:col-span-2">
-      <Field label="Weekly Menu">
-        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-          {(form.working_days || []).length ? (
-            <>
-              <Field label="Select Day">
-                <select value={(form.working_days || []).includes(selectedMenuDay) ? selectedMenuDay : form.working_days[0]} onChange={(e) => setSelectedMenuDay(e.target.value)} className={inputClass}>
-                  {form.working_days.map((day) => <option key={day} value={day}>{day}</option>)}
-                </select>
-              </Field>
-              <div className="rounded-xl border border-slate-100 bg-white p-3">
-                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-600">{(form.working_days || []).includes(selectedMenuDay) ? selectedMenuDay : form.working_days[0]}</p>
-              <div className="grid gap-3 md:grid-cols-2">
-                {(form.meal_types || mealTypes).map((meal) => (
-                    <Field key={`${selectedMenuDay}-${meal}`} label={meal}>
-                    <input
-                        value={form.weekly_menu?.[(form.working_days || []).includes(selectedMenuDay) ? selectedMenuDay : form.working_days[0]]?.[meal] || ''}
-                      onChange={(event) => setForm({
-                        ...form,
-                        weekly_menu: updateWeeklyMenu(
-                          form.weekly_menu,
-                            (form.working_days || []).includes(selectedMenuDay) ? selectedMenuDay : form.working_days[0],
-                          meal,
-                          event.target.value,
-                        ),
-                      })}
-                      className={inputClass}
-                      placeholder={`Enter ${meal.toLowerCase()} items`}
-                    />
-                  </Field>
-                ))}
-              </div>
-              </div>
-            </>
-          ) : (
-            <p className="py-4 text-center text-sm text-slate-400">
-              Select at least one working day to configure the menu.
-            </p>
-          )}
-        </div>
-      </Field>
-    </div>
-    <div className="md:col-span-2">
-      <Field label="Subscription Plans">
-        <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-          {providerPlans.length > 0 && (
-            <div>
-              <Field label="Selected Subscription Plan">
-                <select
-                  value={editingPlanId || ''}
-                  onChange={(event) => {
-                    const plan = providerPlans.find((entry) => entry.id === event.target.value);
-                    if (plan) editProviderPlan(plan);
-                  }}
-                  className={inputClass}
-                >
-                  {providerPlans.map((plan) => (
-                    <option key={plan.id} value={plan.id}>
-                      {plan.name} — {plan.plan_type} — {money(plan.price)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <div className="hidden">
-              {providerPlans.map((plan) => (
-                <div
-                  key={plan.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => editProviderPlan(plan)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') editProviderPlan(plan);
-                  }}
-                  className={`cursor-pointer rounded-xl border p-3 transition-all ${
-                    editingPlanId === plan.id
-                      ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-100'
-                      : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-800">{plan.name}</p>
-                      <Status value={plan.is_active ? 'ACTIVE' : 'INACTIVE'} />
-                    </div>
-                    <p className="mt-1 text-xs text-slate-400">
-                      {plan.plan_type} · {plan.duration_days} days · {money(plan.price)} · {(plan.meal_types || []).join(', ')}
-                    </p>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className={`text-xs font-semibold ${editingPlanId === plan.id ? 'text-indigo-700' : 'text-slate-400'}`}>
-                      {editingPlanId === plan.id ? 'Selected' : 'Click to select'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={async (event) => {
-                        event.stopPropagation();
-                        await updateHomeFoodPlan(plan.id, { is_active: !plan.is_active });
-                        await loadProviderPlans(form.provider_uid);
-                      }}
-                      className="text-xs font-semibold text-slate-600"
-                    >
-                      {plan.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-              </div>
-            </div>
-          )}
-          {providerPlans.length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center">
-              <p className="text-sm font-medium text-slate-500">No subscription plans available.</p>
-              <p className="mt-1 text-xs text-slate-400">Create plans from the dedicated Plans page.</p>
-            </div>
-          )}
 
-          <div className={`${editingPlanId ? '' : 'hidden'} rounded-xl border border-indigo-100 bg-white p-3`}>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-slate-800">
-                Selected Plan: {planEditor.name}
-              </p>
-              <Status value={planEditor.is_active ? 'ACTIVE' : 'INACTIVE'} />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Plan Name"><input value={planEditor.name} onChange={(e) => setPlanEditor({ ...planEditor, name: e.target.value })} className={inputClass} placeholder="Monthly Lunch Plan" /></Field>
-              <Field label="Plan Type"><select value={planEditor.plan_type} onChange={(e) => setPlanEditor({ ...planEditor, plan_type: e.target.value, duration_days: planDurationDays[e.target.value] })} className={inputClass}>{planTypes.map((type) => <option key={type}>{type}</option>)}</select></Field>
-              <Field label="Duration Days"><input type="number" min="1" value={planEditor.duration_days} onChange={(e) => setPlanEditor({ ...planEditor, duration_days: Number(e.target.value) })} className={inputClass} /></Field>
-              <Field label="Price"><input type="number" min="0" step="0.01" value={planEditor.price} onChange={(e) => setPlanEditor({ ...planEditor, price: Number(e.target.value) })} className={inputClass} /></Field>
-              <div className="md:col-span-2">
-                <Field label="Included Meals">
-                  <div className="flex flex-wrap gap-2">
-                    {(form.meal_types || mealTypes).map((meal) => (
-                      <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={planEditor.meal_types.includes(meal)}
-                          onChange={() => setPlanEditor({
-                            ...planEditor,
-                            meal_types: planEditor.meal_types.includes(meal)
-                              ? planEditor.meal_types.filter((value) => value !== meal)
-                              : [...planEditor.meal_types, meal],
-                          })}
-                        />
-                        {meal}
-                      </label>
-                    ))}
-                  </div>
-                </Field>
+  return (
+    <Modal title="Provider Settings" onClose={onClose}>
+      <form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
+        <div className="md:col-span-2 rounded-xl bg-slate-50 border px-4 py-3">
+          <p className="text-xs text-slate-500 font-medium">Kitchen</p>
+          <p className="text-sm font-semibold text-slate-800">{item.restaurant_name}</p>
+          <p className="text-xs text-slate-400 font-mono">{item.provider_uid}</p>
+        </div>
+        <Field label="Status"><select value={String(form.is_active)} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
+        <Field label="Capacity"><input type="number" min="1" value={form.max_active_subscribers} onChange={(e) => setForm({ ...form, max_active_subscribers: Number(e.target.value) })} className={inputClass} /></Field>
+        <Field label="Delivery Radius (km)"><input type="number" min="0.1" step="0.1" value={form.delivery_radius_km} onChange={(e) => setForm({ ...form, delivery_radius_km: Number(e.target.value) })} className={inputClass} /></Field>
+        <div className="md:col-span-2"><Field label="Meal Types"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer"><input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => setForm({ ...form, meal_types: form.meal_types.includes(meal) ? form.meal_types.filter((m) => m !== meal) : [...form.meal_types, meal] })} />{meal}</label>)}</div></Field></div>
+        <div className="md:col-span-2"><Field label="Working Days"><div className="flex flex-wrap gap-2">{workingDays.map((day) => <label key={day} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer"><input type="checkbox" checked={form.working_days.includes(day)} onChange={() => toggleWorkingDay(day)} />{day.slice(0, 3)}</label>)}</div></Field></div>
+        <div className="md:col-span-2">
+          <Field label="Delivery Slots">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
+              <div className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                <Field label="Start"><input type="time" value={slotDraft.start} onChange={(e) => setSlotDraft({ ...slotDraft, start: e.target.value })} className={inputClass} /></Field>
+                <Field label="End"><input type="time" value={slotDraft.end} onChange={(e) => setSlotDraft({ ...slotDraft, end: e.target.value })} className={inputClass} /></Field>
+                <button type="button" onClick={addSlot} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"><Plus size={14} /> Add</button>
               </div>
-              <Field label="Plan Status"><select value={String(planEditor.is_active)} onChange={(e) => setPlanEditor({ ...planEditor, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
-              <div className="flex items-end">
-                <button type="button" disabled={planSaving} onClick={saveProviderPlan} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
-                  {planSaving ? 'Saving…' : 'Save Plan Changes'}
-                </button>
+              <div className="flex flex-wrap gap-2">
+                {slotOptions.map((slot) => {
+                  const sel = form.delivery_slots.includes(slot);
+                  return (
+                    <div key={slot} className={`inline-flex items-center overflow-hidden rounded-xl border text-xs font-semibold ${sel ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500'}`}>
+                      <button type="button" onClick={() => toggleSlot(slot)} className="flex items-center gap-2 px-3 py-2"><input type="checkbox" checked={sel} readOnly />{slot}</button>
+                      <button type="button" onClick={() => removeSlot(slot)} className="border-l border-current/10 px-2 py-2 hover:bg-red-50 hover:text-red-600"><X size={12} /></button>
+                    </div>
+                  );
+                })}
+                {!slotOptions.length && <p className="text-xs text-slate-400">Add a slot above.</p>}
               </div>
             </div>
+          </Field>
+        </div>
+        <div className="md:col-span-2">
+          <Field label="Weekly Menu">
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              {form.working_days.length ? (
+                <>
+                  <Field label="Day"><select value={activeDay} onChange={(e) => setSelectedMenuDay(e.target.value)} className={inputClass}>{form.working_days.map((d) => <option key={d}>{d}</option>)}</select></Field>
+                  {activeDay && (
+                    <div className="grid gap-3 md:grid-cols-2 rounded-xl border bg-white p-3">
+                      {form.meal_types.map((meal) => (
+                        <Field key={`${activeDay}-${meal}`} label={meal}>
+                          <input value={form.weekly_menu?.[activeDay]?.[meal] || ''} onChange={(e) => setForm({ ...form, weekly_menu: updateWeeklyMenu(form.weekly_menu, activeDay, meal, e.target.value) })} className={inputClass} placeholder={`${meal.toLowerCase()} items`} />
+                        </Field>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : <p className="text-xs text-slate-400 py-3 text-center">Select working days first.</p>}
+            </div>
+          </Field>
+        </div>
+        <div className="md:col-span-2">
+          <Field label="Subscription Plans">
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              {providerPlans.length > 0 ? (
+                <>
+                  <Field label="Select Plan">
+                    <select value={editingPlanId || ''} onChange={(e) => { const p = providerPlans.find((x) => x.id === e.target.value); if (p) { setEditingPlanId(p.id); setPlanEditor({ name: p.name, plan_type: p.plan_type, duration_days: Number(p.duration_days), price: Number(p.price), meal_types: p.meal_types || [], is_active: p.is_active }); } }} className={inputClass}>
+                      {providerPlans.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.plan_type} — {money(p.price)}</option>)}
+                    </select>
+                  </Field>
+                  {editingPlanId && (
+                    <div className="grid gap-3 md:grid-cols-2 rounded-xl border border-indigo-100 bg-white p-3">
+                      <Field label="Plan Name"><input value={planEditor.name} onChange={(e) => setPlanEditor({ ...planEditor, name: e.target.value })} className={inputClass} /></Field>
+                      <Field label="Plan Type"><select value={planEditor.plan_type} onChange={(e) => setPlanEditor({ ...planEditor, plan_type: e.target.value, duration_days: planDurationDays[e.target.value] })} className={inputClass}>{planTypes.map((t) => <option key={t}>{t}</option>)}</select></Field>
+                      <Field label="Duration Days"><input type="number" min="1" value={planEditor.duration_days} onChange={(e) => setPlanEditor({ ...planEditor, duration_days: Number(e.target.value) })} className={inputClass} /></Field>
+                      <Field label="Price (₹)"><input type="number" min="0" step="0.01" value={planEditor.price} onChange={(e) => setPlanEditor({ ...planEditor, price: Number(e.target.value) })} className={inputClass} /></Field>
+                      <div className="md:col-span-2"><Field label="Meals"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer"><input type="checkbox" checked={planEditor.meal_types.includes(meal)} onChange={() => setPlanEditor({ ...planEditor, meal_types: planEditor.meal_types.includes(meal) ? planEditor.meal_types.filter((m) => m !== meal) : [...planEditor.meal_types, meal] })} />{meal}</label>)}</div></Field></div>
+                      <Field label="Status"><select value={String(planEditor.is_active)} onChange={(e) => setPlanEditor({ ...planEditor, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
+                      <div className="flex items-end"><button type="button" disabled={planSaving} onClick={saveProviderPlan} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{planSaving ? 'Saving…' : 'Save Plan'}</button></div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="py-3 text-center text-xs text-slate-400">No plans yet. Create from the Plans page.</p>
+              )}
+            </div>
+          </Field>
+        </div>
+        <div className="md:col-span-2 flex justify-between gap-2 border-t pt-4">
+          <button type="button" onClick={async () => { if (!window.confirm('Delete this provider?')) return; await deleteHomeFoodProvider(item.provider_uid); toast.success('Provider deleted'); onSaved(); }} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600">Delete</button>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button>
+            <button className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Save Settings</button>
           </div>
         </div>
-      </Field>
-    </div>
-    <div className="md:col-span-2 flex justify-between gap-2 border-t pt-4">
-      {item ? <button type="button" onClick={async () => { if (!window.confirm('Delete this Home Foods provider?')) return; await deleteHomeFoodProvider(item.provider_uid); toast.success('Provider deleted'); onSaved(); }} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600">Delete</button> : <span />}
-      <div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button><button className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Save Provider</button></div>
-    </div>
-  </form></Modal>;
+      </form>
+    </Modal>
+  );
 }
 
 function PlanForm({ item, onClose, onSaved }) {
   const [providers, setProviders] = useState([]);
-  const [form, setForm] = useState({ provider_uid: item?.provider_uid || '', name: item?.name || '', plan_type: item?.plan_type || 'MONTHLY', duration_days: Number(item?.duration_days || 30), price: Number(item?.price || 0), meal_types: item?.meal_types || ['LUNCH'], is_active: item?.is_active ?? true });
+  const [selectedMenuDay, setSelectedMenuDay] = useState(
+    Object.keys(item?.weekly_menu || {})[0] || 'MONDAY',
+  );
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    provider_uid: item?.provider_uid || '',
+    name: item?.name || '',
+    plan_type: item?.plan_type || 'MONTHLY',
+    duration_days: Number(item?.duration_days || 30),
+    price: Number(item?.price || 0),
+    meal_types: item?.meal_types || ['LUNCH'],
+    weekly_menu: item?.weekly_menu || {},
+    is_active: item?.is_active ?? true,
+  });
   useEffect(() => { getHomeFoodProviders({ limit: 100 }).then((response) => setProviders(unwrapItems(response))).catch(() => {}); }, []);
-  const submit = async (event) => { event.preventDefault(); item ? await updateHomeFoodPlan(item.id, form) : await createHomeFoodPlan(form); toast.success('Plan saved'); onSaved(); };
+  const selectedProvider = providers.find((provider) => provider.provider_uid === form.provider_uid);
+  const availableDays = selectedProvider?.working_days?.length
+    ? selectedProvider.working_days
+    : workingDays;
+  const activeDay = availableDays.includes(selectedMenuDay)
+    ? selectedMenuDay
+    : availableDays[0];
+
+  const toggleMeal = (meal) => setForm((current) => ({
+    ...current,
+    meal_types: current.meal_types.includes(meal)
+      ? current.meal_types.filter((value) => value !== meal)
+      : [...current.meal_types, meal],
+  }));
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!form.meal_types.length) {
+      toast.error('Select at least one meal type');
+      return;
+    }
+    setSaving(true);
+    try {
+      if (item) await updateHomeFoodPlan(item.id, form);
+      else await createHomeFoodPlan(form);
+      toast.success('Plan saved with its weekly menu');
+      onSaved();
+    } catch (error) {
+      const message = error.response?.data?.message;
+      toast.error(Array.isArray(message) ? message.join(', ') : message || 'Could not save plan');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return <Modal title={item ? 'Edit Plan' : 'Create Plan'} onClose={onClose}><form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
-    <Field label="Provider"><select disabled={Boolean(item)} value={form.provider_uid} onChange={(e) => setForm({ ...form, provider_uid: e.target.value })} className={inputClass} required><option value="">Select provider</option>{providers.map((provider) => <option key={provider.provider_uid} value={provider.provider_uid}>{provider.restaurant_name}</option>)}</select></Field>
+    <Field label="Existing Provider"><select disabled={Boolean(item)} value={form.provider_uid} onChange={(e) => { setForm({ ...form, provider_uid: e.target.value, weekly_menu: {} }); const provider = providers.find((entry) => entry.provider_uid === e.target.value); setSelectedMenuDay(provider?.working_days?.[0] || 'MONDAY'); }} className={inputClass} required><option value="">Select provider</option>{providers.map((provider) => <option key={provider.provider_uid} value={provider.provider_uid}>{provider.restaurant_name}</option>)}</select></Field>
     <Field label="Plan Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} required /></Field>
-    <Field label="Plan Type"><select value={form.plan_type} onChange={(e) => setForm({ ...form, plan_type: e.target.value })} className={inputClass}>{planTypes.map((type) => <option key={type}>{type}</option>)}</select></Field>
+    <Field label="Plan Type"><select value={form.plan_type} onChange={(e) => setForm({ ...form, plan_type: e.target.value, duration_days: planDurationDays[e.target.value] })} className={inputClass}>{planTypes.map((type) => <option key={type}>{type}</option>)}</select></Field>
     <Field label="Duration Days"><input type="number" min="1" value={form.duration_days} onChange={(e) => setForm({ ...form, duration_days: Number(e.target.value) })} className={inputClass} /></Field>
     <Field label="Price"><input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className={inputClass} /></Field>
     <Field label="Status"><select value={String(form.is_active)} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
-    <div className="md:col-span-2"><Field label="Meal Types"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs"><input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => setForm({ ...form, meal_types: form.meal_types.includes(meal) ? form.meal_types.filter((value) => value !== meal) : [...form.meal_types, meal] })} />{meal}</label>)}</div></Field></div>
+    <div className="md:col-span-2"><Field label="Meal Types"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs"><input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => toggleMeal(meal)} />{meal}</label>)}</div></Field></div>
+    <div className="md:col-span-2">
+      <Field label="Plan-Specific Weekly Menu">
+        <div className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+          {!form.provider_uid ? (
+            <p className="py-4 text-center text-sm text-slate-400">Select an existing provider first.</p>
+          ) : (
+            <>
+              <Field label="Day">
+                <select value={activeDay} onChange={(e) => setSelectedMenuDay(e.target.value)} className={inputClass}>
+                  {availableDays.map((day) => <option key={day}>{day}</option>)}
+                </select>
+              </Field>
+              <div className="grid gap-3 rounded-xl border bg-white p-3 md:grid-cols-2">
+                {form.meal_types.map((meal) => (
+                  <Field key={`${activeDay}-${meal}`} label={`${meal} Dishes`}>
+                    <input
+                      value={form.weekly_menu?.[activeDay]?.[meal] || ''}
+                      onChange={(e) => setForm({
+                        ...form,
+                        weekly_menu: updateWeeklyMenu(
+                          form.weekly_menu,
+                          activeDay,
+                          meal,
+                          e.target.value,
+                        ),
+                      })}
+                      className={inputClass}
+                      placeholder={`e.g. ${meal === 'LUNCH' ? 'Rice, curry, curd' : 'Plan dishes'}`}
+                    />
+                  </Field>
+                ))}
+                {!form.meal_types.length && <p className="text-xs text-slate-400">Select meal types above.</p>}
+              </div>
+            </>
+          )}
+        </div>
+      </Field>
+    </div>
     <div className="md:col-span-2 flex justify-between gap-2 border-t pt-4">
-      {item ? <button type="button" onClick={async () => { if (!window.confirm(`Delete plan "${item.name}"?`)) return; await deleteHomeFoodPlan(item.id); toast.success('Plan deleted'); onSaved(); }} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600">Delete</button> : <span />}
-      <div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button><button className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Save Plan</button></div>
+      {item ? <button type="button" disabled={saving} onClick={async () => { if (!window.confirm(`Delete plan "${item.name}"?`)) return; await deleteHomeFoodPlan(item.id); toast.success('Plan deleted'); onSaved(); }} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50">Delete</button> : <span />}
+      <div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button><button disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save Plan'}</button></div>
     </div>
   </form></Modal>;
 }
@@ -915,6 +1349,21 @@ function SubscriptionDetail({ item, onClose, onSaved }) {
   const [extendDays, setExtendDays] = useState(7);
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const approve = async () => {
+    if (!window.confirm('Approve this subscription and mark its payment as successful?')) return;
+    setSaving(true);
+    try {
+      await updateHomeFoodSubscription(item.id, { status: 'ACTIVE' });
+      toast.success('Subscription approved');
+      onSaved();
+    } catch (error) {
+      const message = error.response?.data?.message;
+      toast.error(Array.isArray(message) ? message.join(', ') : message || 'Could not approve subscription');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const extend = async () => {
     if (!Number.isInteger(Number(extendDays)) || Number(extendDays) < 1) {
@@ -976,6 +1425,14 @@ function SubscriptionDetail({ item, onClose, onSaved }) {
           <Detail label="Start Date" value={date(item.start_date)} />
           <Detail label="End Date" value={date(item.end_date)} />
         </div>
+
+        {item.status === 'PENDING' && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+            <h3 className="text-sm font-semibold text-emerald-800">Approve Subscription</h3>
+            <p className="mt-1 text-xs text-emerald-700">Activates the subscription, confirms payment, and creates scheduled deliveries.</p>
+            <button disabled={saving} onClick={approve} className="mt-3 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Approve Subscription</button>
+          </div>
+        )}
 
         <div className="rounded-xl border border-slate-200 p-4">
           <h3 className="mb-3 text-sm font-semibold text-slate-800">Extend Subscription</h3>
@@ -1094,13 +1551,13 @@ function ClosureForm({ item, onClose, onSaved }) {
   </form></Modal>;
 }
 
-function KitchenMenuForm({ item, onClose, onSaved }) {
+function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
   const [providers, setProviders] = useState([]);
   const [providerSearch, setProviderSearch] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    restaurant_uid: item?.restaurant_uid || '',
+    restaurant_uid: item?.home_food_provider_uid || item?.restaurant_uid || initialProviderUid || '',
     menu_name: item?.menu_name || '',
     description: item?.description || '',
     home_food_week_days: item?.home_food_week_days || workingDays.slice(0, 6),
