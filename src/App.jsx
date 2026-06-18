@@ -56,6 +56,7 @@ import { clearAuthStorage, getStoredAccessToken, logout as logoutApi, refreshAcc
 
 import ActivityLog from "./pages/activity/ActivityLog";
 import DownloadRedirect from "./pages/download/DownloadRedirect";
+import HomeFoodsManagement from "./pages/home-foods/HomeFoodsManagement";
 
 function App() {
   const [authReady, setAuthReady] = useState(false);
@@ -160,6 +161,12 @@ function App() {
 
             <Route element={<ProtectedRoute allowedRoles={[ROLES.ZENZIO_ADMIN]} />}>
               <Route path="/activity-log" element={<ActivityLog />} />
+              <Route path="/home-foods/providers" element={<HomeFoodsManagement />} />
+              <Route path="/home-foods/plans" element={<HomeFoodsManagement />} />
+              <Route path="/home-foods/subscriptions" element={<HomeFoodsManagement />} />
+              <Route path="/home-foods/deliveries" element={<HomeFoodsManagement />} />
+              <Route path="/home-foods/menus" element={<HomeFoodsManagement />} />
+              <Route path="/home-foods/analytics" element={<HomeFoodsManagement />} />
 
               <Route path="/customers" element={<CustomersList />} />
               <Route path="/customers/:id" element={<CustomerDetails />} />

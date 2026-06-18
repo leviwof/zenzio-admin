@@ -369,6 +369,55 @@ export const updateOrderStatus = (orderId, status) => api.patch(`/orders/${order
 export const getAdminAnalytics = (period) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/orders/admin/analytics', { params: { period } });
 
+// Home Foods (platform-admin only)
+const homeFoodsAdminOnly = (request) =>
+  isRestaurantAdmin() ? rejectRestrictedApi('Home Foods is managed by Zenzio Admin') : request();
+
+export const getHomeFoodProviders = (params = {}) =>
+  homeFoodsAdminOnly(() => api.get('/admin/home-foods/providers', { params }));
+export const getHomeFoodProviderSettings = (providerUid) =>
+  homeFoodsAdminOnly(() => api.get('/meal-subscriptions/provider/settings', {
+    params: { provider_uid: providerUid },
+  }));
+export const saveHomeFoodProviderSettings = (data) =>
+  homeFoodsAdminOnly(() => api.put('/meal-subscriptions/provider/settings', data));
+export const deleteHomeFoodProvider = (providerUid) =>
+  homeFoodsAdminOnly(() => api.delete(`/admin/home-foods/providers/${providerUid}`));
+export const getHomeFoodPlans = (params = {}) =>
+  homeFoodsAdminOnly(() => api.get('/admin/home-foods/plans', { params }));
+export const createHomeFoodPlan = (data) =>
+  homeFoodsAdminOnly(() => api.post('/meal-subscriptions/provider/plans', data));
+export const updateHomeFoodPlan = (id, data) =>
+  homeFoodsAdminOnly(() => api.patch(`/meal-subscriptions/provider/plans/${id}`, data));
+export const deleteHomeFoodPlan = (id) =>
+  homeFoodsAdminOnly(() => api.delete(`/meal-subscriptions/provider/plans/${id}`));
+export const getHomeFoodSubscriptions = (params = {}) =>
+  homeFoodsAdminOnly(() => api.get('/admin/home-foods/subscriptions', { params }));
+export const getHomeFoodSubscription = (id) =>
+  homeFoodsAdminOnly(() => api.get(`/admin/home-foods/subscriptions/${id}`));
+export const updateHomeFoodSubscription = (id, data) =>
+  homeFoodsAdminOnly(() => api.patch(`/admin/home-foods/subscriptions/${id}`, data));
+export const deleteHomeFoodSubscription = (id) =>
+  homeFoodsAdminOnly(() => api.delete(`/admin/home-foods/subscriptions/${id}`));
+export const getHomeFoodDeliveries = (params = {}) =>
+  homeFoodsAdminOnly(() => api.get('/admin/home-foods/deliveries', { params }));
+export const getHomeFoodKitchenMenus = (params = {}) =>
+  homeFoodsAdminOnly(() => api.get('/admin/home-foods/menus', { params }));
+export const updateHomeFoodDelivery = (id, data) =>
+  homeFoodsAdminOnly(() => api.patch(`/meal-subscriptions/provider/deliveries/${id}/status`, data));
+export const deleteHomeFoodDelivery = (id) =>
+  homeFoodsAdminOnly(() => api.delete(`/admin/home-foods/deliveries/${id}`));
+export const getHomeFoodClosures = (params = {}) =>
+  homeFoodsAdminOnly(() => api.get('/admin/home-foods/closures', { params }));
+export const createHomeFoodClosure = (data) =>
+  homeFoodsAdminOnly(() => api.post('/meal-subscriptions/provider/closures', data));
+export const updateHomeFoodClosure = (id, data) =>
+  homeFoodsAdminOnly(() => api.patch(`/meal-subscriptions/provider/closures/${id}`, data));
+export const cancelHomeFoodClosure = (id) =>
+  homeFoodsAdminOnly(() => api.delete(`/meal-subscriptions/provider/closures/${id}`));
+export const getHomeFoodAnalytics = () =>
+  homeFoodsAdminOnly(() => api.get('/admin/home-foods/analytics'));
+
 
 export const updateDeliveryStatusByAdmin = (orderId, status, reason = '') =>
   api.put(`/orders/${orderId}/admin/delivery-status`, { status, reason });

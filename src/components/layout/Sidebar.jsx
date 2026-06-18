@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -6,7 +6,7 @@ import {
   ClipboardList, Tag, Menu, BarChart3,
   Settings, CheckCircle, Calendar,
   Gift, Navigation, Image, ChevronLeft,
-  ChevronRight, Plus, Search
+  ChevronRight, ChevronDown, Plus, Search, X, ChefHat, Store, CreditCard, PackageCheck
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { getAdminProfile } from '../../services/api';
@@ -19,6 +19,21 @@ const menuItems = [
   { id: 'delivery-partners', path: '/delivery-partners', icon: Truck, label: 'Delivery Executives', adminOnly: true },
   { id: 'live-tracking', path: '/live-tracking', icon: Navigation, label: 'Live Tracking' },
   { id: 'orders', path: '/orders', icon: ClipboardList, label: 'Order Monitoring' },
+  {
+    id: 'home-foods-section',
+    icon: ChefHat,
+    label: 'Home Foods',
+    adminOnly: true,
+    isDropdown: true,
+    children: [
+      { id: 'home-foods-providers', path: '/home-foods/providers', icon: Store, label: 'Providers' },
+      { id: 'home-foods-plans', path: '/home-foods/plans', icon: Menu, label: 'Plans' },
+      { id: 'home-foods-subscriptions', path: '/home-foods/subscriptions', icon: CreditCard, label: 'Subscriptions' },
+      { id: 'home-foods-deliveries', path: '/home-foods/deliveries', icon: PackageCheck, label: 'Deliveries' },
+      { id: 'home-foods-menus', path: '/home-foods/menus', icon: Utensils, label: 'Kitchens Menu' },
+      { id: 'home-foods-analytics', path: '/home-foods/analytics', icon: BarChart3, label: 'Analytics' },
+    ],
+  },
   { id: 'subscription', path: '/subscription', icon: Calendar, label: 'Subscription', isUpcoming: true },
   { id: 'booking-approval', path: '/bookings/approval', icon: CheckCircle, label: 'Dining Approval' },
   { id: 'bookings', path: '/bookings', icon: Calendar, label: 'Booking Management', adminOnly: true },
@@ -47,6 +62,11 @@ const Sidebar = ({ isOpen }) => {
   const [collapsed, setCollapsed] = useState(false);
   const restaurantAdmin = isRestaurantAdmin();
   const [hoveredItem, setHoveredItem] = useState(null);
+  const [homeFoodsOpen, setHomeFoodsOpen] = useState(
+    location.pathname.startsWith('/home-foods'),
+  );
+  const [search, setSearch] = useState('');
+  const searchRef = useRef(null);
 
   useEffect(() => {
     const fetchPlatformName = async () => {
@@ -76,6 +96,23 @@ const Sidebar = ({ isOpen }) => {
     ? quickAddItems.filter(i => i.id === 'add-menu')
     : quickAddItems;
 
+  const allSearchable = visibleMenuItems.flatMap((item) => {
+    if (item.isDropdown) {
+      return [
+        { ...item, path: item.children[0]?.path },
+        ...item.children,
+      ];
+    }
+    return item.path ? [item] : [];
+  });
+
+  const searchQuery = search.trim().toLowerCase();
+  const searchResults = searchQuery
+    ? allSearchable.filter((item) =>
+        item.label.toLowerCase().includes(searchQuery),
+      )
+    : [];
+
   const isActive = (item) => {
     if (item.id === 'admin-offers' && location.pathname.startsWith('/offers/') &&
         !location.pathname.startsWith('/offers/approval') && !location.pathname.startsWith('/offers/create')) {
@@ -83,6 +120,8 @@ const Sidebar = ({ isOpen }) => {
     }
     return location.pathname === item.path;
   };
+
+  const isHomeFoodsActive = location.pathname.startsWith('/home-foods');
 
   if (!isOpen) return null;
 
@@ -122,7 +161,7 @@ const Sidebar = ({ isOpen }) => {
           )}
         </AnimatePresence>
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => { setCollapsed((c) => { if (!c) setSearch(''); return !c; }); }}
           className="p-1 rounded-lg hover:bg-sidebar-hover text-gray-400 hover:text-white transition-colors flex-shrink-0"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
@@ -131,7 +170,160 @@ const Sidebar = ({ isOpen }) => {
       </div>
 
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5 show-scrollbar-on-hover">
+        {!collapsed && (
+          <div className="relative mb-2">
+            <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+            <input
+              ref={searchRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="w-full rounded-xl bg-white/5 border border-white/10 pl-8 pr-7 py-2 text-xs text-gray-300 placeholder-gray-600 outline-none focus:border-indigo-500/50 focus:bg-white/8 transition-colors"
+            />
+            {search && (
+              <button
+                onClick={() => { setSearch(''); searchRef.current?.focus(); }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {searchQuery && (
+          <div className="mb-2 space-y-0.5">
+            {searchResults.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-gray-600">No results for "{search}"</p>
+            ) : (
+              searchResults.map((item) => {
+                const active = location.pathname === item.path;
+                return (
+                  <motion.button
+                    key={item.id}
+                    whileHover={{ x: 2 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => { navigate(item.path); setSearch(''); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 relative ${
+                      active ? 'bg-sidebar-active text-white' : 'text-gray-300 hover:text-white hover:bg-sidebar-hover'
+                    }`}
+                  >
+                    <item.icon size={16} className="flex-shrink-0" />
+                    <span className="text-sm font-medium truncate">{item.label}</span>
+                  </motion.button>
+                );
+              })
+            )}
+            <div className="my-2 mx-1 border-t border-sidebar-border" />
+          </div>
+        )}
+
         {visibleMenuItems.map((item) => {
+          if (item.isDropdown) {
+            return (
+              <div key={item.id} className="relative group">
+                <motion.button
+                  whileHover={{ x: 2 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => {
+                    if (collapsed) {
+                      setCollapsed(false);
+                      setHomeFoodsOpen(true);
+                    } else {
+                      setHomeFoodsOpen((prev) => !prev);
+                    }
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 ${
+                    isHomeFoodsActive
+                      ? 'text-indigo-300 bg-indigo-500/10'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-sidebar-hover'
+                  }`}
+                  onMouseEnter={() => setHoveredItem(item.id)}
+                  onMouseLeave={() => setHoveredItem(null)}
+                >
+                  <motion.div
+                    animate={isHomeFoodsActive ? { scale: 1.05 } : { scale: 1 }}
+                    className="flex-shrink-0"
+                  >
+                    <item.icon size={collapsed ? 20 : 18} />
+                  </motion.div>
+                  <AnimatePresence mode="wait">
+                    {!collapsed && (
+                      <motion.span
+                        initial={{ opacity: 0, width: 0 }}
+                        animate={{ opacity: 1, width: 'auto' }}
+                        exit={{ opacity: 0, width: 0 }}
+                        className="text-sm font-medium truncate whitespace-nowrap flex-1 text-left"
+                      >
+                        {item.label}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                  {!collapsed && (
+                    <motion.div
+                      animate={{ rotate: homeFoodsOpen ? 180 : 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="flex-shrink-0"
+                    >
+                      <ChevronDown size={14} className="text-gray-500" />
+                    </motion.div>
+                  )}
+                </motion.button>
+
+                {collapsed && hoveredItem === item.id && (
+                  <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 px-2.5 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg shadow-xl whitespace-nowrap border border-gray-700">
+                    {item.label}
+                  </div>
+                )}
+
+                <AnimatePresence initial={false}>
+                  {homeFoodsOpen && !collapsed && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-0.5 space-y-0.5 pl-3 border-l border-indigo-500/20 ml-4">
+                        {item.children.map((child) => {
+                          const active = location.pathname === child.path;
+                          return (
+                            <div key={child.id} className="relative group">
+                              <motion.button
+                                whileHover={{ x: 2 }}
+                                whileTap={{ scale: 0.98 }}
+                                onClick={() => navigate(child.path)}
+                                className={`w-full flex items-center gap-3 pl-3 pr-3 py-2 rounded-xl transition-all duration-150 relative ${
+                                  active
+                                    ? 'bg-sidebar-active text-white'
+                                    : 'text-gray-400 hover:text-gray-200 hover:bg-sidebar-hover'
+                                }`}
+                              >
+                                {active && (
+                                  <motion.div
+                                    layoutId="activeIndicator"
+                                    className="absolute left-0 w-0.5 h-4 bg-indigo-400 rounded-full"
+                                    style={{ boxShadow: '0 0 8px rgba(99,102,241,0.5)' }}
+                                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                                  />
+                                )}
+                                <child.icon size={15} className="flex-shrink-0" />
+                                <span className="text-sm font-medium truncate whitespace-nowrap">
+                                  {child.label}
+                                </span>
+                              </motion.button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          }
+
           const active = isActive(item);
           return (
             <div key={item.id} className="relative group">
