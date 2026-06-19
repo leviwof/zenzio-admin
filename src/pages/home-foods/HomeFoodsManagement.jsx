@@ -242,13 +242,6 @@ export default function HomeFoodsManagement() {
         setWeeklyMenuProviders([]);
         return;
       }
-      if (section === 'menus') {
-        const providersResponse = await getHomeFoodProviders({ limit: 100 });
-        setWeeklyMenuProviders(unwrapItems(providersResponse));
-        setItems([]);
-        setMeta({});
-        return;
-      }
       const params = Object.fromEntries(
         Object.entries(filters).filter(([, value]) => value !== ''),
       );
@@ -259,13 +252,22 @@ export default function HomeFoodsManagement() {
       if (section === 'deliveries' && params.status) {
         params.status = deliveryStatuses.includes(params.status) ? params.status : '';
       }
+      if (section === 'menus') {
+        const [providersResponse, dishesResponse] = await Promise.all([
+          getHomeFoodProviders({ limit: 100 }),
+          getHomeFoodKitchenMenus(params),
+        ]);
+        setWeeklyMenuProviders(unwrapItems(providersResponse));
+        setItems(unwrapItems(dishesResponse));
+        setMeta(dishesResponse.data?.meta || {});
+        return;
+      }
       const loaders = {
         providers: getHomeFoodProviders,
         plans: getHomeFoodPlans,
         subscriptions: getHomeFoodSubscriptions,
         deliveries: getHomeFoodDeliveries,
         closures: getHomeFoodClosures,
-        menus: getHomeFoodKitchenMenus,
       };
       const response = await loaders[section](params);
       setItems(unwrapItems(response));
@@ -422,7 +424,7 @@ export default function HomeFoodsManagement() {
           {section === 'menus' && (
             <ProviderWeeklyMenus providers={weeklyMenuProviders} filters={filters} />
           )}
-          {section !== 'menus' && <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px]">
                 <thead className="border-b bg-slate-50/80">
@@ -516,7 +518,7 @@ export default function HomeFoodsManagement() {
                 </tbody>
               </table>
             </div>
-          </div>}
+          </div>
           {['providers', 'plans', 'deliveries'].includes(section) && (
             <ListPagination
               meta={meta}
