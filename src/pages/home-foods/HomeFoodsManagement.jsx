@@ -417,9 +417,6 @@ export default function HomeFoodsManagement() {
             total={section === 'menus' ? undefined : (meta.total ?? items.length)}
             menuProviders={weeklyMenuProviders}
           />
-          {section === 'menus' && (
-            <ProviderWeeklyMenus providers={weeklyMenuProviders} filters={filters} />
-          )}
           <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px]">
@@ -520,6 +517,9 @@ export default function HomeFoodsManagement() {
               </table>
             </div>
           </div>
+          {section === 'menus' && (
+            <ProviderWeeklyMenus providers={weeklyMenuProviders} filters={filters} />
+          )}
           {['providers', 'plans', 'deliveries'].includes(section) && (
             <ListPagination
               meta={meta}
