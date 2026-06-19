@@ -343,6 +343,11 @@ const Header = ({ onLogout }) => {
     unreadSynthetic.forEach(n => knownSyntheticIds.current.add(n.id));
   }, [syntheticNotifs, playNotificationSound]);
 
+
+
+
+
+  
   const fetchNotifications = useCallback(async () => {
     try {
       const response = await getNotifications();

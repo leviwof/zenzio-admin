@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar, ChevronLeft, Gift, ImagePlus, Loader2, RotateCcw, Save, Store, Tag } from "lucide-react";
+import { Calendar, ChevronLeft, Filter, Gift, ImagePlus, Loader2, RotateCcw, Save, Store, Tag, X } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   createOffer,
@@ -59,6 +59,11 @@ const initialForm = {
   termsConditions: "",
   description: "",
   rules: emptyRules,
+  offer_scope: "ALL_MENU",
+  included_category_ids: [],
+  included_menu_ids: [],
+  excluded_category_ids: [],
+  excluded_menu_ids: [],
 };
 
 const normalizeArray = (response) => {
@@ -178,6 +183,15 @@ const OfferConfiguration = () => {
     if (!category) return menuOptions;
     return menuOptions.filter((menu) => getMenuCategory(menu) === category);
   };
+
+  const categorySelectOptions = categoryOptions.map((c) => ({ label: c, value: c }));
+  const menuSelectOptions = menuOptions.map((m) => ({
+    label: `${getMenuName(m)}${m.price ? ` · ₹${m.price}` : ""}${getMenuCategory(m) !== "Uncategorized" ? ` (${getMenuCategory(m)})` : ""}`,
+    value: getMenuId(m),
+  }));
+
+  const scopeNeedsInclusion = formData.offer_scope === "SELECTED_CATEGORIES" || formData.offer_scope === "SELECTED_ITEMS";
+  const hasExclusions = (formData.excluded_category_ids.length + formData.excluded_menu_ids.length) > 0;
 
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -356,6 +370,11 @@ const OfferConfiguration = () => {
       if (formData.description) data.append("description", formData.description);
       if (formData.termsConditions) data.append("termsConditions", formData.termsConditions);
       if (imageFile) data.append("image", imageFile);
+      data.append("offer_scope", formData.offer_scope || "ALL_MENU");
+      data.append("included_category_ids", JSON.stringify(formData.included_category_ids || []));
+      data.append("included_menu_ids", JSON.stringify(formData.included_menu_ids || []));
+      data.append("excluded_category_ids", JSON.stringify(formData.excluded_category_ids || []));
+      data.append("excluded_menu_ids", JSON.stringify(formData.excluded_menu_ids || []));
 
       if (restaurantAdmin) await createOffer(data);
       else await createOfferByAdmin(data);
@@ -370,7 +389,7 @@ const OfferConfiguration = () => {
   };
 
   const handleReset = () => {
-    setFormData({ ...initialForm, restaurantId: restaurantAdmin ? ownRestaurantUid : "" });
+    setFormData({ ...initialForm, restaurantId: restaurantAdmin ? ownRestaurantUid : "", offer_scope: "ALL_MENU", included_category_ids: [], included_menu_ids: [], excluded_category_ids: [], excluded_menu_ids: [] });
     setImageFile(null);
     setImagePreview(null);
   };
@@ -504,6 +523,133 @@ const OfferConfiguration = () => {
     );
   };
 
+  const MultiSelectDropdown = ({ options, selected, onChange, placeholder = "Select…", disabled = false }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState("");
+    const ref = useRef(null);
+    useEffect(() => {
+      const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+      document.addEventListener("mousedown", handler);
+      return () => document.removeEventListener("mousedown", handler);
+    }, []);
+    const visible = search.trim()
+      ? options.filter((o) => o.label.toLowerCase().includes(search.trim().toLowerCase()))
+      : options;
+    const toggle = (value) => {
+      onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]);
+    };
+    return (
+      <div ref={ref} className="relative">
+        <div
+          onClick={() => !disabled && setOpen((o) => !o)}
+          className={`min-h-[38px] w-full px-3 py-1.5 border border-gray-200 rounded-lg bg-white flex flex-wrap gap-1.5 items-center cursor-pointer hover:border-indigo-400 transition-colors ${disabled ? "bg-gray-100 cursor-not-allowed" : ""}`}
+        >
+          {selected.length === 0 && <span className="text-sm text-gray-400 py-0.5">{placeholder}</span>}
+          {selected.map((value) => {
+            const opt = options.find((o) => o.value === value);
+            return (
+              <span key={value} className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                {opt?.label ?? value}
+                <button type="button" onClick={(e) => { e.stopPropagation(); toggle(value); }} className="text-indigo-400 hover:text-indigo-700"><X size={10} /></button>
+              </span>
+            );
+          })}
+          <span className="ml-auto text-gray-400 text-xs flex-shrink-0">{open ? "▲" : "▼"}</span>
+        </div>
+        {open && !disabled && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+            <div className="p-2 border-b border-gray-100">
+              <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+            </div>
+            <ul className="max-h-48 overflow-y-auto">
+              {visible.length === 0 ? (
+                <li className="px-4 py-3 text-sm text-gray-400 text-center">No results</li>
+              ) : visible.map((opt) => (
+                <li key={opt.value} onClick={() => toggle(opt.value)} className={`px-4 py-2.5 cursor-pointer flex items-center justify-between text-sm hover:bg-indigo-50 ${selected.includes(opt.value) ? "text-indigo-700 bg-indigo-50" : "text-gray-700"}`}>
+                  <span>{opt.label}</span>
+                  {selected.includes(opt.value) && <span className="text-indigo-500 text-xs">✓</span>}
+                </li>
+              ))}
+            </ul>
+            <div className="px-4 py-1.5 border-t border-gray-100 text-xs text-gray-400 flex justify-between">
+              <span>{selected.length} selected</span>
+              {selected.length > 0 && <button type="button" onClick={() => onChange([])} className="text-red-400 hover:text-red-600">Clear all</button>}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const SearchableSelect = ({ options, value, onChange, placeholder = "Select…", emptyLabel, disabled = false }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState("");
+    const ref = useRef(null);
+    useEffect(() => {
+      const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setSearch(""); } };
+      document.addEventListener("mousedown", handler);
+      return () => document.removeEventListener("mousedown", handler);
+    }, []);
+    const lower = search.trim().toLowerCase();
+    const visible = lower ? options.filter((o) => o.label.toLowerCase().includes(lower)) : options;
+    const selected = options.find((o) => o.value === value);
+    const handleSelect = (val) => { onChange(val); setOpen(false); setSearch(""); };
+    return (
+      <div ref={ref} className="relative">
+        <div
+          onClick={() => !disabled && setOpen((o) => !o)}
+          className={`w-full px-4 py-2 border border-gray-200 rounded-lg bg-white flex items-center justify-between gap-2 transition-colors ${disabled ? "bg-gray-100 cursor-not-allowed text-gray-400" : "cursor-pointer hover:border-indigo-400"} ${open ? "border-indigo-400 ring-2 ring-indigo-400/30" : ""}`}
+        >
+          <span className={`flex-1 truncate text-sm ${selected || value === "" ? "text-gray-800" : "text-gray-400"}`}>
+            {selected ? selected.label : (value === "" && emptyLabel ? emptyLabel : placeholder)}
+          </span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {value && value !== "" && (
+              <button type="button" onClick={(e) => { e.stopPropagation(); onChange(""); setSearch(""); }} className="text-gray-400 hover:text-red-500 text-xs w-4 h-4 flex items-center justify-center">✕</button>
+            )}
+            <span className="text-gray-400 text-xs">{open ? "▲" : "▼"}</span>
+          </div>
+        </div>
+        {open && !disabled && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+            <div className="p-2 border-b border-gray-100">
+              <input
+                autoFocus
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search…"
+                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+              />
+            </div>
+            <ul className="max-h-52 overflow-y-auto">
+              {emptyLabel && (
+                <li onClick={() => handleSelect("")} className={`px-4 py-2.5 cursor-pointer text-sm hover:bg-indigo-50 ${value === "" ? "text-indigo-700 bg-indigo-50" : "text-gray-500 italic"}`}>
+                  {emptyLabel}
+                </li>
+              )}
+              {visible.length === 0 ? (
+                <li className="px-4 py-3 text-sm text-gray-400 text-center">No results</li>
+              ) : visible.map((opt) => (
+                <li
+                  key={opt.value}
+                  onClick={() => handleSelect(opt.value)}
+                  className={`px-4 py-2.5 cursor-pointer text-sm hover:bg-indigo-50 flex items-center justify-between ${value === opt.value ? "text-indigo-700 bg-indigo-50 font-medium" : "text-gray-700"}`}
+                >
+                  <span>{opt.label}</span>
+                  {value === opt.value && <span className="text-indigo-500 text-xs">✓</span>}
+                </li>
+              ))}
+            </ul>
+            <div className="px-4 py-1.5 border-t border-gray-100 text-xs text-gray-400 text-right">
+              {visible.length} option{visible.length !== 1 ? "s" : ""}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderRuleFields = () => {
     if (["PERCENTAGE_DISCOUNT", "FIXED_AMOUNT_DISCOUNT", "FESTIVAL_OFFER", "PLATFORM_CAMPAIGN"].includes(formData.offerType)) {
       return (
@@ -620,21 +766,24 @@ const OfferConfiguration = () => {
                 <input name="offerCode" value={formData.offerCode} onChange={handleChange} placeholder="WEEKEND50" className="w-full px-4 py-2 border border-gray-200 rounded-lg uppercase focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
               </Field>
               <Field label="Offer Type" required>
-                <select name="offerType" value={formData.offerType} onChange={handleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white">
-                  {OFFER_TYPES.filter((type) => !restaurantAdmin || type.value !== "PLATFORM_CAMPAIGN").map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
-                </select>
+                <SearchableSelect
+                  options={OFFER_TYPES.filter((type) => !restaurantAdmin || type.value !== "PLATFORM_CAMPAIGN")}
+                  value={formData.offerType}
+                  onChange={(val) => val && handleChange({ target: { name: "offerType", value: val, type: "select", checked: false } })}
+                  placeholder="Select offer type…"
+                />
               </Field>
               <Field label="Restaurant" hint={restaurantAdmin ? "Locked to your restaurant" : "Leave empty for platform-wide offer"}>
                 {restaurantAdmin ? (
                   <input value={ownRestaurantUid || "Own Restaurant"} disabled className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-100 text-gray-500" />
                 ) : (
-                  <select name="restaurantId" value={formData.restaurantId} onChange={handleChange} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white">
-                    <option value="">All Restaurants</option>
-                    {restaurants.map((restaurant) => {
-                      const value = restaurant.uid || restaurant.id;
-                      return <option key={value} value={value}>{getRestaurantName(restaurant)}</option>;
-                    })}
-                  </select>
+                  <SearchableSelect
+                    options={restaurants.map((r) => ({ label: getRestaurantName(r), value: r.uid || r.id }))}
+                    value={formData.restaurantId}
+                    onChange={(val) => handleChange({ target: { name: "restaurantId", value: val ?? "", type: "select", checked: false } })}
+                    placeholder="Search restaurant…"
+                    emptyLabel="All Restaurants (platform-wide)"
+                  />
                 )}
               </Field>
             </div>
@@ -646,6 +795,75 @@ const OfferConfiguration = () => {
               <h2 className="font-semibold text-gray-900">Discount Logic</h2>
             </div>
             {renderRuleFields()}
+          </section>
+
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <Filter size={18} className="text-indigo-500" />
+              <h2 className="font-semibold text-gray-900">Menu Applicability</h2>
+            </div>
+            <div className="space-y-4">
+              <Field label="Offer Scope" hint="Control which menu items this offer applies to">
+                <select
+                  value={formData.offer_scope}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, offer_scope: e.target.value, included_category_ids: e.target.value === "SELECTED_CATEGORIES" ? [...categoryOptions] : [], included_menu_ids: [] }))}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white"
+                >
+                  <option value="ALL_MENU">Entire Menu</option>
+                  <option value="SELECTED_CATEGORIES">Selected Categories Only</option>
+                  <option value="SELECTED_ITEMS">Selected Menu Items Only</option>
+                </select>
+              </Field>
+
+              {formData.offer_scope === "SELECTED_CATEGORIES" && (
+                <Field label="Included Categories" required hint="Offer applies only to items in these categories">
+                  <MultiSelectDropdown
+                    options={categorySelectOptions}
+                    selected={formData.included_category_ids}
+                    onChange={(vals) => setFormData((prev) => ({ ...prev, included_category_ids: vals }))}
+                    placeholder="Select categories…"
+                    disabled={menuOptions.length === 0}
+                  />
+                </Field>
+              )}
+
+              {formData.offer_scope === "SELECTED_ITEMS" && (
+                <Field label="Included Menu Items" required hint="Offer applies only to these specific items">
+                  <MultiSelectDropdown
+                    options={menuSelectOptions}
+                    selected={formData.included_menu_ids}
+                    onChange={(vals) => setFormData((prev) => ({ ...prev, included_menu_ids: vals }))}
+                    placeholder="Search and select items…"
+                    disabled={menuOptions.length === 0}
+                  />
+                </Field>
+              )}
+
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Exclusion Rules</span>
+                  <span className="text-xs text-gray-400">Optional — remove specific items from offer eligibility</span>
+                </div>
+                <Field label="Excluded Categories" hint="Items in these categories will be skipped even if the offer applies">
+                  <MultiSelectDropdown
+                    options={categorySelectOptions}
+                    selected={formData.excluded_category_ids}
+                    onChange={(vals) => setFormData((prev) => ({ ...prev, excluded_category_ids: vals }))}
+                    placeholder="e.g. Starters, Beverages…"
+                    disabled={menuOptions.length === 0}
+                  />
+                </Field>
+                <Field label="Excluded Menu Items" hint="These specific items will never receive the discount">
+                  <MultiSelectDropdown
+                    options={menuSelectOptions}
+                    selected={formData.excluded_menu_ids}
+                    onChange={(vals) => setFormData((prev) => ({ ...prev, excluded_menu_ids: vals }))}
+                    placeholder="e.g. French Fries, Coke…"
+                    disabled={menuOptions.length === 0}
+                  />
+                </Field>
+              </div>
+            </div>
           </section>
 
           <section>
