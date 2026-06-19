@@ -389,6 +389,8 @@ export const activateHomeFoodProvider = (providerUid) =>
   homeFoodsAdminOnly(() => api.patch(`/admin/home-foods/providers/${providerUid}/activate`));
 export const deactivateHomeFoodProvider = (providerUid) =>
   homeFoodsAdminOnly(() => api.patch(`/admin/home-foods/providers/${providerUid}/deactivate`));
+export const rejectHomeFoodProvider = (providerUid, reason) =>
+  homeFoodsAdminOnly(() => api.patch(`/admin/home-foods/providers/${providerUid}/reject`, { reason }));
 export const getHomeFoodPlans = (params = {}) =>
   homeFoodsAdminOnly(() => api.get('/admin/home-foods/plans', { params }));
 export const createHomeFoodPlan = (data) =>

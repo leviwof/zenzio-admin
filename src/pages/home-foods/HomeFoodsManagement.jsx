@@ -18,6 +18,7 @@ import {
   deleteHomeFoodSubscription,
   activateHomeFoodProvider,
   deactivateHomeFoodProvider,
+  rejectHomeFoodProvider,
   getHomeFoodAnalytics,
   getHomeFoodClosures,
   getHomeFoodDeliveries,
@@ -145,6 +146,44 @@ const ConfirmDialog = ({ dialog, confirmLoading, onConfirm, onCancel }) => {
   );
 };
 
+function RejectProviderDialog({ open, onReject, onCancel }) {
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+  if (!open) return null;
+  const submit = async () => {
+    if (!reason.trim()) return;
+    setLoading(true);
+    try { await onReject(reason.trim()); } finally { setLoading(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4" onClick={onCancel}>
+      <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6">
+          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-red-50">
+            <X size={20} className="text-red-500" />
+          </div>
+          <h3 className="text-[15px] font-semibold text-slate-900">Reject Provider</h3>
+          <p className="mt-1 text-sm text-slate-500">Provide a reason so the provider knows what to fix.</p>
+          <textarea
+            autoFocus
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            placeholder="e.g. Identity proof not clear"
+            className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+          />
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
+          <button onClick={onCancel} disabled={loading} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+          <button onClick={submit} disabled={loading || !reason.trim()} className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+            {loading ? 'Rejecting…' : 'Reject Provider'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const Field = ({ label, children }) => (
   <label className="block">
     <span className="mb-1.5 block text-xs font-semibold text-slate-600">{label}</span>
@@ -265,6 +304,7 @@ export default function HomeFoodsManagement() {
   };
 
   const [blockLoading, setBlockLoading] = useState({});
+  const [rejectTarget, setRejectTarget] = useState(null);
   const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
 
   const toggleProviderBlock = async (item) => {
@@ -284,6 +324,18 @@ export default function HomeFoodsManagement() {
       toast.error(error.response?.data?.message || 'Failed to update provider status');
     } finally {
       setBlockLoading((prev) => ({ ...prev, [uid]: false }));
+    }
+  };
+
+  const handleReject = async (reason) => {
+    if (!rejectTarget) return;
+    try {
+      await rejectHomeFoodProvider(rejectTarget.provider_uid, reason);
+      toast.success(`${rejectTarget.restaurant_name || 'Provider'} rejected`);
+      setRejectTarget(null);
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to reject provider');
     }
   };
 
@@ -393,6 +445,7 @@ export default function HomeFoodsManagement() {
                       onExtendSubscription={extendSubscription}
                       onBlockProvider={() => toggleProviderBlock(item)}
                       blockLoading={!!blockLoading[item.provider_uid]}
+                      onRejectProvider={() => setRejectTarget(item)}
                       onDeleteProvider={() => confirm({
                         title: `Delete "${item.restaurant_name || 'this provider'}"?`,
                         message: 'All active subscriptions and deliveries will be cancelled. This cannot be undone.',
@@ -481,6 +534,7 @@ export default function HomeFoodsManagement() {
       )}
 
       <ConfirmDialog dialog={confirmDialog} confirmLoading={confirmLoading} onConfirm={handleConfirm} onCancel={handleCancel} />
+      <RejectProviderDialog open={!!rejectTarget} onReject={handleReject} onCancel={() => setRejectTarget(null)} />
       {modal?.type === 'provider' && <ProviderForm item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {modal?.type === 'plan' && <PlanForm item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {modal?.type === 'subscription' && <SubscriptionDetail item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
@@ -720,34 +774,64 @@ function ProviderWeeklyMenus({ providers, filters }) {
   );
 }
 
-function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApproveSubscription, onExtendSubscription, onDeleteProvider, onBlockProvider, blockLoading, onDeletePlan, onDeleteSubscription, onDeleteDelivery, onCancelClosure, onDeleteMenu, onToggleHomeFoodMenu }) {
-  if (section === 'providers') return (
-    <tr onClick={onEdit} className="cursor-pointer hover:bg-indigo-50/40">
-      <td className="px-4 py-3 text-sm font-semibold text-slate-800">{item.restaurant_name}</td>
-      <td className="px-4 py-3"><Status value={item.is_active ? 'ACTIVE' : 'INACTIVE'} /></td>
-      <td className="px-4 py-3 text-sm">{item.capacity}</td><td className="px-4 py-3 text-sm">{item.active_subscribers}</td>
-      <td className="px-4 py-3 text-sm">{Number(item.delivery_radius_km)} km</td>
-      <td className="px-4 py-3 text-xs text-slate-500">{(item.meal_types || []).join(', ')}</td>
-      <td className="px-4 py-3 text-sm text-slate-500">{date(item.created_at)}</td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={(e) => { e.stopPropagation(); onBlockProvider(); }}
-            disabled={blockLoading}
-            className={`text-xs font-semibold ${item.is_active ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'} disabled:opacity-50`}
-          >
-            {blockLoading ? '…' : item.is_active ? 'Block' : 'Unblock'}
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDeleteProvider(); }}
-            className="text-xs font-semibold text-red-600 hover:text-red-700"
-          >
-            Delete
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
+function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApproveSubscription, onExtendSubscription, onDeleteProvider, onBlockProvider, onRejectProvider, blockLoading, onDeletePlan, onDeleteSubscription, onDeleteDelivery, onCancelClosure, onDeleteMenu, onToggleHomeFoodMenu }) {
+  if (section === 'providers') {
+    const reviewStatus = item.review_status || (item.is_active ? 'approved' : 'pending');
+    const reviewBadge = {
+      approved: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+      pending: 'bg-amber-50 text-amber-700 border-amber-100',
+      rejected: 'bg-red-50 text-red-700 border-red-100',
+    }[reviewStatus] ?? 'bg-slate-50 text-slate-600 border-slate-100';
+    return (
+      <tr onClick={onEdit} className="cursor-pointer hover:bg-indigo-50/40">
+        <td className="px-4 py-3 text-sm font-semibold text-slate-800">{item.restaurant_name}</td>
+        <td className="px-4 py-3">
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize ${reviewBadge}`}>
+            {reviewStatus}
+          </span>
+        </td>
+        <td className="px-4 py-3 text-sm">{item.capacity}</td><td className="px-4 py-3 text-sm">{item.active_subscribers}</td>
+        <td className="px-4 py-3 text-sm">{Number(item.delivery_radius_km)} km</td>
+        <td className="px-4 py-3 text-xs text-slate-500">{(item.meal_types || []).join(', ')}</td>
+        <td className="px-4 py-3 text-sm text-slate-500">{date(item.created_at)}</td>
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            {reviewStatus === 'pending' ? (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onBlockProvider(); }}
+                  disabled={blockLoading}
+                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                >
+                  {blockLoading ? '…' : 'Approve'}
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRejectProvider(); }}
+                  className="text-xs font-semibold text-red-600 hover:text-red-700"
+                >
+                  Reject
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); onBlockProvider(); }}
+                disabled={blockLoading}
+                className={`text-xs font-semibold ${reviewStatus === 'approved' ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'} disabled:opacity-50`}
+              >
+                {blockLoading ? '…' : reviewStatus === 'approved' ? 'Block' : 'Approve'}
+              </button>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onDeleteProvider(); }}
+              className="text-xs font-semibold text-red-600 hover:text-red-700"
+            >
+              Delete
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
   if (section === 'plans') return (
     <tr onClick={onEdit} className="cursor-pointer hover:bg-indigo-50/40">
       <td className="px-4 py-3 text-sm font-semibold">{item.name}</td><td className="px-4 py-3 text-xs">{item.plan_type}</td>
