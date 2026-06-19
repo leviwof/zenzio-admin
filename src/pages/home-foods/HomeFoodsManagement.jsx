@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  Activity, CalendarDays, ChefHat, CircleDollarSign, PackageCheck,
-  Plus, RefreshCw, Search, Store, Users, X,
+  Activity, AlertTriangle, CalendarDays, ChefHat, CircleDollarSign,
+  PackageCheck, Plus, RefreshCw, Search, Store, Trash2, Users, X,
 } from 'lucide-react';
 import {
   cancelHomeFoodClosure,
@@ -83,6 +83,67 @@ const Modal = ({ title, children, onClose }) => (
     </div>
   </div>
 );
+
+function useConfirm() {
+  const [dialog, setDialog] = useState(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const confirm = useCallback((config) => setDialog(config), []);
+  const handleConfirm = useCallback(async () => {
+    if (!dialog) return;
+    setConfirmLoading(true);
+    try { await dialog.onConfirm(); } finally {
+      setConfirmLoading(false);
+      setDialog(null);
+    }
+  }, [dialog]);
+  const handleCancel = useCallback(() => setDialog(null), []);
+  return { dialog, confirmLoading, confirm, handleConfirm, handleCancel };
+}
+
+const ConfirmDialog = ({ dialog, confirmLoading, onConfirm, onCancel }) => {
+  if (!dialog) return null;
+  const isDanger = dialog.danger !== false;
+  const Icon = isDanger ? Trash2 : AlertTriangle;
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6">
+          <div className={`mb-4 flex h-11 w-11 items-center justify-center rounded-full ${isDanger ? 'bg-red-50' : 'bg-amber-50'}`}>
+            <Icon size={20} className={isDanger ? 'text-red-500' : 'text-amber-500'} />
+          </div>
+          <h3 className="text-[15px] font-semibold text-slate-900">{dialog.title}</h3>
+          {dialog.message && (
+            <p className="mt-2 text-sm leading-relaxed text-slate-500">{dialog.message}</p>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
+          <button
+            onClick={onCancel}
+            disabled={confirmLoading}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={confirmLoading}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
+              isDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'
+            }`}
+          >
+            {confirmLoading ? 'Please wait…' : (dialog.confirmLabel || 'Delete')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const Field = ({ label, children }) => (
   <label className="block">
@@ -204,6 +265,7 @@ export default function HomeFoodsManagement() {
   };
 
   const [blockLoading, setBlockLoading] = useState({});
+  const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
 
   const toggleProviderBlock = async (item) => {
     const uid = item.provider_uid;
@@ -241,16 +303,23 @@ export default function HomeFoodsManagement() {
     load();
   };
 
-  const approveSubscription = async (id) => {
-    if (!window.confirm('Approve this subscription and mark its payment as successful?')) return;
-    try {
-      await updateHomeFoodSubscription(id, { status: 'ACTIVE' });
-      toast.success('Subscription approved');
-      load();
-    } catch (error) {
-      const message = error.response?.data?.message;
-      toast.error(Array.isArray(message) ? message.join(', ') : message || 'Approval failed');
-    }
+  const approveSubscription = (id) => {
+    confirm({
+      title: 'Approve this subscription?',
+      message: 'Payment will be marked as successful and the subscription will become active.',
+      confirmLabel: 'Approve',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          await updateHomeFoodSubscription(id, { status: 'ACTIVE' });
+          toast.success('Subscription approved');
+          load();
+        } catch (error) {
+          const message = error.response?.data?.message;
+          toast.error(Array.isArray(message) ? message.join(', ') : message || 'Approval failed');
+        }
+      },
+    });
   };
 
   const extendSubscription = async (id) => {
@@ -324,42 +393,64 @@ export default function HomeFoodsManagement() {
                       onExtendSubscription={extendSubscription}
                       onBlockProvider={() => toggleProviderBlock(item)}
                       blockLoading={!!blockLoading[item.provider_uid]}
-                      onDeleteProvider={async () => {
-                        if (!window.confirm(`Delete ${item.restaurant_name || 'this provider'} from Home Foods?`)) return;
-                        await deleteHomeFoodProvider(item.provider_uid);
-                        toast.success('Provider deleted');
-                        load();
-                      }}
-                      onDeletePlan={async () => {
-                        if (!window.confirm(`Delete plan "${item.name}"?`)) return;
-                        await deleteHomeFoodPlan(item.id);
-                        toast.success('Plan deleted');
-                        load();
-                      }}
-                      onDeleteSubscription={async () => {
-                        if (!window.confirm('Delete this subscription? Future deliveries will be cancelled.')) return;
-                        await deleteHomeFoodSubscription(item.id);
-                        toast.success('Subscription deleted');
-                        load();
-                      }}
-                      onDeleteDelivery={async () => {
-                        if (!window.confirm('Delete this delivery record?')) return;
-                        await deleteHomeFoodDelivery(item.id);
-                        toast.success('Delivery deleted');
-                        load();
-                      }}
-                      onCancelClosure={async () => {
-                        if (!window.confirm('Delete this closure?')) return;
-                        await cancelHomeFoodClosure(item.id);
-                        toast.success('Closure deleted');
-                        load();
-                      }}
-                      onDeleteMenu={async () => {
-                        if (!window.confirm(`Delete dish "${item.menu_name}"?`)) return;
-                        await deleteMenu(item.menu_uid);
-                        toast.success('Kitchen dish deleted');
-                        load();
-                      }}
+                      onDeleteProvider={() => confirm({
+                        title: `Delete "${item.restaurant_name || 'this provider'}"?`,
+                        message: 'All active subscriptions and deliveries will be cancelled. This cannot be undone.',
+                        confirmLabel: 'Delete Provider',
+                        onConfirm: async () => {
+                          await deleteHomeFoodProvider(item.provider_uid);
+                          toast.success('Provider deleted');
+                          load();
+                        },
+                      })}
+                      onDeletePlan={() => confirm({
+                        title: `Delete plan "${item.name}"?`,
+                        message: 'This plan will be permanently removed.',
+                        confirmLabel: 'Delete Plan',
+                        onConfirm: async () => {
+                          await deleteHomeFoodPlan(item.id);
+                          toast.success('Plan deleted');
+                          load();
+                        },
+                      })}
+                      onDeleteSubscription={() => confirm({
+                        title: 'Delete this subscription?',
+                        message: 'Future deliveries will be cancelled.',
+                        confirmLabel: 'Delete',
+                        onConfirm: async () => {
+                          await deleteHomeFoodSubscription(item.id);
+                          toast.success('Subscription deleted');
+                          load();
+                        },
+                      })}
+                      onDeleteDelivery={() => confirm({
+                        title: 'Delete this delivery record?',
+                        confirmLabel: 'Delete',
+                        onConfirm: async () => {
+                          await deleteHomeFoodDelivery(item.id);
+                          toast.success('Delivery deleted');
+                          load();
+                        },
+                      })}
+                      onCancelClosure={() => confirm({
+                        title: 'Delete this closure?',
+                        confirmLabel: 'Delete',
+                        onConfirm: async () => {
+                          await cancelHomeFoodClosure(item.id);
+                          toast.success('Closure deleted');
+                          load();
+                        },
+                      })}
+                      onDeleteMenu={() => confirm({
+                        title: `Delete dish "${item.menu_name}"?`,
+                        message: 'This dish will be removed from the kitchen menu.',
+                        confirmLabel: 'Delete Dish',
+                        onConfirm: async () => {
+                          await deleteMenu(item.menu_uid);
+                          toast.success('Kitchen dish deleted');
+                          load();
+                        },
+                      })}
                       onToggleHomeFoodMenu={async (enabled) => {
                         const payload = new FormData();
                         payload.append('is_home_food_item', String(enabled));
@@ -389,6 +480,7 @@ export default function HomeFoodsManagement() {
         </>
       )}
 
+      <ConfirmDialog dialog={confirmDialog} confirmLoading={confirmLoading} onConfirm={handleConfirm} onCancel={handleCancel} />
       {modal?.type === 'provider' && <ProviderForm item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {modal?.type === 'plan' && <PlanForm item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {modal?.type === 'subscription' && <SubscriptionDetail item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
@@ -638,15 +730,20 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
       <td className="px-4 py-3 text-xs text-slate-500">{(item.meal_types || []).join(', ')}</td>
       <td className="px-4 py-3 text-sm text-slate-500">{date(item.created_at)}</td>
       <td className="px-4 py-3">
-        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3">
           <button
-            onClick={onBlockProvider}
+            onClick={(e) => { e.stopPropagation(); onBlockProvider(); }}
             disabled={blockLoading}
             className={`text-xs font-semibold ${item.is_active ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'} disabled:opacity-50`}
           >
             {blockLoading ? '…' : item.is_active ? 'Block' : 'Unblock'}
           </button>
-          <button onClick={onDeleteProvider} className="text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDeleteProvider(); }}
+            className="text-xs font-semibold text-red-600 hover:text-red-700"
+          >
+            Delete
+          </button>
         </div>
       </td>
     </tr>
@@ -1089,6 +1186,7 @@ function CreateCloudKitchenForm({ onClose, onSaved }) {
 }
 
 function EditProviderSettingsForm({ item, onClose, onSaved }) {
+  const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
   const [selectedMenuDay, setSelectedMenuDay] = useState('MONDAY');
   const [slotOptions, setSlotOptions] = useState([]);
   const [slotDraft, setSlotDraft] = useState({ start: '', end: '' });
@@ -1266,13 +1364,14 @@ function EditProviderSettingsForm({ item, onClose, onSaved }) {
           </Field>
         </div>
         <div className="md:col-span-2 flex justify-between gap-2 border-t pt-4">
-          <button type="button" onClick={async () => { if (!window.confirm('Delete this provider?')) return; await deleteHomeFoodProvider(item.provider_uid); toast.success('Provider deleted'); onSaved(); }} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600">Delete</button>
+          <button type="button" onClick={() => confirm({ title: 'Delete this provider?', message: 'All subscriptions and deliveries will be cancelled. This cannot be undone.', confirmLabel: 'Delete Provider', onConfirm: async () => { await deleteHomeFoodProvider(item.provider_uid); toast.success('Provider deleted'); onSaved(); } })} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600">Delete</button>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button>
             <button className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Save Settings</button>
           </div>
         </div>
       </form>
+      <ConfirmDialog dialog={confirmDialog} confirmLoading={confirmLoading} onConfirm={handleConfirm} onCancel={handleCancel} />
     </Modal>
   );
 }
@@ -1283,6 +1382,7 @@ function PlanForm({ item, onClose, onSaved }) {
     Object.keys(item?.weekly_menu || {})[0] || 'MONDAY',
   );
   const [saving, setSaving] = useState(false);
+  const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
   const [form, setForm] = useState({
     provider_uid: item?.provider_uid || '',
     name: item?.name || '',
@@ -1376,31 +1476,39 @@ function PlanForm({ item, onClose, onSaved }) {
       </Field>
     </div>
     <div className="md:col-span-2 flex justify-between gap-2 border-t pt-4">
-      {item ? <button type="button" disabled={saving} onClick={async () => { if (!window.confirm(`Delete plan "${item.name}"?`)) return; await deleteHomeFoodPlan(item.id); toast.success('Plan deleted'); onSaved(); }} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50">Delete</button> : <span />}
+      {item ? <button type="button" disabled={saving} onClick={() => confirm({ title: 'Delete Plan', message: `Delete plan "${item.name}"? This cannot be undone.`, confirmLabel: 'Delete', onConfirm: async () => { await deleteHomeFoodPlan(item.id); toast.success('Plan deleted'); onSaved(); } })} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50">Delete</button> : <span />}
       <div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button><button disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save Plan'}</button></div>
     </div>
-  </form></Modal>;
+  </form>
+  <ConfirmDialog dialog={confirmDialog} confirmLoading={confirmLoading} onConfirm={handleConfirm} onCancel={handleCancel} />
+</Modal>;
 }
 
 function SubscriptionDetail({ item, onClose, onSaved }) {
   const [extendDays, setExtendDays] = useState(7);
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
 
-  const approve = async () => {
-    if (!window.confirm('Approve this subscription and mark its payment as successful?')) return;
-    setSaving(true);
-    try {
-      await updateHomeFoodSubscription(item.id, { status: 'ACTIVE' });
-      toast.success('Subscription approved');
-      onSaved();
-    } catch (error) {
-      const message = error.response?.data?.message;
-      toast.error(Array.isArray(message) ? message.join(', ') : message || 'Could not approve subscription');
-    } finally {
-      setSaving(false);
-    }
-  };
+  const approve = () => confirm({
+    danger: false,
+    title: 'Approve Subscription',
+    message: 'Activates the subscription, confirms payment, and creates scheduled deliveries.',
+    confirmLabel: 'Approve',
+    onConfirm: async () => {
+      setSaving(true);
+      try {
+        await updateHomeFoodSubscription(item.id, { status: 'ACTIVE' });
+        toast.success('Subscription approved');
+        onSaved();
+      } catch (error) {
+        const message = error.response?.data?.message;
+        toast.error(Array.isArray(message) ? message.join(', ') : message || 'Could not approve subscription');
+      } finally {
+        setSaving(false);
+      }
+    },
+  });
 
   const extend = async () => {
     if (!Number.isInteger(Number(extendDays)) || Number(extendDays) < 1) {
@@ -1435,17 +1543,21 @@ function SubscriptionDetail({ item, onClose, onSaved }) {
     }
   };
 
-  const remove = async () => {
-    if (!window.confirm('Delete this subscription? Future deliveries will be cancelled.')) return;
-    setSaving(true);
-    try {
-      await deleteHomeFoodSubscription(item.id);
-      toast.success('Subscription deleted');
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  };
+  const remove = () => confirm({
+    title: 'Delete Subscription',
+    message: 'Delete this subscription? Future deliveries will be cancelled.',
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      setSaving(true);
+      try {
+        await deleteHomeFoodSubscription(item.id);
+        toast.success('Subscription deleted');
+        onSaved();
+      } finally {
+        setSaving(false);
+      }
+    },
+  });
 
   return (
     <Modal title="Subscription Details" onClose={onClose}>
@@ -1492,6 +1604,7 @@ function SubscriptionDetail({ item, onClose, onSaved }) {
           <button onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Close</button>
         </div>
       </div>
+      <ConfirmDialog dialog={confirmDialog} confirmLoading={confirmLoading} onConfirm={handleConfirm} onCancel={handleCancel} />
     </Modal>
   );
 }
@@ -1503,6 +1616,7 @@ function DeliveryDetail({ item, onClose, onSaved }) {
     proof_image_url: item.proof_image_url || '',
   });
   const [saving, setSaving] = useState(false);
+  const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
 
   const save = async () => {
     setSaving(true);
@@ -1517,17 +1631,21 @@ function DeliveryDetail({ item, onClose, onSaved }) {
     }
   };
 
-  const remove = async () => {
-    if (!window.confirm('Delete this delivery record?')) return;
-    setSaving(true);
-    try {
-      await deleteHomeFoodDelivery(item.id);
-      toast.success('Delivery deleted');
-      onSaved();
-    } finally {
-      setSaving(false);
-    }
-  };
+  const remove = () => confirm({
+    title: 'Delete Delivery',
+    message: 'Delete this delivery record?',
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      setSaving(true);
+      try {
+        await deleteHomeFoodDelivery(item.id);
+        toast.success('Delivery deleted');
+        onSaved();
+      } finally {
+        setSaving(false);
+      }
+    },
+  });
 
   return (
     <Modal title="Delivery Details" onClose={onClose}>
@@ -1561,6 +1679,7 @@ function DeliveryDetail({ item, onClose, onSaved }) {
           </div>
         </div>
       </div>
+      <ConfirmDialog dialog={confirmDialog} confirmLoading={confirmLoading} onConfirm={handleConfirm} onCancel={handleCancel} />
     </Modal>
   );
 }
@@ -1593,6 +1712,7 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
   const [providerSearch, setProviderSearch] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
   const [form, setForm] = useState({
     restaurant_uid: item?.home_food_provider_uid || item?.restaurant_uid || initialProviderUid || '',
     menu_name: item?.menu_name || '',
@@ -1707,13 +1827,14 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
         </div>
         <Field label="Status"><select value={String(form.isActive)} onChange={(e) => setForm({ ...form, isActive: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
         <div className="md:col-span-2 flex justify-between gap-2 border-t pt-4">
-          {item ? <button type="button" disabled={saving} onClick={async () => { if (!window.confirm(`Delete dish "${item.menu_name}"?`)) return; await deleteMenu(item.menu_uid); toast.success('Kitchen dish deleted'); onSaved(); }} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50">Delete</button> : <span />}
+          {item ? <button type="button" disabled={saving} onClick={() => confirm({ title: 'Delete Dish', message: `Delete dish "${item.menu_name}"? This cannot be undone.`, confirmLabel: 'Delete', onConfirm: async () => { await deleteMenu(item.menu_uid); toast.success('Kitchen dish deleted'); onSaved(); } })} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50">Delete</button> : <span />}
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button>
             <button disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save Dish'}</button>
           </div>
         </div>
       </form>
+      <ConfirmDialog dialog={confirmDialog} confirmLoading={confirmLoading} onConfirm={handleConfirm} onCancel={handleCancel} />
     </Modal>
   );
 }
