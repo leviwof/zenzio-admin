@@ -16,6 +16,8 @@ import {
   deleteHomeFoodPlan,
   deleteHomeFoodProvider,
   deleteHomeFoodSubscription,
+  activateHomeFoodProvider,
+  deactivateHomeFoodProvider,
   getHomeFoodAnalytics,
   getHomeFoodClosures,
   getHomeFoodDeliveries,
@@ -201,6 +203,28 @@ export default function HomeFoodsManagement() {
     });
   };
 
+  const [blockLoading, setBlockLoading] = useState({});
+
+  const toggleProviderBlock = async (item) => {
+    const uid = item.provider_uid;
+    const isCurrentlyActive = item.is_active;
+    setBlockLoading((prev) => ({ ...prev, [uid]: true }));
+    try {
+      if (isCurrentlyActive) {
+        await deactivateHomeFoodProvider(uid);
+        toast.success(`${item.restaurant_name || 'Provider'} blocked`);
+      } else {
+        await activateHomeFoodProvider(uid);
+        toast.success(`${item.restaurant_name || 'Provider'} unblocked`);
+      }
+      load();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update provider status');
+    } finally {
+      setBlockLoading((prev) => ({ ...prev, [uid]: false }));
+    }
+  };
+
   const updateDelivery = async (id, status) => {
     try {
       await updateHomeFoodDelivery(id, { status });
@@ -298,6 +322,8 @@ export default function HomeFoodsManagement() {
                       onCancelSubscription={cancelSubscription}
                       onApproveSubscription={approveSubscription}
                       onExtendSubscription={extendSubscription}
+                      onBlockProvider={() => toggleProviderBlock(item)}
+                      blockLoading={!!blockLoading[item.provider_uid]}
                       onDeleteProvider={async () => {
                         if (!window.confirm(`Delete ${item.restaurant_name || 'this provider'} from Home Foods?`)) return;
                         await deleteHomeFoodProvider(item.provider_uid);
@@ -602,7 +628,7 @@ function ProviderWeeklyMenus({ providers, filters }) {
   );
 }
 
-function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApproveSubscription, onExtendSubscription, onDeleteProvider, onDeletePlan, onDeleteSubscription, onDeleteDelivery, onCancelClosure, onDeleteMenu, onToggleHomeFoodMenu }) {
+function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApproveSubscription, onExtendSubscription, onDeleteProvider, onBlockProvider, blockLoading, onDeletePlan, onDeleteSubscription, onDeleteDelivery, onCancelClosure, onDeleteMenu, onToggleHomeFoodMenu }) {
   if (section === 'providers') return (
     <tr onClick={onEdit} className="cursor-pointer hover:bg-indigo-50/40">
       <td className="px-4 py-3 text-sm font-semibold text-slate-800">{item.restaurant_name}</td>
@@ -611,7 +637,18 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
       <td className="px-4 py-3 text-sm">{Number(item.delivery_radius_km)} km</td>
       <td className="px-4 py-3 text-xs text-slate-500">{(item.meal_types || []).join(', ')}</td>
       <td className="px-4 py-3 text-sm text-slate-500">{date(item.created_at)}</td>
-      <td className="px-4 py-3"><button onClick={(event) => { event.stopPropagation(); onDeleteProvider(); }} className="text-xs font-semibold text-red-600">Delete</button></td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={onBlockProvider}
+            disabled={blockLoading}
+            className={`text-xs font-semibold ${item.is_active ? 'text-amber-600 hover:text-amber-700' : 'text-emerald-600 hover:text-emerald-700'} disabled:opacity-50`}
+          >
+            {blockLoading ? '…' : item.is_active ? 'Block' : 'Unblock'}
+          </button>
+          <button onClick={onDeleteProvider} className="text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
+        </div>
+      </td>
     </tr>
   );
   if (section === 'plans') return (
