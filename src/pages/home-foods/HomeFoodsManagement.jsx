@@ -292,13 +292,9 @@ export default function HomeFoodsManagement() {
     plans: 'plan',
     subscriptions: 'subscription',
     deliveries: 'delivery',
-    menus: 'menu',
+    menus: 'kitchenDish',
   }[section];
   const openCreate = () => {
-    if (section === 'menus' && !filters.provider_uid) {
-      toast.error('Select a provider before adding a dish');
-      return;
-    }
     setModal({
       type: sectionModalType,
       providerUid: section === 'menus' ? filters.provider_uid : undefined,
@@ -389,7 +385,7 @@ export default function HomeFoodsManagement() {
     plans: ['Plan', 'Type', 'Restaurant', 'Duration', 'Price', 'Meal Types', 'Plan Menu', 'Status', 'Actions'],
     subscriptions: ['Subscription', 'Customer', 'Phone', 'Restaurant', 'Plan', 'Amount', 'Status', 'Payment', 'Dates', 'Actions'],
     deliveries: ['Delivery', 'Subscription', 'Customer', 'Restaurant', 'Meal', 'Date', 'Status', 'Actions'],
-    menus: ['Image', 'Title', 'Provider', 'Description', 'Home Foods', 'Week Days', 'Meal Slot', 'Serving Time', 'Actions'],
+    menus: ['Image', 'Title', 'Provider', 'Description', 'Week Days', 'Meal Slot', 'Actions'],
   })[section] || [], [section]);
 
   return (
@@ -463,9 +459,14 @@ export default function HomeFoodsManagement() {
                         message: 'This plan will be permanently removed.',
                         confirmLabel: 'Delete Plan',
                         onConfirm: async () => {
-                          await deleteHomeFoodPlan(item.id);
-                          toast.success('Plan deleted');
-                          load();
+                          try {
+                            await deleteHomeFoodPlan(item.id);
+                            toast.success('Plan deleted');
+                            load();
+                          } catch (err) {
+                            const msg = err?.response?.data?.message;
+                            toast.error(Array.isArray(msg) ? msg.join(', ') : msg || 'Could not delete plan');
+                          }
                         },
                       })}
                       onDeleteSubscription={() => confirm({
@@ -555,6 +556,14 @@ export default function HomeFoodsManagement() {
             )));
             setModal(null);
           }}
+        />
+      )}
+      {modal?.type === 'kitchenDish' && (
+        <KitchenMenuForm
+          item={modal.item}
+          initialProviderUid={modal.providerUid}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); load(); }}
         />
       )}
     </div>
@@ -794,7 +803,12 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
         </td>
         <td className="px-4 py-3 text-sm">{item.capacity}</td><td className="px-4 py-3 text-sm">{item.active_subscribers}</td>
         <td className="px-4 py-3 text-sm">{Number(item.delivery_radius_km)} km</td>
-        <td className="px-4 py-3 text-xs text-slate-500">{(item.meal_types || []).join(', ')}</td>
+        <td className="px-4 py-3 text-xs text-slate-500">{(() => {
+          const types = item.meal_types?.length
+            ? item.meal_types
+            : [...new Set((item.plans || []).flatMap((p) => p.meal_types || []))];
+          return types.join(', ') || '—';
+        })()}</td>
         <td className="px-4 py-3 text-sm text-slate-500">{date(item.created_at)}</td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-3">
@@ -843,7 +857,21 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
         {Object.values(item.weekly_menu || {}).reduce((count, meals) => count + Object.keys(meals || {}).length, 0)} scheduled meals
       </td>
       <td className="px-4 py-3"><Status value={item.is_active ? 'ACTIVE' : 'INACTIVE'} /></td>
-      <td className="px-4 py-3"><button onClick={(event) => { event.stopPropagation(); onDeletePlan(); }} className="text-xs font-semibold text-red-600">Delete</button></td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          {item.paid_subscriber_count > 0 && (
+            <span className="text-[11px] text-slate-400">{item.paid_subscriber_count} paid</span>
+          )}
+          <button
+            onClick={(event) => { event.stopPropagation(); onDeletePlan(); }}
+            disabled={item.paid_subscriber_count > 0}
+            title={item.paid_subscriber_count > 0 ? 'Has paid subscribers — deactivate instead' : undefined}
+            className="text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            Delete
+          </button>
+        </div>
+      </td>
     </tr>
   );
   if (section === 'subscriptions') return (
@@ -884,20 +912,20 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
       <td className="px-4 py-3 text-sm font-semibold text-slate-800">{item.menu_name}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{item.restaurant_name}</td>
       <td className="max-w-64 px-4 py-3 text-xs text-slate-500"><p className="line-clamp-2">{item.description || '—'}</p></td>
-      <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
-        <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600">
-          <input
-            type="checkbox"
-            checked={Boolean(item.is_home_food_item)}
-            onChange={(event) => onToggleHomeFoodMenu(event.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-          />
-          {item.is_home_food_item ? 'Included' : 'Not included'}
-        </label>
-      </td>
       <td className="px-4 py-3 text-xs text-slate-500">{(item.home_food_week_days || []).map((day) => day.slice(0, 3)).join(', ') || 'All days'}</td>
-      <td className="px-4 py-3"><Status value={item.home_food_meal_slot || 'UNASSIGNED'} /></td>
-      <td className="px-4 py-3 text-xs text-slate-600">{item.home_food_serving_start && item.home_food_serving_end ? `${item.home_food_serving_start.slice(0, 5)} – ${item.home_food_serving_end.slice(0, 5)}` : '—'}</td>
+      <td className="px-4 py-3">
+        <div className="flex flex-wrap gap-1">
+          {(() => {
+            const slots = Object.entries(item.meal_availability || {})
+              .filter(([, active]) => active)
+              .map(([slot]) => slot.toUpperCase());
+            if (!slots.length && item.home_food_meal_slot) slots.push(item.home_food_meal_slot.toUpperCase());
+            return slots.length
+              ? slots.map((slot) => <Status key={slot} value={slot} />)
+              : <Status value="UNASSIGNED" />;
+          })()}
+        </div>
+      </td>
       <td className="px-4 py-3"><button onClick={(event) => { event.stopPropagation(); onDeleteMenu(); }} className="text-xs font-semibold text-red-600">Delete</button></td>
     </tr>
   );
