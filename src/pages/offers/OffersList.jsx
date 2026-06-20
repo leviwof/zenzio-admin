@@ -116,6 +116,14 @@ const getOfferValue = (offer) => {
 };
 
 const getOfferItemNames = (offer) => {
+  const bogoItems = offer.conditions?.bogoItems || offer.rewards?.bogoItems;
+  if (Array.isArray(bogoItems) && bogoItems.length > 0) {
+    const names = [...new Set(
+      bogoItems.flatMap((combo) => [combo.buyItemName, combo.freeItemName].filter(Boolean))
+    )];
+    if (names.length) return names;
+  }
+
   const names = [
     offer.discountItemNames?.buyItem,
     offer.discountItemNames?.freeItem,
