@@ -48,6 +48,13 @@ const AdminOfferDetails = () => {
   };
 
   const getDiscountItemSummary = () => {
+    const bogoItems = offer.conditions?.bogoItems || offer.rewards?.bogoItems;
+    if (Array.isArray(bogoItems) && bogoItems.length > 0) {
+      const names = [...new Set(
+        bogoItems.flatMap((combo) => [combo.buyItemName, combo.freeItemName].filter(Boolean))
+      )];
+      if (names.length) return names;
+    }
     const names = [
       offer.discountItemNames?.buyItem,
       offer.discountItemNames?.freeItem,
@@ -60,6 +67,15 @@ const AdminOfferDetails = () => {
   const getOfferTypeLabel = () => offerTypeLabels[offer.offerType] || offer.offerType?.replaceAll('_', ' ') || offer.discountType;
 
   const getReadableOfferRule = () => {
+    if (offer.offerType === 'BUY_ONE_GET_ONE') {
+      const bogoItems = offer.conditions?.bogoItems || offer.rewards?.bogoItems;
+      if (Array.isArray(bogoItems) && bogoItems.length > 0) {
+        if (bogoItems.length === 1) {
+          return `Buy 1 ${bogoItems[0].buyItemName || bogoItems[0].buyItem || '-'}, get 1 free`;
+        }
+        return `Buy 1 Get 1 Free — ${bogoItems.length} item combos`;
+      }
+    }
     const buyItem = offer.discountItemNames?.buyItem || offer.conditions?.buyItemName || offer.conditions?.buyProductName;
     const freeItem = offer.discountItemNames?.freeItem || offer.rewards?.freeItemName || offer.rewards?.freeProductName;
     const buyQty = offer.conditions?.quantityRequired || offer.conditions?.buyQuantity || offer.ruleConfig?.buyQuantity || 1;

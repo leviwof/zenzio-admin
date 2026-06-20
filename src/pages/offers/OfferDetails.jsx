@@ -144,6 +144,14 @@ const JsonSummary = ({ data }) => {
 };
 
 const getOfferItemNames = (offer) => {
+  const bogoItems = offer?.conditions?.bogoItems || offer?.rewards?.bogoItems;
+  if (Array.isArray(bogoItems) && bogoItems.length > 0) {
+    const names = [...new Set(
+      bogoItems.flatMap((combo) => [combo.buyItemName, combo.freeItemName].filter(Boolean))
+    )];
+    if (names.length) return names;
+  }
+
   const names = [
     offer?.discountItemNames?.buyItem,
     offer?.discountItemNames?.freeItem,
@@ -209,7 +217,17 @@ const getOfferLogicMessage = (offer) => {
   const triggerCategory = readRuleValue(offer, ["triggerCategory", "category", "categoryId"]);
   const minAmount = Number(readRuleValue(offer, ["minimumCartAmount"]) || offer?.minOrderValue || 0);
 
-  if (["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(offer?.offerType)) {
+  if (offer?.offerType === "BUY_ONE_GET_ONE") {
+    const bogoItems = offer?.conditions?.bogoItems || offer?.rewards?.bogoItems;
+    if (Array.isArray(bogoItems) && bogoItems.length > 0) {
+      if (bogoItems.length === 1) {
+        return `Buy 1 ${bogoItems[0].buyItemName || bogoItems[0].buyItem}, get 1 free`;
+      }
+      return `Buy 1 Get 1 Free — ${bogoItems.length} item combos`;
+    }
+    return `Buy ${buyQty} ${buyName}, get ${freeQty} ${freeName} free`;
+  }
+  if (offer?.offerType === "BUY_X_GET_Y") {
     return `Buy ${buyQty} ${buyName}, get ${freeQty} ${freeName} free`;
   }
   if (offer?.offerType === "FREE_ITEM_CART_VALUE") {
@@ -227,7 +245,24 @@ const getOfferLogicMessage = (offer) => {
 const buildReadableRuleRows = (offer) => {
   const rows = [{ label: "Type", value: getFriendlyOfferType(offer) }];
 
-  if (["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(offer?.offerType)) {
+  if (offer?.offerType === "BUY_ONE_GET_ONE") {
+    const bogoItems = offer?.conditions?.bogoItems || offer?.rewards?.bogoItems;
+    if (Array.isArray(bogoItems) && bogoItems.length > 0) {
+      bogoItems.forEach((combo, idx) => {
+        const label = bogoItems.length > 1 ? `Combo ${idx + 1}` : "Item";
+        rows.push({ label, value: `${combo.buyItemName || combo.buyItem || "-"} — Buy 1 Get 1 Free` });
+      });
+      return rows;
+    }
+    rows.push(
+      { label: "Buy Item", value: getRuleItemName(offer, "buy") },
+      { label: "Free Item", value: getRuleItemName(offer, "free") },
+      { label: "Buy Quantity", value: getRuleNumber(offer, ["buyQuantity", "quantityRequired", "buyQty", "buyX"], 1) },
+      { label: "Free Quantity", value: getRuleNumber(offer, ["freeQuantity", "freeQty", "getQty", "getY"], 1) },
+    );
+    return rows;
+  }
+  if (offer?.offerType === "BUY_X_GET_Y") {
     rows.push(
       { label: "Buy Item", value: getRuleItemName(offer, "buy") },
       { label: "Free Item", value: getRuleItemName(offer, "free") },
