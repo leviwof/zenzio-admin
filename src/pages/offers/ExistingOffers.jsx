@@ -28,13 +28,18 @@ const PAGE_SIZE = 10;
 const IMAGE_PLACEHOLDER = null;
 
 const getOfferItemNames = (offer) => {
+  const bogoItems = offer.conditions?.bogoItems || offer.rewards?.bogoItems;
+  if (Array.isArray(bogoItems) && bogoItems.length > 0) {
+    return [...new Set(
+      bogoItems.flatMap((combo) => [combo.buyItemName, combo.freeItemName].filter(Boolean))
+    )];
+  }
   const names = [
     offer.discountItemNames?.buyItem,
     offer.discountItemNames?.freeItem,
     ...(offer.discountItemNames?.applicableItems || []),
     ...(offer.applicableItemNames || []),
   ].filter(Boolean);
-
   return [...new Set(names)];
 };
 
