@@ -1247,7 +1247,7 @@ const RestaurantsList = () => {
               <span>Rows per page</span>
               <select
                 value={itemsPerPage}
-                onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                onChange={(e) => setItemsPerPage(Number(e.target.value))}
                 className="border border-gray-200 rounded-lg px-2 py-1 text-xs font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
               >
                 {[10, 20, 50, 100].map((n) => (
