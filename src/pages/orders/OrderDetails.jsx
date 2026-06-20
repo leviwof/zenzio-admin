@@ -586,8 +586,9 @@ const OrderDetails = () => {
 
     return ORDER_TIMELINE_STEPS.map((step, index) => {
       const backendItem = timelineByStatus[step.status];
-      const isCompleted = Boolean(backendItem?.timestamp) || (completedUntil >= 0 && index <= completedUntil);
-      const timestamp = backendItem?.timestamp || (step.status === 'PLACED' ? orderPlacementTimestamp : null);
+      const backendTimestamp = backendItem?.timestamp || backendItem?.createdAt || backendItem?.time || backendItem?.updatedAt || null;
+      const isCompleted = Boolean(backendTimestamp) || (completedUntil >= 0 && index <= completedUntil);
+      const timestamp = backendTimestamp || (step.status === 'PLACED' ? orderPlacementTimestamp : null);
       return {
         status: step.status,
         message: backendItem?.message || step.message,
@@ -879,7 +880,7 @@ const OrderDetails = () => {
     (orderTimeline || []).forEach(step => { timelineByStatus[step.status] = step; });
     return LIFECYCLE_STEPS.map((step, i) => {
       const matched = timelineByStatus[step.status];
-      const isCompleted = Boolean(matched?.isCompleted || matched?.timestamp);
+      const isCompleted = Boolean(matched?.isCompleted || matched?.timestamp) || (idx >= 0 && i <= idx && !isCancelled);
       const isCurrent = i === idx && !isCancelled;
       return { ...step, timestamp: matched?.timestamp || null, isCompleted, isCurrent };
     });
