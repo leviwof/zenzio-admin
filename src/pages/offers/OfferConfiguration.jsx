@@ -113,6 +113,7 @@ const OfferConfiguration = () => {
   });
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [bogoItems, setBogoItems] = useState([{ buyItem: "", freeItem: "" }]);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -193,6 +194,11 @@ const OfferConfiguration = () => {
   const scopeNeedsInclusion = formData.offer_scope === "SELECTED_CATEGORIES" || formData.offer_scope === "SELECTED_ITEMS";
   const hasExclusions = (formData.excluded_category_ids.length + formData.excluded_menu_ids.length) > 0;
 
+  const addBogoItem = () => setBogoItems((prev) => [...prev, { buyItem: "", freeItem: "" }]);
+  const removeBogoItem = (idx) => setBogoItems((prev) => prev.filter((_, i) => i !== idx));
+  const updateBogoItem = (idx, field, value) =>
+    setBogoItems((prev) => prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
+
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
     setFormData((prev) => ({
@@ -201,6 +207,9 @@ const OfferConfiguration = () => {
       ...(name === "offerType" ? { rules: { ...emptyRules } } : {}),
       ...(name === "restaurantId" ? { rules: { ...prev.rules, buyCategory: "", buyItem: "", freeCategory: "", freeItem: "", triggerCategory: "" } } : {}),
     }));
+    if (name === "offerType" || name === "restaurantId") {
+      setBogoItems([{ buyItem: "", freeItem: "" }]);
+    }
   };
 
   const handleRuleChange = (event) => {
@@ -245,19 +254,23 @@ const OfferConfiguration = () => {
     const freeItem = buildItemSnapshot(rules.freeItem);
 
     if (formData.offerType === "BUY_ONE_GET_ONE") {
+      const combos = bogoItems.map((combo) => {
+        const buySnap = buildItemSnapshot(combo.buyItem);
+        const freeSnap = buildItemSnapshot(combo.freeItem);
+        return {
+          buyItem: combo.buyItem,
+          buyItemName: buySnap?.name,
+          buyCategory: buySnap?.category,
+          buyQty: 1,
+          freeItem: combo.freeItem,
+          freeItemName: freeSnap?.name,
+          freeCategory: freeSnap?.category,
+          freeQty: 1,
+        };
+      });
       return {
-        conditions: {
-          buyItem: rules.buyItem,
-          buyItemName: buyItem?.name,
-          buyCategory: rules.buyCategory || buyItem?.category,
-          quantityRequired: Number(rules.buyQuantity || 1),
-        },
-        rewards: {
-          freeItem: rules.freeItem,
-          freeItemName: freeItem?.name,
-          freeCategory: rules.freeCategory || freeItem?.category,
-          freeQuantity: Number(rules.freeQuantity || 1),
-        },
+        conditions: { bogoItems: combos },
+        rewards: { bogoItems: combos },
       };
     }
     if (formData.offerType === "BUY_X_GET_Y") {
@@ -321,8 +334,19 @@ const OfferConfiguration = () => {
     const discountTypes = ["PERCENTAGE_DISCOUNT", "FIXED_AMOUNT_DISCOUNT", "FESTIVAL_OFFER", "PLATFORM_CAMPAIGN"];
     if (discountTypes.includes(formData.offerType) && Number(formData.discountValue) < 0) return "Discount cannot be negative";
 
-    const needsFreeItem = ["BUY_ONE_GET_ONE", "BUY_X_GET_Y", "FREE_ITEM_CART_VALUE", "FREE_ITEM_CATEGORY"].includes(formData.offerType);
-    const needsBuyItem = ["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType);
+    if (formData.offerType === "BUY_ONE_GET_ONE") {
+      if (!restaurantAdmin && !formData.restaurantId) return "Please select a restaurant before choosing menu items";
+      if (menuOptions.length === 0) return "No menu items are available for the selected restaurant";
+      for (let i = 0; i < bogoItems.length; i++) {
+        const n = bogoItems.length > 1 ? ` (combo ${i + 1})` : "";
+        if (!bogoItems[i].buyItem) return `Please select an item${n}`;
+        if (!getSelectedMenu(bogoItems[i].buyItem)) return `Item${n} is not a valid menu item`;
+      }
+      return null;
+    }
+
+    const needsFreeItem = ["BUY_X_GET_Y", "FREE_ITEM_CART_VALUE", "FREE_ITEM_CATEGORY"].includes(formData.offerType);
+    const needsBuyItem = ["BUY_X_GET_Y"].includes(formData.offerType);
     if ((needsFreeItem || needsBuyItem) && !restaurantAdmin && !formData.restaurantId) return "Please select a restaurant before choosing menu items";
     if ((needsFreeItem || needsBuyItem) && menuOptions.length === 0) return "No menu items are available for the selected restaurant";
     if (needsFreeItem && !formData.rules.freeItem) return "Please select the free item";
@@ -354,12 +378,26 @@ const OfferConfiguration = () => {
       data.append("minOrderValue", String(formData.minOrderValue || formData.rules.minimumCartAmount || 0));
       data.append("startDate", formData.startDate);
       data.append("endDate", formData.endDate);
-      data.append("ruleConfig", JSON.stringify({
-        type: formData.offerType,
-        ...formData.rules,
-        buyItemDetails: buildItemSnapshot(formData.rules.buyItem),
-        freeItemDetails: buildItemSnapshot(formData.rules.freeItem),
-      }));
+      data.append("ruleConfig", JSON.stringify(
+        formData.offerType === "BUY_ONE_GET_ONE"
+          ? {
+              type: formData.offerType,
+              bogoItems: bogoItems.map((combo) => ({
+                buyItem: combo.buyItem,
+                buyItemName: buildItemSnapshot(combo.buyItem)?.name,
+                buyQty: 1,
+                freeItem: combo.freeItem,
+                freeItemName: buildItemSnapshot(combo.freeItem)?.name,
+                freeQty: 1,
+              })),
+            }
+          : {
+              type: formData.offerType,
+              ...formData.rules,
+              buyItemDetails: buildItemSnapshot(formData.rules.buyItem),
+              freeItemDetails: buildItemSnapshot(formData.rules.freeItem),
+            }
+      ));
       data.append("conditions", JSON.stringify(conditions));
       data.append("rewards", JSON.stringify(rewards));
 
@@ -390,6 +428,7 @@ const OfferConfiguration = () => {
 
   const handleReset = () => {
     setFormData({ ...initialForm, restaurantId: restaurantAdmin ? ownRestaurantUid : "", offer_scope: "ALL_MENU", included_category_ids: [], included_menu_ids: [], excluded_category_ids: [], excluded_menu_ids: [] });
+    setBogoItems([{ buyItem: "", freeItem: "" }]);
     setImageFile(null);
     setImagePreview(null);
   };
@@ -412,7 +451,7 @@ const OfferConfiguration = () => {
     </select>
   );
 
-  const MenuSelect = ({ name, value, placeholder, category }) => {
+  const MenuSelect = ({ name, value, placeholder, category, onChange: onChangeProp }) => {
     const filteredMenus = getFilteredMenus(category);
     const disabled = itemOfferNeedsRestaurant || filteredMenus.length === 0;
     const [search, setSearch] = useState("");
@@ -439,14 +478,16 @@ const OfferConfiguration = () => {
       : "";
 
     const handleSelect = (menuId) => {
-      handleRuleChange({ target: { name, value: menuId } });
+      if (onChangeProp) onChangeProp(menuId);
+      else handleRuleChange({ target: { name, value: menuId } });
       setOpen(false);
       setSearch("");
     };
 
     const handleClear = (e) => {
       e.stopPropagation();
-      handleRuleChange({ target: { name, value: "" } });
+      if (onChangeProp) onChangeProp("");
+      else handleRuleChange({ target: { name, value: "" } });
       setSearch("");
     };
 
@@ -664,22 +705,76 @@ const OfferConfiguration = () => {
       );
     }
 
-    if (["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType)) {
+    if (formData.offerType === "BUY_ONE_GET_ONE") {
+      return (
+        <div className="space-y-3">
+          {itemOfferNeedsRestaurant && (
+            <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Select a restaurant first to pick menu items.
+            </p>
+          )}
+          <p className="text-xs text-gray-400">Each combo: buy 1 → get 1 of the same item free.</p>
+          {bogoItems.map((combo, idx) => (
+            <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl">
+              <span className="text-xs font-bold text-indigo-600 flex-shrink-0 w-14">
+                Combo {idx + 1}
+              </span>
+              <div className="flex-1">
+                <MenuSelect
+                  name={`bogo_item_${idx}`}
+                  value={combo.buyItem}
+                  placeholder="Select item (buy 1 get 1 free)"
+                  onChange={(val) => {
+                    updateBogoItem(idx, "buyItem", val);
+                    updateBogoItem(idx, "freeItem", val);
+                  }}
+                />
+              </div>
+              {combo.buyItem && (
+                <span className="text-xs text-indigo-500 flex-shrink-0 font-medium whitespace-nowrap">
+                  Buy 1 → Free 1
+                </span>
+              )}
+              {bogoItems.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removeBogoItem(idx)}
+                  className="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                  title="Remove combo"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addBogoItem}
+            disabled={itemOfferNeedsRestaurant || menuOptions.length === 0}
+            className="text-sm font-medium text-indigo-600 hover:text-indigo-800 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
+          >
+            + Add Another Combo
+          </button>
+        </div>
+      );
+    }
+
+    if (formData.offerType === "BUY_X_GET_Y") {
       return (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Buy Item Category" : "Buy Product Category"} hint="Filter the buy item list by category">
+          <Field label="Buy Product Category" hint="Filter the buy item list by category">
             <CategorySelect name="buyCategory" value={formData.rules.buyCategory} />
           </Field>
-          <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Buy Item" : "Buy Product"} required>
+          <Field label="Buy Product" required>
             <MenuSelect name="buyItem" value={formData.rules.buyItem} placeholder="Select buy item" category={formData.rules.buyCategory} />
           </Field>
           <Field label="Quantity Required" required>
             <input type="number" name="buyQuantity" value={formData.rules.buyQuantity} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
           </Field>
-          <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Free Item Category" : "Free Product Category"} hint="Filter the free item list by category">
+          <Field label="Free Product Category" hint="Filter the free item list by category">
             <CategorySelect name="freeCategory" value={formData.rules.freeCategory} />
           </Field>
-          <Field label={formData.offerType === "BUY_ONE_GET_ONE" ? "Free Item" : "Free Product"} required>
+          <Field label="Free Product" required>
             <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" category={formData.rules.freeCategory} />
           </Field>
           <Field label="Free Quantity" required>
@@ -943,8 +1038,19 @@ const OfferConfiguration = () => {
                   ? `${formData.discountValue || 0}${formData.offerType === "PERCENTAGE_DISCOUNT" ? "%" : "₹"} OFF`
                   : "Free item reward"}
               </p>
-              {selectedBuyItemName && <p className="text-xs mt-1">Buy: {selectedBuyItemName}</p>}
-              {selectedFreeItemName && <p className="text-xs mt-1">Free: {selectedFreeItemName}</p>}
+              {formData.offerType === "BUY_ONE_GET_ONE" ? (
+                bogoItems.map((combo, idx) => {
+                  const name = buildItemSnapshot(combo.buyItem)?.name;
+                  return name ? (
+                    <p key={idx} className="text-xs mt-1">Buy 1 {name} → Get 1 Free</p>
+                  ) : null;
+                })
+              ) : (
+                <>
+                  {selectedBuyItemName && <p className="text-xs mt-1">Buy: {selectedBuyItemName}</p>}
+                  {selectedFreeItemName && <p className="text-xs mt-1">Free: {selectedFreeItemName}</p>}
+                </>
+              )}
             </div>
             <div className="text-xs text-gray-500">
               Valid: {formData.startDate || "-"} to {formData.endDate || "-"}
