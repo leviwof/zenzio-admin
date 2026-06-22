@@ -28,8 +28,7 @@ const ORDER_TIMELINE_STEPS = [
   { status: 'ON_THE_WAY_TO_RESTAURANT', message: 'Delivery executive is on the way to restaurant' },
   { status: 'REACHED_RESTAURANT', message: 'Delivery executive has reached the restaurant' },
   { status: 'PICKED_UP', message: 'Order picked up by delivery executive' },
-  { status: 'OUT_FOR_DELIVERY', message: 'Order is out for delivery' },
-  { status: 'ON_THE_WAY_TO_CUSTOMER', message: 'Delivery executive is on the way to customer' },
+  { status: 'ON_THE_WAY', message: 'Delivery executive is on the way to customer' },
   { status: 'DELIVERED', message: 'Order delivered successfully' },
 ];
 
@@ -42,11 +41,16 @@ const STATUS_ALIASES = {
   ON_WAY_TO_RESTAURANT: 'ON_THE_WAY_TO_RESTAURANT',
   ARRIVED_AT_RESTAURANT: 'REACHED_RESTAURANT', REACHED_PICKUP: 'REACHED_RESTAURANT',
   PICKED: 'PICKED_UP', ORDER_PICKED_UP: 'PICKED_UP',
-  ON_THE_WAY: 'ON_THE_WAY_TO_CUSTOMER', ON_THE_WAY_TO_DELIVERY: 'ON_THE_WAY_TO_CUSTOMER',
+  OUT_FOR_DELIVERY: 'ON_THE_WAY', ON_THE_WAY_TO_CUSTOMER: 'ON_THE_WAY',
+  ON_THE_WAY_TO_DELIVERY: 'ON_THE_WAY',
   COMPLETED: 'DELIVERED',
 };
 
 const TERMINAL_STATUSES = new Set(['DELIVERED', 'COMPLETED', 'CANCELLED', 'ADMIN_CANCELLED', 'REJECTED', 'FAILED']);
+const STATUS_PRIORITY = ORDER_TIMELINE_STEPS.reduce((acc, step, index) => {
+  acc[step.status] = index;
+  return acc;
+}, {});
 
 const LIFECYCLE_STEPS = [
   { status: 'PLACED', label: 'New Order' },
@@ -57,8 +61,7 @@ const LIFECYCLE_STEPS = [
   { status: 'ON_THE_WAY_TO_RESTAURANT', label: 'On The Way' },
   { status: 'REACHED_RESTAURANT', label: 'Reached' },
   { status: 'PICKED_UP', label: 'Picked Up' },
-  { status: 'OUT_FOR_DELIVERY', label: 'Out For Delivery' },
-  { status: 'ON_THE_WAY_TO_CUSTOMER', label: 'On The Way' },
+  { status: 'ON_THE_WAY', label: 'On The Way' },
   { status: 'DELIVERED', label: 'Delivered' },
 ];
 
@@ -110,12 +113,7 @@ const ORDER_ACTION_CONFIG = {
       { label: 'Out For Delivery', apiStatus: 'out_for_delivery', variant: 'primary' },
     ],
   },
-  OUT_FOR_DELIVERY: {
-    admin: [
-      { label: 'On The Way To Customer', apiStatus: 'on_the_way_to_customer', variant: 'primary' },
-    ],
-  },
-  ON_THE_WAY_TO_CUSTOMER: {
+  ON_THE_WAY: {
     admin: [
       { label: 'Delivered', apiStatus: 'delivered', variant: 'primary' },
     ],
@@ -311,8 +309,7 @@ const ORDER_STATUS_TOOLTIP_MESSAGES = {
   ON_THE_WAY_TO_RESTAURANT: 'Executive is going to restaurant.',
   REACHED_RESTAURANT: 'Executive reached restaurant.',
   PICKED_UP: 'Order picked up.',
-  OUT_FOR_DELIVERY: 'Out for delivery.',
-  ON_THE_WAY_TO_CUSTOMER: 'Executive is going to customer.',
+  ON_THE_WAY: 'Executive is going to customer.',
   CANCELLED: 'Order cancelled.',
   ADMIN_CANCELLED: 'Cancelled by admin.',
   FAILED: 'Order failed.',
@@ -423,8 +420,7 @@ const StatusBadge = ({ status, tooltip }) => {
     ON_THE_WAY_TO_RESTAURANT: { label: 'On Way to Restaurant', color: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
     REACHED_RESTAURANT: { label: 'Reached Restaurant', color: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
     PICKED_UP: { label: 'Picked Up', color: 'bg-orange-50 text-orange-700 border border-orange-200' },
-    OUT_FOR_DELIVERY: { label: 'Out for Delivery', color: 'bg-purple-50 text-purple-700 border border-purple-200' },
-    ON_THE_WAY_TO_CUSTOMER: { label: 'On Way to Customer', color: 'bg-purple-50 text-purple-700 border border-purple-200' },
+    ON_THE_WAY: { label: 'On Way to Customer', color: 'bg-purple-50 text-purple-700 border border-purple-200' },
     DELIVERED: { label: 'Delivered', color: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
     CANCELLED: { label: 'Cancelled', color: 'bg-red-50 text-red-700 border border-red-200' },
     ADMIN_CANCELLED: { label: 'Admin Cancelled', color: 'bg-red-50 text-red-700 border border-red-200' },
@@ -549,15 +545,30 @@ const OrderDetails = () => {
 
   const getCurrentOrderStatus = (orderData) => {
     const candidates = [
-      orderData?.restaurantStatus, orderData?.deliveryStatus,
-      orderData?.deliveryPartnerStatus, orderData?.orderStatus, orderData?.status,
+      orderData?.deliveryPartnerStatus,
+      orderData?.deliveryStatus,
+      orderData?.restaurantStatus,
+      orderData?.orderStatus,
+      orderData?.status,
     ];
-    const matchedStatus = candidates
+    const fieldStatuses = candidates
       .map(normalizeStatus)
-      .find((s) => ORDER_TIMELINE_STEPS.some((step) => step.status === s) || TERMINAL_STATUSES.has(s));
-    if (matchedStatus) return matchedStatus;
+      .filter((s) => ORDER_TIMELINE_STEPS.some((step) => step.status === s) || TERMINAL_STATUSES.has(s));
 
     const timeline = Array.isArray(orderData?.orderTimeline) ? orderData.orderTimeline : [];
+    const timelineStatuses = timeline
+      .map((entry) => normalizeStatus(entry.status))
+      .filter((s) => ORDER_TIMELINE_STEPS.some((step) => step.status === s) || TERMINAL_STATUSES.has(s));
+
+    const allStatuses = [...fieldStatuses, ...timelineStatuses];
+    const terminal = allStatuses.find((s) => TERMINAL_STATUSES.has(s));
+    if (terminal) return terminal;
+
+    const advanced = allStatuses
+      .filter((s) => STATUS_PRIORITY[s] !== undefined)
+      .sort((a, b) => STATUS_PRIORITY[b] - STATUS_PRIORITY[a])[0];
+    if (advanced) return advanced;
+
     for (const entry of timeline) {
       const s = normalizeStatus(entry.status);
       if (TERMINAL_STATUSES.has(s)) return s;
@@ -867,8 +878,7 @@ const OrderDetails = () => {
   };
 
   const getLifecycleIndex = (status) => {
-    const order = ['PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'ASSIGNED', 'ON_THE_WAY_TO_RESTAURANT', 'REACHED_RESTAURANT', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'ON_THE_WAY_TO_CUSTOMER', 'DELIVERED'];
-    const idx = order.indexOf(status);
+    const idx = LIFECYCLE_STEPS.findIndex((step) => step.status === normalizeStatus(status));
     if (idx !== -1) return idx;
     return -1;
   };
@@ -877,7 +887,7 @@ const OrderDetails = () => {
     const idx = getLifecycleIndex(currentStatus);
     const isCancelled = TERMINAL_STATUSES.has(currentStatus) && currentStatus !== 'DELIVERED' && currentStatus !== 'COMPLETED';
     const timelineByStatus = {};
-    (orderTimeline || []).forEach(step => { timelineByStatus[step.status] = step; });
+    (orderTimeline || []).forEach(step => { timelineByStatus[normalizeStatus(step.status)] = step; });
     return LIFECYCLE_STEPS.map((step, i) => {
       const matched = timelineByStatus[step.status];
       const isCompleted = Boolean(matched?.isCompleted || matched?.timestamp) || (idx >= 0 && i <= idx && !isCancelled);
@@ -986,7 +996,7 @@ const OrderDetails = () => {
 
   const lifecycleSteps = buildLifecycleTimeline();
   const statusConfig = ORDER_ACTION_CONFIG[currentStatus];
-  const isAfterAssign = ['READY', 'ASSIGNED', 'ON_THE_WAY_TO_RESTAURANT', 'REACHED_RESTAURANT', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'ON_THE_WAY_TO_CUSTOMER', 'DELIVERED'].includes(currentStatus);
+  const isAfterAssign = ['READY', 'ASSIGNED', 'ON_THE_WAY_TO_RESTAURANT', 'REACHED_RESTAURANT', 'PICKED_UP', 'ON_THE_WAY', 'DELIVERED'].includes(currentStatus);
   const currentActions = restaurantAdmin
     ? [...(statusConfig?.restaurant || []), ...(statusConfig?.rollback || [])]
     : (statusConfig?.admin || statusConfig?.restaurant || []);
@@ -1221,7 +1231,10 @@ const OrderDetails = () => {
                 return lifecycleSteps.map((step, idx) => (
                   <React.Fragment key={step.status}>
                     <div className="flex flex-col items-center min-w-[90px]">
-                      <div className={`relative w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                      <motion.div
+                        animate={step.isCurrent && !isOrderCancelled ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+                        transition={step.isCurrent && !isOrderCancelled ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+                        className={`relative w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                         step.isCompleted
                           ? 'bg-green-500 text-white'
                           : step.isCurrent && !isOrderCancelled
@@ -1230,8 +1243,22 @@ const OrderDetails = () => {
                           ? 'bg-red-100 text-red-400'
                           : 'bg-gray-100 text-gray-400'
                       }`}>
+                        {step.isCurrent && !isOrderCancelled && (
+                          <>
+                            <motion.span
+                              className="absolute inset-0 rounded-full bg-green-400/40"
+                              animate={{ scale: [1, 1.55], opacity: [0.55, 0] }}
+                              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeOut' }}
+                            />
+                            <motion.span
+                              className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-emerald-300 shadow-lg shadow-emerald-300/60"
+                              animate={{ scale: [0.8, 1.25, 0.8], opacity: [0.7, 1, 0.7] }}
+                              transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
+                            />
+                          </>
+                        )}
                         {step.isCompleted ? <Check size={16} /> : idx + 1}
-                      </div>
+                      </motion.div>
                       <p className={`text-[11px] mt-1.5 text-center font-medium leading-tight ${
                         step.isCompleted
                           ? 'text-green-700'
@@ -1250,7 +1277,7 @@ const OrderDetails = () => {
                       )}
                     </div>
                     {idx < lifecycleSteps.length - 1 && (
-                      <div className={`flex-1 min-w-[16px] h-0.5 mt-5 ${
+                      <div className={`relative flex-1 min-w-[16px] h-0.5 mt-5 overflow-hidden rounded-full ${
                         lifecycleSteps[idx + 1].isCompleted
                           ? 'bg-green-400'
                           : step.isCurrent && !isOrderCancelled
@@ -1258,7 +1285,15 @@ const OrderDetails = () => {
                           : isOrderCancelled
                           ? 'bg-red-200'
                           : 'bg-gray-200'
-                      }`} />
+                      }`}>
+                        {step.isCurrent && !isOrderCancelled && (
+                          <motion.span
+                            className="absolute inset-y-0 left-0 w-8 rounded-full bg-gradient-to-r from-transparent via-emerald-300 to-transparent"
+                            animate={{ x: ['-100%', '220%'] }}
+                            transition={{ duration: 1.25, repeat: Infinity, ease: 'linear' }}
+                          />
+                        )}
+                      </div>
                     )}
                   </React.Fragment>
                 ));
