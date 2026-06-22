@@ -219,7 +219,7 @@ export default function HomeFoodsManagement() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [filters, setFilters] = useState({
-    search: '', status: '', provider_uid: '', plan_type: '',
+    search: '', status: '', mode: '', provider_uid: '', plan_type: '',
     payment_status: '', meal_type: '', from_date: '', to_date: '', date: '',
   });
   const [modal, setModal] = useState(null);
@@ -386,7 +386,7 @@ export default function HomeFoodsManagement() {
   };
 
   const headers = useMemo(() => ({
-    providers: ['Restaurant', 'Status', 'Capacity', 'Active Subscribers', 'Radius', 'Meal Types', 'Created', 'Actions'],
+    providers: ['Restaurant', 'Status', 'Mode', 'Capacity', 'Active Subscribers', 'Radius', 'Meal Types', 'Created', 'Actions'],
     plans: ['Plan', 'Type', 'Restaurant', 'Duration', 'Price', 'Meal Types', 'Plan Menu', 'Status', 'Actions'],
     subscriptions: ['Subscription', 'Customer', 'Phone', 'Restaurant', 'Plan', 'Amount', 'Status', 'Payment', 'Dates', 'Actions'],
     deliveries: ['Delivery', 'Subscription', 'Customer', 'Restaurant', 'Meal', 'Date', 'Status', 'Actions'],
@@ -809,6 +809,17 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
             {reviewStatus}
           </span>
         </td>
+        <td className="px-4 py-3">
+          {item.registration_mode === 'development' ? (
+            <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-600">
+              DEV
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
+              PROD
+            </span>
+          )}
+        </td>
         <td className="px-4 py-3 text-sm">{item.capacity}</td><td className="px-4 py-3 text-sm">{item.active_subscribers}</td>
         <td className="px-4 py-3 text-sm">{Number(item.delivery_radius_km)} km</td>
         <td className="px-4 py-3 text-xs text-slate-500">{(() => {
@@ -956,7 +967,7 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
 function PageFilters({ section, filters, setFilters, total, menuProviders = [] }) {
   const set = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const reset = () => setFilters({
-    search: '', status: '', provider_uid: '', plan_type: '',
+    search: '', status: '', mode: '', provider_uid: '', plan_type: '',
     payment_status: '', meal_type: '', from_date: '', to_date: '', date: '',
   });
   const placeholders = {
@@ -1015,6 +1026,13 @@ function PageFilters({ section, filters, setFilters, total, menuProviders = [] }
             {planTypes.map((value) => <option key={value}>{value}</option>)}
           </select>
         )}
+        {section === 'providers' && (
+          <select value={filters.mode} onChange={(event) => set('mode', event.target.value)} className={inputClass}>
+            <option value="">All modes</option>
+            <option value="production">Production</option>
+            <option value="development">Development</option>
+          </select>
+        )}
         {['providers', 'plans', 'deliveries'].includes(section) && (
           <select value={filters.meal_type} onChange={(event) => set('meal_type', event.target.value)} className={inputClass}>
             <option value="">All meal types</option>
@@ -1052,30 +1070,29 @@ function ProviderForm({ item, onClose, onSaved }) {
 
 function CreateCloudKitchenForm({ onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
-  const [selectedMenuDay, setSelectedMenuDay] = useState('MONDAY');
-  const [slotOptions, setSlotOptions] = useState([]);
-  const [slotDraft, setSlotDraft] = useState({ start: '', end: '' });
   const [imagePreview, setImagePreview] = useState(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [profileImageUrl, setProfileImageUrl] = useState('');
   const [form, setForm] = useState({
     kitchen_name: '',
+    kitchen_type: 'non_veg',
+    owner_name: '',
+    owner_phone: '',
+    support_phone: '',
+    support_email: '',
+    address: '',
     locality: '',
     city: '',
+    state: '',
+    pincode: '',
+    lat: '',
+    lng: '',
+    bank_account_no: '',
+    bank_ifsc: '',
+    bank_account_type: 'savings',
+    fssai_no: '',
     max_active_subscribers: 100,
     delivery_radius_km: 5,
-    meal_types: ['LUNCH', 'DINNER'],
-    working_days: workingDays.slice(0, 6),
-    delivery_slots: [],
-    weekly_menu: {},
-    trial_available: true,
-  });
-  const [plan, setPlan] = useState({
-    name: '',
-    plan_type: 'MONTHLY',
-    price: '',
-    meal_types: ['LUNCH'],
-    duration_days: 30,
   });
 
   const handleImageSelect = async (e) => {
@@ -1097,70 +1114,18 @@ function CreateCloudKitchenForm({ onClose, onSaved }) {
     }
   };
 
-  const activeDay = (form.working_days || []).includes(selectedMenuDay)
-    ? selectedMenuDay
-    : form.working_days[0] || '';
-
-  const toggleMeal = (meal) => setForm((f) => ({
-    ...f,
-    meal_types: f.meal_types.includes(meal) ? f.meal_types.filter((m) => m !== meal) : [...f.meal_types, meal],
-  }));
-
-  const toggleWorkingDay = (day) => {
-    setForm((f) => {
-      const next = f.working_days.includes(day)
-        ? f.working_days.filter((d) => d !== day)
-        : [...f.working_days, day];
-      if (!next.includes(selectedMenuDay)) setSelectedMenuDay(next[0] || '');
-      return { ...f, working_days: next };
-    });
-  };
-
-  const addSlot = () => {
-    if (!slotDraft.start || !slotDraft.end) { toast.error('Select both start and end times'); return; }
-    if (slotDraft.start >= slotDraft.end) { toast.error('End time must be after start time'); return; }
-    const slot = `${slotDraft.start}-${slotDraft.end}`;
-    if (slotOptions.includes(slot)) { toast.error('Slot already exists'); return; }
-    setSlotOptions((s) => [...s, slot]);
-    setForm((f) => ({ ...f, delivery_slots: [...f.delivery_slots, slot] }));
-    setSlotDraft({ start: '', end: '' });
-  };
-
-  const toggleSlot = (slot) => setForm((f) => ({
-    ...f,
-    delivery_slots: f.delivery_slots.includes(slot)
-      ? f.delivery_slots.filter((s) => s !== slot)
-      : [...f.delivery_slots, slot],
-  }));
-
-  const removeSlot = (slot) => {
-    setSlotOptions((s) => s.filter((x) => x !== slot));
-    setForm((f) => ({ ...f, delivery_slots: f.delivery_slots.filter((s) => s !== slot) }));
-  };
-
   const submit = async (e) => {
     e.preventDefault();
     if (!form.kitchen_name.trim()) { toast.error('Kitchen name is required'); return; }
-    if (!form.meal_types.length) { toast.error('Select at least one meal type'); return; }
-    const hasPlan = plan.name.trim() || plan.price !== '';
-    if (hasPlan && (!plan.name.trim() || !plan.price || !plan.meal_types.length)) {
-      toast.error('Fill all plan fields or leave plan section empty');
-      return;
-    }
     setSaving(true);
     try {
       await createCloudKitchen({
         ...form,
         max_active_subscribers: Number(form.max_active_subscribers),
         delivery_radius_km: Number(form.delivery_radius_km),
+        ...(form.lat ? { lat: Number(form.lat) } : {}),
+        ...(form.lng ? { lng: Number(form.lng) } : {}),
         ...(profileImageUrl ? { profile_image_url: profileImageUrl } : {}),
-        ...(hasPlan ? {
-          plan: {
-            ...plan,
-            price: Number(plan.price),
-            duration_days: Number(plan.duration_days),
-          },
-        } : {}),
       });
       toast.success('Cloud kitchen created');
       onSaved();
@@ -1207,11 +1172,90 @@ function CreateCloudKitchenForm({ onClose, onSaved }) {
             <Field label="Kitchen Name *">
               <input value={form.kitchen_name} onChange={(e) => setForm({ ...form, kitchen_name: e.target.value })} className={inputClass} placeholder="e.g. Maa Ki Rasoi" required />
             </Field>
+            <Field label="Kitchen Type">
+              <select value={form.kitchen_type} onChange={(e) => setForm({ ...form, kitchen_type: e.target.value })} className={inputClass}>
+                <option value="veg">Veg</option>
+                <option value="non_veg">Non-Veg</option>
+                <option value="both">Both</option>
+              </select>
+            </Field>
+          </div>
+        </div>
+
+        {/* Owner / Contact Info */}
+        <div className="md:col-span-2">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">Owner &amp; Contact</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Owner Name">
+              <input value={form.owner_name} onChange={(e) => setForm({ ...form, owner_name: e.target.value })} className={inputClass} placeholder="e.g. Ramesh Kumar" />
+            </Field>
+            <Field label="Owner Phone *">
+              <input value={form.owner_phone} onChange={(e) => setForm({ ...form, owner_phone: e.target.value })} className={inputClass} placeholder="e.g. 9876543210" />
+            </Field>
+            <Field label="Support Phone">
+              <input value={form.support_phone} onChange={(e) => setForm({ ...form, support_phone: e.target.value })} className={inputClass} placeholder="Support contact number" />
+            </Field>
+            <Field label="Support Email">
+              <input type="email" value={form.support_email} onChange={(e) => setForm({ ...form, support_email: e.target.value })} className={inputClass} placeholder="support@kitchen.com" />
+            </Field>
+          </div>
+        </div>
+
+        {/* Address */}
+        <div className="md:col-span-2">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">Address</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <Field label="Full Address">
+                <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={inputClass} placeholder="e.g. 123, MG Road, Near Bus Stand" />
+              </Field>
+            </div>
             <Field label="Locality / Area">
               <input value={form.locality} onChange={(e) => setForm({ ...form, locality: e.target.value })} className={inputClass} placeholder="e.g. Koramangala, HSR Layout" />
             </Field>
             <Field label="City">
               <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className={inputClass} placeholder="e.g. Bangalore" />
+            </Field>
+            <Field label="State">
+              <input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className={inputClass} placeholder="e.g. Karnataka" />
+            </Field>
+            <Field label="Pincode">
+              <input value={form.pincode} onChange={(e) => setForm({ ...form, pincode: e.target.value })} className={inputClass} placeholder="e.g. 560001" maxLength={6} />
+            </Field>
+            <Field label="Latitude">
+              <input type="number" step="any" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} className={inputClass} placeholder="e.g. 12.9716" />
+            </Field>
+            <Field label="Longitude">
+              <input type="number" step="any" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} className={inputClass} placeholder="e.g. 77.5946" />
+            </Field>
+          </div>
+        </div>
+
+        {/* Bank Details */}
+        <div className="md:col-span-2">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">Bank Details</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Account Number">
+              <input value={form.bank_account_no} onChange={(e) => setForm({ ...form, bank_account_no: e.target.value })} className={inputClass} placeholder="e.g. 1234567890" />
+            </Field>
+            <Field label="IFSC Code">
+              <input value={form.bank_ifsc} onChange={(e) => setForm({ ...form, bank_ifsc: e.target.value.toUpperCase() })} className={inputClass} placeholder="e.g. SBIN0001234" />
+            </Field>
+            <Field label="Account Type">
+              <select value={form.bank_account_type} onChange={(e) => setForm({ ...form, bank_account_type: e.target.value })} className={inputClass}>
+                <option value="savings">Savings</option>
+                <option value="current">Current</option>
+              </select>
+            </Field>
+          </div>
+        </div>
+
+        {/* Documents */}
+        <div className="md:col-span-2">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">Documents</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="FSSAI Number (Optional)">
+              <input value={form.fssai_no} onChange={(e) => setForm({ ...form, fssai_no: e.target.value })} className={inputClass} placeholder="14-digit FSSAI number" maxLength={14} />
             </Field>
           </div>
         </div>
@@ -1226,127 +1270,6 @@ function CreateCloudKitchenForm({ onClose, onSaved }) {
             <Field label="Delivery Radius (km)">
               <input type="number" min="0.1" step="0.1" value={form.delivery_radius_km} onChange={(e) => setForm({ ...form, delivery_radius_km: e.target.value })} className={inputClass} />
             </Field>
-          </div>
-        </div>
-
-        {/* Meal Types */}
-        <div className="md:col-span-2">
-          <Field label="Meal Types">
-            <div className="flex flex-wrap gap-2">
-              {mealTypes.map((meal) => (
-                <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer">
-                  <input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => toggleMeal(meal)} />
-                  {meal}
-                </label>
-              ))}
-            </div>
-          </Field>
-        </div>
-
-        {/* Working Days */}
-        <div className="md:col-span-2">
-          <Field label="Working Days">
-            <div className="flex flex-wrap gap-2">
-              {workingDays.map((day) => (
-                <label key={day} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer">
-                  <input type="checkbox" checked={form.working_days.includes(day)} onChange={() => toggleWorkingDay(day)} />
-                  {day.slice(0, 3)}
-                </label>
-              ))}
-            </div>
-          </Field>
-        </div>
-
-        {/* Delivery Slots */}
-        <div className="md:col-span-2">
-          <Field label="Delivery Slots">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
-              <div className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
-                <Field label="Start"><input type="time" value={slotDraft.start} onChange={(e) => setSlotDraft({ ...slotDraft, start: e.target.value })} className={inputClass} /></Field>
-                <Field label="End"><input type="time" value={slotDraft.end} onChange={(e) => setSlotDraft({ ...slotDraft, end: e.target.value })} className={inputClass} /></Field>
-                <button type="button" onClick={addSlot} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"><Plus size={14} /> Add</button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {slotOptions.map((slot) => {
-                  const selected = form.delivery_slots.includes(slot);
-                  return (
-                    <div key={slot} className={`inline-flex items-center overflow-hidden rounded-xl border text-xs font-semibold ${selected ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500'}`}>
-                      <button type="button" onClick={() => toggleSlot(slot)} className="flex items-center gap-2 px-3 py-2">
-                        <input type="checkbox" checked={selected} readOnly />{slot}
-                      </button>
-                      <button type="button" onClick={() => removeSlot(slot)} className="border-l border-current/10 px-2 py-2 hover:bg-red-50 hover:text-red-600"><X size={12} /></button>
-                    </div>
-                  );
-                })}
-                {!slotOptions.length && <p className="text-xs text-slate-400">Add a slot above then check it to enable.</p>}
-              </div>
-            </div>
-          </Field>
-        </div>
-
-        {/* Weekly Menu */}
-        <div className="md:col-span-2">
-          <Field label="Weekly Menu">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
-              {form.working_days.length ? (
-                <>
-                  <Field label="Day">
-                    <select value={activeDay} onChange={(e) => setSelectedMenuDay(e.target.value)} className={inputClass}>
-                      {form.working_days.map((d) => <option key={d}>{d}</option>)}
-                    </select>
-                  </Field>
-                  {activeDay && (
-                    <div className="grid gap-3 md:grid-cols-2 rounded-xl border bg-white p-3">
-                      {form.meal_types.map((meal) => (
-                        <Field key={`${activeDay}-${meal}`} label={meal}>
-                          <input
-                            value={form.weekly_menu?.[activeDay]?.[meal] || ''}
-                            onChange={(e) => setForm({ ...form, weekly_menu: updateWeeklyMenu(form.weekly_menu, activeDay, meal, e.target.value) })}
-                            className={inputClass}
-                            placeholder={`${meal.toLowerCase()} items`}
-                          />
-                        </Field>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p className="py-3 text-center text-xs text-slate-400">Select working days first.</p>
-              )}
-            </div>
-          </Field>
-        </div>
-
-        {/* Initial Subscription Plan */}
-        <div className="md:col-span-2">
-          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">Subscription Plan <span className="normal-case font-normal text-slate-400">(optional — can add later)</span></p>
-          <div className="grid gap-3 md:grid-cols-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-            <Field label="Plan Name">
-              <input value={plan.name} onChange={(e) => setPlan({ ...plan, name: e.target.value })} className={inputClass} placeholder="e.g. Monthly Lunch Plan" />
-            </Field>
-            <Field label="Plan Type">
-              <select value={plan.plan_type} onChange={(e) => setPlan({ ...plan, plan_type: e.target.value, duration_days: planDurationDays[e.target.value] })} className={inputClass}>
-                {planTypes.map((t) => <option key={t}>{t}</option>)}
-              </select>
-            </Field>
-            <Field label="Price (₹)">
-              <input type="number" min="0" step="0.01" value={plan.price} onChange={(e) => setPlan({ ...plan, price: e.target.value })} className={inputClass} placeholder="0.00" />
-            </Field>
-            <Field label="Duration (days)">
-              <input type="number" min="1" value={plan.duration_days} onChange={(e) => setPlan({ ...plan, duration_days: e.target.value })} className={inputClass} />
-            </Field>
-            <div className="md:col-span-2">
-              <Field label="Meals Included">
-                <div className="flex flex-wrap gap-2">
-                  {mealTypes.map((meal) => (
-                    <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer">
-                      <input type="checkbox" checked={plan.meal_types.includes(meal)} onChange={() => setPlan((p) => ({ ...p, meal_types: p.meal_types.includes(meal) ? p.meal_types.filter((m) => m !== meal) : [...p.meal_types, meal] }))} />
-                      {meal}
-                    </label>
-                  ))}
-                </div>
-              </Field>
-            </div>
           </div>
         </div>
 
