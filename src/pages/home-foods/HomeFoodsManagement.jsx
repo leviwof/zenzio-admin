@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import ProvidersCardView from './ProvidersCardView';
 import toast from 'react-hot-toast';
 import {
   Activity, AlertTriangle, CalendarDays, ChefHat, CircleDollarSign,
@@ -221,6 +222,7 @@ export default function HomeFoodsManagement() {
     payment_status: '', meal_type: '', from_date: '', to_date: '', date: '',
   });
   const [modal, setModal] = useState(null);
+  const [providerReloadKey, setProviderReloadKey] = useState(0);
   const [analytics, setAnalytics] = useState(null);
   const [weeklyMenuProviders, setWeeklyMenuProviders] = useState([]);
 
@@ -233,6 +235,8 @@ export default function HomeFoodsManagement() {
   }, [section]);
 
   const load = useCallback(async () => {
+    // providers section is fully managed by ProvidersCardView
+    if (section === 'providers') return;
     setLoading(true);
     try {
       if (section === 'analytics') {
@@ -408,6 +412,8 @@ export default function HomeFoodsManagement() {
 
       {section === 'analytics' ? (
         <Analytics data={analytics} loading={loading} />
+      ) : section === 'providers' ? (
+        <ProvidersCardView onAdd={openCreate} reloadKey={providerReloadKey} />
       ) : (
         <>
           <PageFilters
@@ -520,7 +526,7 @@ export default function HomeFoodsManagement() {
           {section === 'menus' && (
             <ProviderWeeklyMenus providers={weeklyMenuProviders} filters={filters} />
           )}
-          {['providers', 'plans', 'deliveries'].includes(section) && (
+          {['plans', 'deliveries'].includes(section) && (
             <ListPagination
               meta={meta}
               page={page}
@@ -538,7 +544,7 @@ export default function HomeFoodsManagement() {
 
       <ConfirmDialog dialog={confirmDialog} confirmLoading={confirmLoading} onConfirm={handleConfirm} onCancel={handleCancel} />
       <RejectProviderDialog open={!!rejectTarget} onReject={handleReject} onCancel={() => setRejectTarget(null)} />
-      {modal?.type === 'provider' && <ProviderForm item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
+      {modal?.type === 'provider' && <ProviderForm item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); setProviderReloadKey((k) => k + 1); }} />}
       {modal?.type === 'plan' && <PlanForm item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {modal?.type === 'subscription' && <SubscriptionDetail item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
       {modal?.type === 'delivery' && <DeliveryDetail item={modal.item} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
@@ -786,6 +792,7 @@ function ProviderWeeklyMenus({ providers, filters }) {
 }
 
 function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApproveSubscription, onExtendSubscription, onDeleteProvider, onBlockProvider, onRejectProvider, blockLoading, onDeletePlan, onDeleteSubscription, onDeleteDelivery, onCancelClosure, onDeleteMenu, onToggleHomeFoodMenu }) {
+  const navigate = useNavigate();
   if (section === 'providers') {
     const reviewStatus = item.review_status || (item.is_active ? 'approved' : 'pending');
     const reviewBadge = {
@@ -812,6 +819,12 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
         <td className="px-4 py-3 text-sm text-slate-500">{date(item.created_at)}</td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-3">
+            <button
+              onClick={(e) => { e.stopPropagation(); navigate(`/home-foods/providers/${item.provider_uid}`); }}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+            >
+              View
+            </button>
             {reviewStatus === 'pending' ? (
               <>
                 <button

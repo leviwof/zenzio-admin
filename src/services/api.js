@@ -383,6 +383,10 @@ export const saveHomeFoodProviderSettings = (data) =>
   homeFoodsAdminOnly(() => api.put('/meal-subscriptions/provider/settings', data));
 export const createCloudKitchen = (data) =>
   homeFoodsAdminOnly(() => api.post('/admin/home-foods/providers/cloud-kitchen', data));
+export const getHomeFoodProviderDetail = (providerUid) =>
+  homeFoodsAdminOnly(() => api.get(`/admin/home-foods/providers/${providerUid}`));
+export const updateHomeFoodProviderAdmin = (providerUid, data) =>
+  homeFoodsAdminOnly(() => api.patch(`/admin/home-foods/providers/${providerUid}`, data));
 export const deleteHomeFoodProvider = (providerUid) =>
   homeFoodsAdminOnly(() => api.delete(`/admin/home-foods/providers/${providerUid}`));
 export const activateHomeFoodProvider = (providerUid) =>
