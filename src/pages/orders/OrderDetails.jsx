@@ -1712,36 +1712,6 @@ const OrderDetails = () => {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">ETA Performance</h4>
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-gray-600">ETA</span>
-                  <span className="text-xs font-semibold text-gray-900">{formatMinutes(estimatedMinutes)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-gray-600">Remaining</span>
-                  <span className="text-xs font-semibold text-gray-900">{formatMinutes(remainingMinutes)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-gray-600">Delivery At</span>
-                  <span className="text-xs font-semibold text-gray-700 text-right">{estimatedDeliveryAt ? formatDateTime(estimatedDeliveryAt) : '—'}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-gray-600">Actual</span>
-                  <span className="text-xs font-semibold text-gray-900">{formatMinutes(actualMinutes)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-gray-600">Difference</span>
-                  <span className={`text-xs font-semibold ${Number(varianceMinutes) > 0 ? 'text-red-600' : Number(varianceMinutes) < 0 ? 'text-emerald-600' : 'text-gray-700'}`}>
-                    {formatVariance(varianceMinutes)}
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Delivery Executive Info (when no map) */}
           {(!hasDeliveryPartner || restaurantAdmin) && order.deliveryPartnerInformation && (
             <Card>

@@ -3,13 +3,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import ProvidersCardView from './ProvidersCardView';
 import toast from 'react-hot-toast';
 import {
-  Activity, AlertTriangle, CalendarDays, ChefHat, CircleDollarSign,
+  Activity, AlertTriangle, CalendarDays, Camera, ChefHat, CircleDollarSign,
   PackageCheck, Plus, RefreshCw, Search, Store, Trash2, Users, X,
 } from 'lucide-react';
 import {
   cancelHomeFoodClosure,
   createMenuByAdminWithImage,
   createCloudKitchen,
+  uploadProviderProfileImage,
   createHomeFoodClosure,
   createHomeFoodPlan,
   deleteMenu,
@@ -1054,6 +1055,9 @@ function CreateCloudKitchenForm({ onClose, onSaved }) {
   const [selectedMenuDay, setSelectedMenuDay] = useState('MONDAY');
   const [slotOptions, setSlotOptions] = useState([]);
   const [slotDraft, setSlotDraft] = useState({ start: '', end: '' });
+  const [imagePreview, setImagePreview] = useState(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [profileImageUrl, setProfileImageUrl] = useState('');
   const [form, setForm] = useState({
     kitchen_name: '',
     locality: '',
@@ -1073,6 +1077,25 @@ function CreateCloudKitchenForm({ onClose, onSaved }) {
     meal_types: ['LUNCH'],
     duration_days: 30,
   });
+
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImagePreview(URL.createObjectURL(file));
+    setImageUploading(true);
+    try {
+      const res = await uploadProviderProfileImage(file);
+      const url = res.data?.url || res.data?.data?.url || res.data?.fileUrl || res.data?.imageUrl;
+      if (!url) throw new Error('No URL in response');
+      setProfileImageUrl(url);
+    } catch {
+      toast.error('Image upload failed');
+      setImagePreview(null);
+      setProfileImageUrl('');
+    } finally {
+      setImageUploading(false);
+    }
+  };
 
   const activeDay = (form.working_days || []).includes(selectedMenuDay)
     ? selectedMenuDay
@@ -1130,6 +1153,7 @@ function CreateCloudKitchenForm({ onClose, onSaved }) {
         ...form,
         max_active_subscribers: Number(form.max_active_subscribers),
         delivery_radius_km: Number(form.delivery_radius_km),
+        ...(profileImageUrl ? { profile_image_url: profileImageUrl } : {}),
         ...(hasPlan ? {
           plan: {
             ...plan,
@@ -1154,6 +1178,31 @@ function CreateCloudKitchenForm({ onClose, onSaved }) {
         {/* Basic Info */}
         <div className="md:col-span-2">
           <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-600">Kitchen Details</p>
+          <div className="mb-4 flex items-center gap-4">
+            <label className="relative cursor-pointer group">
+              <div className="h-20 w-20 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center transition-colors group-hover:border-indigo-400 group-hover:bg-indigo-50">
+                {imagePreview ? (
+                  <img src={imagePreview} alt="preview" className="h-full w-full object-cover" />
+                ) : (
+                  <ChefHat size={28} className="text-slate-300" />
+                )}
+                {imageUploading && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/70">
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                  </div>
+                )}
+                <div className="absolute bottom-1 right-1 rounded-full bg-indigo-600 p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
+                  <Camera size={10} className="text-white" />
+                </div>
+              </div>
+              <input type="file" accept="image/*" className="sr-only" onChange={handleImageSelect} disabled={imageUploading} />
+            </label>
+            <div className="text-xs text-slate-400">
+              <p className="font-medium text-slate-600">Kitchen Photo</p>
+              <p>Click to upload a logo or photo</p>
+              <p className="mt-0.5">JPG, PNG, WebP · max 2 MB</p>
+            </div>
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Kitchen Name *">
               <input value={form.kitchen_name} onChange={(e) => setForm({ ...form, kitchen_name: e.target.value })} className={inputClass} placeholder="e.g. Maa Ki Rasoi" required />

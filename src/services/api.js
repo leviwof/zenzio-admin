@@ -7,9 +7,12 @@ const CLIENT_ID = import.meta.env.VITE_CLIENT_ID;
 const CLIENT_SECRET = import.meta.env.VITE_CLIENT_SECRET;
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim();
 
-const normalizedApiBaseUrl = API_BASE_URL
-  ? API_BASE_URL.replace(/\/+$/, '')
-  : '/';
+// Localhost URLs route through the Vite proxy (empty baseURL = same origin = no CORS).
+// Remote URLs (staging/prod) go direct — backend CORS allows those origins explicitly.
+const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(API_BASE_URL ?? '');
+const normalizedApiBaseUrl = isLocalhost
+  ? ''
+  : (API_BASE_URL ? API_BASE_URL.replace(/\/+$/, '') : '');
 
 
 const api = axios.create({
@@ -383,6 +386,11 @@ export const saveHomeFoodProviderSettings = (data) =>
   homeFoodsAdminOnly(() => api.put('/meal-subscriptions/provider/settings', data));
 export const createCloudKitchen = (data) =>
   homeFoodsAdminOnly(() => api.post('/admin/home-foods/providers/cloud-kitchen', data));
+export const uploadProviderProfileImage = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post('/file/upload-image', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 export const getHomeFoodProviderDetail = (providerUid) =>
   homeFoodsAdminOnly(() => api.get(`/admin/home-foods/providers/${providerUid}`));
 export const updateHomeFoodProviderAdmin = (providerUid, data) =>

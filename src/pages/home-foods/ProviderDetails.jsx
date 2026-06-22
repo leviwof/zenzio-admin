@@ -1,13 +1,14 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  ArrowLeft, ChefHat, Users, RefreshCw,
+  ArrowLeft, Camera, ChefHat, Users, RefreshCw,
   Star, CheckCircle, XCircle, AlertCircle, Save, X, Truck,
 } from 'lucide-react';
 import {
   getHomeFoodProviderDetail,
   updateHomeFoodProviderAdmin,
+  uploadProviderProfileImage,
   activateHomeFoodProvider,
   deactivateHomeFoodProvider,
 } from '../../services/api';
@@ -124,7 +125,9 @@ export default function ProviderDetails() {
   const [loading, setLoading]         = useState(true);
   const [saving, setSaving]           = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const [form, setForm]               = useState(toForm(null));
+  const imageInputRef                 = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -151,6 +154,25 @@ export default function ProviderDetails() {
       const arr = f[field];
       return { ...f, [field]: arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value] };
     });
+  };
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageUploading(true);
+    try {
+      const res = await uploadProviderProfileImage(file);
+      const url = res.data?.url || res.data?.data?.url || res.data?.fileUrl || res.data?.imageUrl;
+      if (!url) throw new Error('No URL in response');
+      await updateHomeFoodProviderAdmin(providerUid, { profile_image_url: url });
+      toast.success('Photo updated');
+      await load();
+    } catch {
+      toast.error('Image upload failed');
+    } finally {
+      setImageUploading(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
   };
 
   const handleSave = async () => {
@@ -244,13 +266,26 @@ export default function ProviderDetails() {
 
       {/* profile header */}
       <div className="mb-5 flex flex-wrap items-start gap-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-        {provider.profile_image_url ? (
-          <img src={provider.profile_image_url} alt={displayName} className="h-16 w-16 rounded-xl object-cover ring-1 ring-slate-200" />
-        ) : (
-          <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-indigo-50 ring-1 ring-indigo-100">
-            <ChefHat size={28} className="text-indigo-500" />
+        <label className="relative cursor-pointer group shrink-0">
+          <div className="h-16 w-16 rounded-xl overflow-hidden ring-1 ring-slate-200">
+            {provider.profile_image_url ? (
+              <img src={provider.profile_image_url} alt={displayName} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-indigo-50">
+                <ChefHat size={28} className="text-indigo-500" />
+              </div>
+            )}
+            {imageUploading && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/70">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+              </div>
+            )}
           </div>
-        )}
+          <div className="absolute -bottom-1 -right-1 rounded-full bg-indigo-600 p-1 shadow opacity-0 group-hover:opacity-100 transition-opacity">
+            <Camera size={10} className="text-white" />
+          </div>
+          <input ref={imageInputRef} type="file" accept="image/*" className="sr-only" onChange={handleImageUpload} disabled={imageUploading} />
+        </label>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-bold text-slate-900 truncate">{displayName}</h1>

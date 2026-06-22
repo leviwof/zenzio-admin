@@ -342,11 +342,7 @@ const ExecutiveCard = ({ executive, selected, expanded, onSelect, onOpenOrder, o
                                     <p className="truncate text-[11px] font-semibold text-slate-500">to {order?.customerName || 'Customer'}</p>
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-2 text-[11px]">
-                                    <div className="rounded-lg bg-blue-50 p-2">
-                                        <p className="font-bold text-blue-500">ETA</p>
-                                        <p className="font-black text-blue-900">{formatEta(route?.totalEtaMinutes)}</p>
-                                    </div>
+                                <div className="grid grid-cols-2 gap-2 text-[11px]">
                                     <div className="rounded-lg bg-slate-50 p-2">
                                         <p className="font-bold text-slate-400">Journey</p>
                                         <p className="font-black text-slate-900">{formatKm(route?.totalDistanceKm)}</p>
@@ -702,7 +698,6 @@ const LiveTracking = () => {
                     <div className="operations-scroll flex flex-1 justify-center gap-3 overflow-x-auto pb-1 xl:pb-0">
                         <MetricPill icon={Bike} label="Online" value={operationalExecutives.length} tone="green" />
                         <MetricPill icon={Package} label="Active Deliveries" value={operationalExecutives.length} tone="blue" />
-                        <MetricPill icon={Clock} label="Avg ETA" value={avgEta} tone="orange" />
                         <MetricPill icon={MapPin} label="GPS Active" value={operationalExecutives.filter(isFreshGps).length} tone="green" />
                         <MetricPill icon={Wifi} label="Live Sync" value={loading ? 'Syncing' : 'Active'} tone={loading ? 'orange' : 'green'} />
                     </div>
