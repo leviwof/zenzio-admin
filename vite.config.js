@@ -128,6 +128,66 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/admin': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/meal-subscriptions': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/file': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/home-food': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/live-tracking': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/delivery-partners': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/referral': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/payments': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/documents': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/quick-search': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/quick-menu': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/top-restaurants': {
+          target: backendUrl,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
   };
