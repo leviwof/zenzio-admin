@@ -1604,80 +1604,6 @@ const OrderDetails = () => {
             </CardContent>
           </Card>
 
-          {/* Payment Information */}
-          <Card>
-            <CardHeader>
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <CreditCard size={16} className="text-emerald-500" />
-                Payment Information
-              </h3>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-xs text-gray-400 font-medium">Transaction ID</p>
-                  <p className="font-medium text-gray-900 mt-0.5 font-mono">{order.transactionId || order.paymentTransactionId || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 font-medium">Payment Method</p>
-                  <p className="font-medium text-gray-900 mt-0.5">{order.paymentMethod || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 font-medium">Payment Status</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <StatusBadge status={order.paymentStatus || 'PENDING'} />
-                    {order.razorpay_order_id && (order.paymentStatus || '').toLowerCase() !== 'success' && (
-                      <button
-                        onClick={handleSyncPayment}
-                        disabled={syncingPayment}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
-                        title="Check Razorpay and mark as paid if captured"
-                      >
-                        {syncingPayment
-                          ? <Loader2 size={11} className="animate-spin" />
-                          : <RefreshCw size={11} />}
-                        {syncingPayment ? 'Syncing…' : 'Sync'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 font-medium">Refund Status</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <StatusBadge status={order.refundStatus || 'NONE'} />
-                    {(order.payment_mode || '').toUpperCase() === 'ONLINE' && (() => {
-                      const placedAt = order.orderSummary?.orderPlacement || order.lastUpdated;
-                      const isToday = placedAt && (() => {
-                        const IST = 5.5 * 60 * 60 * 1000;
-                        const d = new Date(new Date(placedAt).getTime() + IST);
-                        const n = new Date(Date.now() + IST);
-                        return d.getUTCFullYear() === n.getUTCFullYear() &&
-                          d.getUTCMonth() === n.getUTCMonth() &&
-                          d.getUTCDate() === n.getUTCDate();
-                      })();
-                      if (!isToday) return null;
-                      return order.refundStatus === 'REFUNDED' ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <Check size={11} />
-                          Refunded
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => setShowRefundModal(true)}
-                          disabled={refundLoading}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
-                          title="Issue full refund to customer"
-                        >
-                          <RotateCcw size={11} />
-                          Refund
-                        </button>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Right Column */}
@@ -1757,46 +1683,64 @@ const OrderDetails = () => {
             </Card>
           )}
 
-          {/* Timeline */}
+          {/* Payment Details */}
           <Card>
             <CardHeader>
               <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <Clock size={16} className="text-indigo-500" />
-                Order Timeline
+                <CreditCard size={16} className="text-emerald-500" />
+                Payment Details
               </h3>
             </CardHeader>
             <CardContent>
-              <div className="relative">
-                {orderTimeline.map((item, idx) => (
-                  <div key={idx} className="flex items-start gap-3 pb-3 last:pb-0 relative">
-                    {/* Connector line */}
-                    {idx < orderTimeline.length - 1 && (
-                      <div className={`absolute left-[13px] top-7 w-0.5 h-[calc(100%-8px)] ${item.timestamp ? 'bg-emerald-200' : 'bg-gray-200'}`} />
-                    )}
-                    {/* Icon */}
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 z-10 ${item.timestamp ? 'bg-emerald-100' : 'bg-gray-100'}`}>
-                      {item.timestamp ? (
-                        <CheckCircle size={14} className="text-emerald-600" />
-                      ) : (
-                        <Circle size={14} className="text-gray-300" />
+              <div className="space-y-3 text-sm">
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">Final Amount</p>
+                  <p className="mt-1 text-2xl font-bold text-emerald-700">{formatCurrency(finalAmount)}</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2">
+                  <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                    <span className="text-xs text-gray-500">Payment Method</span>
+                    <span className="text-xs font-semibold text-gray-900">
+                      {order.paymentMethod === 'COD' ? 'Cash on Delivery' : order.paymentMethod || order.payment_mode || '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                    <span className="text-xs text-gray-500">Payment Status</span>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={order.paymentStatus || 'PENDING'} />
+                      {order.razorpay_order_id && (order.paymentStatus || '').toLowerCase() !== 'success' && (
+                        <button
+                          onClick={handleSyncPayment}
+                          disabled={syncingPayment}
+                          className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
+                          title="Check Razorpay and mark as paid if captured"
+                        >
+                          {syncingPayment ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                          {syncingPayment ? 'Syncing…' : 'Sync'}
+                        </button>
                       )}
                     </div>
-                    {/* Content */}
-                    <div className="min-w-0 flex-1 pt-0.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className={`text-xs font-semibold ${item.timestamp ? 'text-gray-900' : 'text-gray-400'}`}>
-                          {item.status.replace(/_/g, ' ')}
-                        </p>
-                        {item.timestamp && (
-                          <span className="text-[10px] text-gray-400 shrink-0">{formatRelativeTime(item.timestamp)}</span>
-                        )}
-                      </div>
-                      <p className={`text-[11px] mt-0.5 ${item.timestamp ? 'text-gray-500' : 'text-gray-400 italic'}`}>
-                        {item.timestamp ? formatDateTime(item.timestamp) : 'Pending'}
-                      </p>
-                    </div>
                   </div>
-                ))}
+                  <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                    <span className="text-xs text-gray-500">Transaction ID</span>
+                    <span className="max-w-[160px] truncate text-xs font-mono font-semibold text-gray-900">
+                      {order.transactionId || order.paymentTransactionId || order.razorpay_payment_id || '—'}
+                    </span>
+                  </div>
+                  {order.razorpay_order_id && (
+                    <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                      <span className="text-xs text-gray-500">Razorpay Order</span>
+                      <span className="max-w-[160px] truncate text-xs font-mono font-semibold text-gray-900">
+                        {order.razorpay_order_id}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                    <span className="text-xs text-gray-500">Refund Status</span>
+                    <StatusBadge status={order.refundStatus || 'NONE'} />
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
