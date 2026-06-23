@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import {
   getHomeFoodProviders,
+  getHomeFoodPlans,
+  updateHomeFoodPlan,
   activateHomeFoodProvider,
   deactivateHomeFoodProvider,
   deleteHomeFoodProvider,
@@ -25,6 +27,8 @@ const MEAL_STYLES = {
 const DAYS_ORDER = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
 const DAY_ABBR   = { MONDAY:'Mon', TUESDAY:'Tue', WEDNESDAY:'Wed', THURSDAY:'Thu', FRIDAY:'Fri', SATURDAY:'Sat', SUNDAY:'Sun' };
 const MEAL_TYPES = ['BREAKFAST', 'LUNCH', 'SNACKS', 'DINNER'];
+const PLAN_TYPES = ['TRIAL', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'HALF_YEARLY'];
+const PLAN_DURATION_DAYS = { TRIAL: 1, WEEKLY: 7, MONTHLY: 30, QUARTERLY: 90, HALF_YEARLY: 180 };
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 const fmt   = (v) => v ? new Date(v).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
@@ -104,7 +108,7 @@ function ProviderCard({ item, expanded, onToggle, blockLoading, onViewDetails, o
 
   return (
     <div
-      className={`self-start rounded-2xl border shadow-sm transition-[background-color,border-color,box-shadow] duration-200 ${
+      className={`w-full rounded-2xl border shadow-sm transition-[background-color,border-color,box-shadow] duration-200 ${
         expanded
           ? 'border-indigo-400 bg-indigo-50/55 shadow-lg shadow-indigo-100/70 ring-2 ring-indigo-100'
           : 'border-slate-100 bg-white hover:border-slate-200 hover:shadow'
@@ -114,7 +118,7 @@ function ProviderCard({ item, expanded, onToggle, blockLoading, onViewDetails, o
       <button
         type="button"
         onClick={onToggle}
-        className={`flex w-full items-center gap-3 rounded-2xl p-3.5 text-left transition-colors focus:outline-none ${
+        className={`flex w-full items-center gap-3 rounded-2xl p-4 text-left transition-colors focus:outline-none ${
           expanded ? 'bg-white/70' : ''
         }`}
       >
@@ -129,10 +133,17 @@ function ProviderCard({ item, expanded, onToggle, blockLoading, onViewDetails, o
           <p className="truncate text-sm font-bold text-slate-900 leading-snug">
             {item.restaurant_name || item.provider_uid}
           </p>
-          <div className="mt-0.5 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge item={item} />
             <span className="text-[10px] text-slate-400">{item.active_subscribers ?? 0} subs</span>
+            <span className="hidden text-[10px] text-slate-300 sm:inline">•</span>
+            <span className="hidden text-[10px] text-slate-400 sm:inline">{item.capacity ?? 0} capacity</span>
+            <span className="hidden text-[10px] text-slate-300 sm:inline">•</span>
+            <span className="hidden text-[10px] text-slate-400 sm:inline">{Number(item.delivery_radius_km || 0)} km radius</span>
           </div>
+        </div>
+        <div className="hidden flex-wrap justify-end gap-1.5 md:flex">
+          {mealTypes.slice(0, 4).map((t) => <MealChip key={t} type={t} />)}
         </div>
         <ChevronDown
           size={15}
@@ -149,7 +160,9 @@ function ProviderCard({ item, expanded, onToggle, blockLoading, onViewDetails, o
         }}
       >
         <div className="overflow-hidden">
-          <div className="border-t border-slate-100 px-3.5 pt-3 pb-3 space-y-3">
+          <div className="border-t border-slate-100 px-4 pt-4 pb-4">
+            <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto]">
+              <div className="space-y-3">
             {/* quick stats */}
             <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-50 p-2 text-center">
               <div>
@@ -175,10 +188,12 @@ function ProviderCard({ item, expanded, onToggle, blockLoading, onViewDetails, o
 
             {/* capacity bar */}
             <CapacityBar used={item.active_subscribers} total={item.capacity} />
+              </div>
 
             {/* weekly menu preview */}
-            {showPreview.length > 0 && (
-              <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+              <div>
+                {showPreview.length > 0 ? (
+              <div className="h-full rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5">
                 <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">This Week</p>
                 <ul className="space-y-1">
                   {showPreview.map((entry, i) => (
@@ -192,42 +207,64 @@ function ProviderCard({ item, expanded, onToggle, blockLoading, onViewDetails, o
                   <p className="mt-1.5 text-[11px] font-semibold text-indigo-500">+{moreCount} more</p>
                 )}
               </div>
-            )}
+                ) : (
+                  <div className="flex h-full min-h-[96px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 text-xs font-medium text-slate-400">
+                    No weekly menu preview
+                  </div>
+                )}
+              </div>
 
             {/* actions */}
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <div className="rounded-2xl border border-slate-100 bg-white/80 p-2 shadow-sm lg:w-60">
+                <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Actions</p>
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
               <button
                 onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-bold text-white shadow-sm shadow-indigo-100 transition-all hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-md"
               >
-                <Eye size={13} /> View Details
+                <Eye size={14} /> View Details
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onBlock(); }}
                 disabled={blockLoading}
                 title={item.is_active ? 'Block provider' : 'Activate provider'}
-                className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition-all hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-50 ${
                   item.is_active
-                    ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:shadow-sm'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:shadow-sm'
                 }`}
               >
-                {blockLoading ? '…' : item.is_active ? <Lock size={13} /> : <Unlock size={13} />}
+                {blockLoading ? (
+                  <>
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    Updating
+                  </>
+                ) : item.is_active ? (
+                  <>
+                    <Lock size={14} /> Block
+                  </>
+                ) : (
+                  <>
+                    <Unlock size={14} /> Activate
+                  </>
+                )}
               </button>
               {status === 'pending' && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onReject(); }}
-                  className="rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition-colors"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-600 transition-all hover:-translate-y-0.5 hover:bg-red-100 hover:shadow-sm"
                 >
-                  Reject
+                  <XCircle size={14} /> Reject
                 </button>
               )}
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50 transition-colors"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2.5 text-xs font-bold text-red-500 transition-all hover:-translate-y-0.5 hover:bg-red-50 hover:shadow-sm"
               >
-                <Trash2 size={13} />
+                <Trash2 size={14} /> Delete
               </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -346,6 +383,170 @@ function RejectModal({ providerName, onReject, onCancel }) {
 }
 
 // ── StatCard ───────────────────────────────────────────────────────────────────
+function PlanEditorModal({ provider, onClose, onSaved }) {
+  const [plans, setPlans] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [form, setForm] = useState({
+    name: '',
+    plan_type: 'MONTHLY',
+    duration_days: 30,
+    price: 0,
+    meal_types: ['LUNCH'],
+    is_active: true,
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const applyPlan = (plan) => {
+    if (!plan) return;
+    setSelectedId(plan.id);
+    setForm({
+      name: plan.name || '',
+      plan_type: plan.plan_type || 'MONTHLY',
+      duration_days: Number(plan.duration_days || PLAN_DURATION_DAYS[plan.plan_type] || 30),
+      price: Number(plan.price || 0),
+      meal_types: Array.isArray(plan.meal_types) && plan.meal_types.length ? plan.meal_types : ['LUNCH'],
+      is_active: plan.is_active ?? true,
+    });
+  };
+
+  const loadPlans = useCallback(async (preferredId = '') => {
+    setLoading(true);
+    try {
+      const res = await getHomeFoodPlans({ provider_uid: provider.provider_uid, limit: 100 });
+      const list = unwrap(res);
+      setPlans(list);
+      applyPlan(list.find((plan) => plan.id === preferredId) || list[0]);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not load subscription plans');
+      setPlans([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [provider.provider_uid]);
+
+  useEffect(() => { loadPlans(''); }, [loadPlans]);
+
+  const selectPlan = (id) => applyPlan(plans.find((plan) => plan.id === id));
+
+  const toggleMeal = (meal) => {
+    setForm((current) => ({
+      ...current,
+      meal_types: current.meal_types.includes(meal)
+        ? current.meal_types.filter((value) => value !== meal)
+        : [...current.meal_types, meal],
+    }));
+  };
+
+  const save = async () => {
+    if (!selectedId) return;
+    if (!form.name.trim()) {
+      toast.error('Plan name is required');
+      return;
+    }
+    if (!form.meal_types.length) {
+      toast.error('Select at least one meal type');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateHomeFoodPlan(selectedId, {
+        ...form,
+        name: form.name.trim(),
+        duration_days: Number(form.duration_days),
+        price: Number(form.price),
+      });
+      toast.success('Subscription plan updated');
+      await loadPlans(selectedId);
+      onSaved?.();
+    } catch (err) {
+      const message = err.response?.data?.message;
+      toast.error(Array.isArray(message) ? message.join(', ') : message || 'Could not save plan');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-5">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">Edit Subscription Plans</h3>
+            <p className="mt-1 text-sm text-slate-500">{provider.restaurant_name || provider.provider_uid}</p>
+          </div>
+          <button onClick={onClose} className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50">Close</button>
+        </div>
+
+        {loading ? (
+          <div className="p-8 text-center text-sm text-slate-400">Loading plans...</div>
+        ) : plans.length === 0 ? (
+          <div className="p-8 text-center">
+            <ChefHat size={30} className="mx-auto text-slate-300" />
+            <p className="mt-3 text-sm font-semibold text-slate-600">No subscription plans found</p>
+            <p className="mt-1 text-xs text-slate-400">Create a plan from the Subscription Plans page first.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 p-6 md:grid-cols-2">
+            <label className="md:col-span-2 text-xs font-semibold text-slate-500">
+              Select Plan
+              <select value={selectedId} onChange={(e) => selectPlan(e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
+                {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} - {plan.plan_type} - {money(plan.price)}</option>)}
+              </select>
+            </label>
+
+            <label className="text-xs font-semibold text-slate-500">
+              Plan Name
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+            <label className="text-xs font-semibold text-slate-500">
+              Plan Type
+              <select value={form.plan_type} onChange={(e) => setForm({ ...form, plan_type: e.target.value, duration_days: PLAN_DURATION_DAYS[e.target.value] || form.duration_days })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
+                {PLAN_TYPES.map((type) => <option key={type}>{type}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-slate-500">
+              Duration Days
+              <input type="number" min="1" value={form.duration_days} onChange={(e) => setForm({ ...form, duration_days: Number(e.target.value) })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+            <label className="text-xs font-semibold text-slate-500">
+              Price
+              <input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+            <label className="text-xs font-semibold text-slate-500">
+              Status
+              <select value={String(form.is_active)} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </label>
+
+            <div className="md:col-span-2">
+              <p className="mb-2 text-xs font-semibold text-slate-500">Meal Types</p>
+              <div className="flex flex-wrap gap-2">
+                {MEAL_TYPES.map((meal) => (
+                  <label key={meal} className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                    <input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => toggleMeal(meal)} />
+                    {meal}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
+          <button onClick={onClose} disabled={saving} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+          <button onClick={save} disabled={saving || loading || plans.length === 0} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save Plan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StatCard({ icon: Icon, label, value, iconCls }) {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3.5 shadow-sm">
@@ -382,7 +583,7 @@ export default function ProvidersCardView({ onAdd, reloadKey = 0 }) {
 
   // actions
   const [blockLoading, setBlockLoading] = useState({});
-  const [confirmDialog, setConfirm]     = useState(null);
+  const [confirmDialog, setConfirm] = useState(null);
   const [rejectTarget, setRejectTarget] = useState(null);
 
   // ── load ──────────────────────────────────────────────────────────
@@ -474,10 +675,10 @@ export default function ProvidersCardView({ onAdd, reloadKey = 0 }) {
 
   const handleDelete = useCallback((item) => {
     setConfirm({
-      title:        `Delete "${item.restaurant_name || 'this provider'}"?`,
-      message:      'All active subscriptions and deliveries will be cancelled. This cannot be undone.',
+      title: `Delete "${item.restaurant_name || 'this provider'}"?`,
+      message: 'All active subscriptions and deliveries will be cancelled. This cannot be undone.',
       confirmLabel: 'Delete Provider',
-      onConfirm:    async () => {
+      onConfirm: async () => {
         await deleteHomeFoodProvider(item.provider_uid);
         toast.success('Provider deleted');
         setConfirm(null);
@@ -550,15 +751,15 @@ export default function ProvidersCardView({ onAdd, reloadKey = 0 }) {
         </div>
       </div>
 
-      {/* card grid */}
+      {/* full-page accordion list */}
       {loading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+        <div className="space-y-3">
           {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
         </div>
       ) : pageItems.length === 0 ? (
         <EmptyState hasFilters={!!(search || statusFilter || mealTypeFilter)} onAdd={onAdd} />
       ) : (
-        <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+        <div className="space-y-3">
           {pageItems.map((item) => (
             <ProviderCard
               key={item.provider_uid}
@@ -596,7 +797,6 @@ export default function ProvidersCardView({ onAdd, reloadKey = 0 }) {
         </div>
       )}
 
-      {/* confirm dialog */}
       {confirmDialog && (
         <ConfirmModal
           dialog={confirmDialog}
@@ -613,6 +813,7 @@ export default function ProvidersCardView({ onAdd, reloadKey = 0 }) {
           onCancel={() => setRejectTarget(null)}
         />
       )}
+
     </div>
   );
 }

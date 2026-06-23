@@ -65,6 +65,7 @@ const Sidebar = ({ isOpen }) => {
   const [homeFoodsOpen, setHomeFoodsOpen] = useState(
     location.pathname.startsWith('/home-foods'),
   );
+  const [homeFoodsLabel, setHomeFoodsLabel] = useState('Home Foods');
   const [search, setSearch] = useState('');
   const searchRef = useRef(null);
 
@@ -80,6 +81,15 @@ const Sidebar = ({ isOpen }) => {
       }
     };
     fetchPlatformName();
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setHomeFoodsLabel((current) => (
+        current === 'Home Foods' ? 'Cloud Kitchen' : 'Home Foods'
+      ));
+    }, 2000);
+    return () => clearInterval(timer);
   }, []);
 
   const visibleMenuItems = menuItems.filter(item => {
@@ -220,6 +230,7 @@ const Sidebar = ({ isOpen }) => {
 
         {visibleMenuItems.map((item) => {
           if (item.isDropdown) {
+            const dropdownLabel = item.id === 'home-foods-section' ? homeFoodsLabel : item.label;
             return (
               <div key={item.id} className="relative group">
                 <motion.button
@@ -255,7 +266,18 @@ const Sidebar = ({ isOpen }) => {
                         exit={{ opacity: 0, width: 0 }}
                         className="text-sm font-medium truncate whitespace-nowrap flex-1 text-left"
                       >
-                        {item.label}
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={dropdownLabel}
+                            initial={{ opacity: 0, y: 6, filter: 'blur(3px)' }}
+                            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                            exit={{ opacity: 0, y: -6, filter: 'blur(3px)' }}
+                            transition={{ duration: 0.25 }}
+                            className="block truncate"
+                          >
+                            {dropdownLabel}
+                          </motion.span>
+                        </AnimatePresence>
                       </motion.span>
                     )}
                   </AnimatePresence>
@@ -272,7 +294,7 @@ const Sidebar = ({ isOpen }) => {
 
                 {collapsed && hoveredItem === item.id && (
                   <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 px-2.5 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg shadow-xl whitespace-nowrap border border-gray-700">
-                    {item.label}
+                    {dropdownLabel}
                   </div>
                 )}
 
