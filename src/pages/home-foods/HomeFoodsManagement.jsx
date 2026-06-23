@@ -213,6 +213,7 @@ export default function HomeFoodsManagement() {
   const location = useLocation();
   const section = location.pathname.split('/').filter(Boolean).pop() || 'providers';
   const copy = sections[section] || sections.providers;
+  const [homeFoodsLabel, setHomeFoodsLabel] = useState('Home Foods');
   const [items, setItems] = useState([]);
   const [meta, setMeta] = useState({});
   const [loading, setLoading] = useState(true);
@@ -226,6 +227,20 @@ export default function HomeFoodsManagement() {
   const [providerReloadKey, setProviderReloadKey] = useState(0);
   const [analytics, setAnalytics] = useState(null);
   const [weeklyMenuProviders, setWeeklyMenuProviders] = useState([]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setHomeFoodsLabel((current) => (
+        current === 'Home Foods' ? 'Cloud Kitchen' : 'Home Foods'
+      ));
+    }, 2000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const animatedCopy = useMemo(() => ({
+    title: copy.title.replace(/Home Foods/g, homeFoodsLabel),
+    subtitle: copy.subtitle.replace(/Home Foods/g, homeFoodsLabel),
+  }), [copy, homeFoodsLabel]);
 
   useEffect(() => {
     setPage(1);
@@ -398,8 +413,8 @@ export default function HomeFoodsManagement() {
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-500">Platform Control</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">{copy.title}</h1>
-          <p className="mt-1 text-sm text-slate-500">{copy.subtitle}</p>
+          <h1 className="mt-1 text-2xl font-bold text-slate-900">{animatedCopy.title}</h1>
+          <p className="mt-1 text-sm text-slate-500">{animatedCopy.subtitle}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={load} className="rounded-xl border bg-white p-2.5 text-slate-500 hover:bg-slate-50"><RefreshCw size={17} /></button>
@@ -884,6 +899,12 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
       <td className="px-4 py-3"><Status value={item.is_active ? 'ACTIVE' : 'INACTIVE'} /></td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
+          <button
+            onClick={(event) => { event.stopPropagation(); onEdit(); }}
+            className="text-xs font-semibold text-indigo-600"
+          >
+            Edit
+          </button>
           {item.paid_subscriber_count > 0 && (
             <span className="text-[11px] text-slate-400">{item.paid_subscriber_count} paid</span>
           )}
@@ -1516,7 +1537,11 @@ function PlanForm({ item, onClose, onSaved }) {
     }
     setSaving(true);
     try {
-      if (item) await updateHomeFoodPlan(item.id, form);
+      if (item) {
+        const updatePayload = { ...form };
+        delete updatePayload.provider_uid;
+        await updateHomeFoodPlan(item.id, updatePayload);
+      }
       else await createHomeFoodPlan(form);
       toast.success('Plan saved with its weekly menu');
       onSaved();
