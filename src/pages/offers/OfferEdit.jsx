@@ -1,224 +1,196 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, CheckCircle, XCircle } from 'lucide-react';
-import { updateAdminOffer, getAdminOfferById, getAllRestaurants, getMenuCategories } from '../../services/api';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  ArrowLeft, Tag, Calendar, Clock, Image as ImageIcon,
+  Loader2, Save, RotateCcw, X, Store, Percent, IndianRupee,
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+import {
+  updateAdminOffer, getAdminOfferById, getAllRestaurants, getMenuCategories,
+  updateRestaurantOffer, getOfferDetails,
+} from '../../services/api';
 
-// Toast Notification Component
-const Toast = ({ message, type, onClose }) => {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 3000);
-    return () => clearTimeout(timer);
-  }, [onClose]);
-
-  const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
-  const Icon = type === 'success' ? CheckCircle : XCircle;
-
-  return (
-    <div className={`fixed top-4 right-4 ${bgColor} text-white px-6 py-4 rounded-lg shadow-lg flex items-center space-x-3 animate-slide-in z-50`}>
-      <Icon size={20} />
-      <span className="font-medium">{message}</span>
-      <button onClick={onClose} className="ml-4 hover:opacity-80">
-        <XCircle size={18} />
-      </button>
+const SECTION = ({ number, title, children }) => (
+  <div>
+    <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">
+        {number}
+      </span>
+      {title}
+    </p>
+    <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+      {children}
     </div>
-  );
+  </div>
+);
+
+const Field = ({ label, required, hint, children }) => (
+  <div>
+    <label className="mb-1.5 block text-sm font-medium text-gray-700">
+      {label}{required && <span className="ml-0.5 text-red-500">*</span>}
+      {hint && <span className="ml-1 font-normal text-gray-400">({hint})</span>}
+    </label>
+    {children}
+  </div>
+);
+
+const inputCls = 'w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100';
+
+const emptyForm = {
+  title: '',
+  restaurantId: '',
+  categoryId: '',
+  offerCode: '',
+  description: '',
+  discountType: 'PERCENTAGE',
+  discountValue: '',
+  minOrderValue: '',
+  startDate: '',
+  endDate: '',
+  startTime: '',
+  endTime: '',
+  termsConditions: '',
+  isActive: true,
 };
 
 const OfferEdit = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
+  const [searchParams] = useSearchParams();
+  const isRestaurantScope = searchParams.get('scope') === 'restaurant';
+
   const [restaurants, setRestaurants] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [fetchingData, setFetchingData] = useState(true);
-  const [error, setError] = useState(null);
-  const [toast, setToast] = useState(null);
-  const [formData, setFormData] = useState(null);
+  const [fetching, setFetching] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
+  const [formData, setFormData] = useState(emptyForm);
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
-  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '');
+  useEffect(() => { fetchAll(); }, [id]);
 
-  useEffect(() => {
-    fetchInitialData();
-  }, [id]);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-  };
-
-  const fetchInitialData = async () => {
+  const fetchAll = async () => {
     try {
-      setFetchingData(true);
-      setError(null);
+      setFetching(true);
+      setFetchError(null);
+      const offerFetch = isRestaurantScope
+        ? getOfferDetails(id)
+        : getAdminOfferById(id);
       const [restRes, catRes, offerRes] = await Promise.all([
         getAllRestaurants(),
         getMenuCategories(),
-        getAdminOfferById(id),
+        offerFetch,
       ]);
-      console.log(restRes, "restRes")
-      // Parse restaurants
-      let restaurantData = [];
-      if (restRes.data?.restaurants)
-        restaurantData = restRes.data.restaurants;
-      else if (restRes.data?.restaurants)
-        restaurantData = restRes.data.restaurants;
-      else if (Array.isArray(restRes.data))
-        restaurantData = restRes.data;
-      else if (Array.isArray(restRes.data))
-        restaurantData = restRes.data;
+
+      let restaurantData = restRes.data?.restaurants || restRes.data || [];
       setRestaurants(Array.isArray(restaurantData) ? restaurantData : []);
 
-      // Parse categories from restaurant menus
-      console.log(catRes, "catRes");
-      let categoryData = [];
+      let categoryData = catRes.data?.data || catRes.data?.categories || catRes.data || [];
+      setCategories(Array.isArray(categoryData) ? categoryData : []);
 
-      if (Array.isArray(catRes.data?.data)) {
-        categoryData = catRes.data.data;
-      } else if (Array.isArray(catRes.data)) {
-        categoryData = catRes.data;
-      } else if (catRes.data?.categories && Array.isArray(catRes.data.categories)) {
-        categoryData = catRes.data.categories;
-      }
-
-      console.log(categoryData, "categoryData");
-      setCategories(categoryData);
-
-      // Set offer data
       const offer = offerRes.data;
-      if (!offer) {
-        throw new Error("Offer data not found");
-      }
+      if (!offer) throw new Error('Offer data not found');
 
       setFormData({
-        title: offer.title || "",
-        restaurantId: offer.restaurantId || "",
-        categoryId: offer.categoryId || "",
-        discountType: offer.discountType || "PERCENTAGE",
-        discountValue: offer.discountValue || "",
-        minOrderValue: offer.minOrderValue || "",
-        maxUsagePerUser: offer.maxUsagePerUser || "1",
-        totalUsageLimit: offer.totalUsageLimit || "",
-        startDate: (offer.startDate || "").split('T')[0],
-        endDate: (offer.endDate || "").split('T')[0],
-        startTime: offer.startTime || "",
-        endTime: offer.endTime || "",
-        termsConditions: offer.termsConditions || "",
-        description: offer.description || "",
+        title: offer.title || '',
+        restaurantId: offer.restaurantId || '',
+        categoryId: offer.categoryId || '',
+        offerCode: offer.offerCode || '',
+        description: offer.description || '',
+        discountType: offer.discountType || 'PERCENTAGE',
+        discountValue: offer.discountValue || '',
+        minOrderValue: offer.minOrderValue || '',
+        startDate: (offer.startDate || '').split('T')[0],
+        endDate: (offer.endDate || '').split('T')[0],
+        startTime: offer.startTime || '',
+        endTime: offer.endTime || '',
+        termsConditions: offer.termsConditions || '',
+        isActive: offer.isActive !== false,
       });
 
       if (offer.offerImage) {
-        const imageUrl = offer.offerImage.startsWith('offers/')
-          ? `${IMAGE_BASE_URL}/uploads/${offer.offerImage}`
-          : `${IMAGE_BASE_URL}/${offer.offerImage}`;
-        setImagePreview(imageUrl);
+        setImagePreview(offer.offerImage.startsWith('http') ? offer.offerImage : `/${offer.offerImage}`);
       }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      setError(error.message || 'Failed to load offer data');
-      // showToast('Failed to load offer data', 'error');
+    } catch (err) {
+      setFetchError(err.message || 'Failed to load offer');
     } finally {
-      setFetchingData(false);
+      setFetching(false);
     }
   };
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-  };
+  const set = (key) => (e) =>
+    setFormData((prev) => ({ ...prev, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => setImagePreview(reader.result);
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setImagePreview(reader.result);
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (!formData.title) {
-      showToast('Please enter offer title', 'error');
-      return;
-    }
-
-    if (!formData.discountValue) {
-      showToast('Please enter discount value', 'error');
-      return;
-    }
-
-    if (!formData.startDate || !formData.endDate) {
-      showToast('Please select start and end dates', 'error');
-      return;
-    }
+    if (!formData.title.trim()) { toast.error('Offer title is required'); return; }
+    if (!formData.discountValue) { toast.error('Discount value is required'); return; }
+    if (!formData.startDate || !formData.endDate) { toast.error('Start and end dates are required'); return; }
 
     setLoading(true);
     try {
       const data = new FormData();
-      Object.keys(formData).forEach(key => {
-        if (formData[key] !== "") data.append(key, formData[key]);
+      const allowed = ['title', 'restaurantId', 'categoryId', 'offerCode', 'description',
+        'discountType', 'discountValue', 'minOrderValue', 'startDate', 'endDate',
+        'startTime', 'endTime', 'termsConditions', 'isActive'];
+      allowed.forEach((key) => {
+        const val = formData[key];
+        if (val !== '' && val !== undefined && val !== null) data.append(key, val);
       });
       if (imageFile) data.append('image', imageFile);
 
-      await updateAdminOffer(id, data);
-      showToast('Offer updated successfully!', 'success');
-
-      // Navigate after short delay to show toast
-      setTimeout(() => {
-        navigate("/offers/existing");
-      }, 1000);
-    } catch (error) {
-      console.error('Error updating offer:', error);
-      showToast(error.response?.data?.message || 'Failed to update offer', 'error');
+      if (isRestaurantScope) {
+        await updateRestaurantOffer(id, data);
+      } else {
+        await updateAdminOffer(id, data);
+      }
+      toast.success('Offer updated successfully');
+      setTimeout(() => navigate(isRestaurantScope ? '/offers' : '/offers/existing'), 800);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update offer');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleReset = () => {
-    fetchInitialData();
-    setImageFile(null);
-    showToast('Form reset to original values', 'info');
-  };
+  const selectedRestaurant = restaurants.find(
+    (r) => r.uid === formData.restaurantId || r.id === formData.restaurantId,
+  );
 
-  if (fetchingData) {
+  if (fetching) {
     return (
-      <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-red-500"></div>
-          <p className="mt-4 text-gray-600">Loading offer data...</p>
+          <Loader2 className="mx-auto h-10 w-10 animate-spin text-red-500" />
+          <p className="mt-3 text-sm text-gray-500">Loading offer...</p>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (fetchError) {
     return (
-      <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
-        <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-md w-full">
-          <div className="flex justify-center mb-4">
-            <XCircle size={48} className="text-red-500" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Error Loading Offer</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <div className="flex justify-center space-x-4">
-            <button
-              onClick={() => navigate('/offers/existing')}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-            >
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+        <div className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-lg">
+          <X className="mx-auto mb-4 h-12 w-12 text-red-400" />
+          <h2 className="mb-2 text-xl font-bold text-gray-800">Failed to Load</h2>
+          <p className="mb-6 text-sm text-gray-500">{fetchError}</p>
+          <div className="flex justify-center gap-3">
+            <button onClick={() => navigate('/offers/existing')} className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
               Go Back
             </button>
-            <button
-              onClick={fetchInitialData}
-              className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors"
-            >
+            <button onClick={fetchAll} className="rounded-xl bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600">
               Retry
             </button>
           </div>
@@ -227,399 +199,346 @@ const OfferEdit = () => {
     );
   }
 
-  if (!formData) {
-    return null; // Should not happen if error handling works, but good for safety
-  }
-
-
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      {/* Toast Notification */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="mx-auto max-w-6xl">
 
-      <button
-        onClick={() => navigate('/offers/existing')}
-        className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
-      >
-        <ChevronLeft size={20} />
-        <span>Back</span>
-      </button>
+        {/* Header */}
+        <div className="mb-6 flex items-center gap-4">
+          <button
+            onClick={() => navigate('/offers/existing')}
+            className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50"
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Edit Offer</h1>
+            <p className="text-sm text-gray-400">ID: {id}</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={fetchAll}
+              className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50"
+            >
+              <RotateCcw size={15} /> Reset
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={loading}
+              className="flex items-center gap-1.5 rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-600 disabled:opacity-60"
+            >
+              {loading ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              {loading ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
 
-      <h1 className="text-3xl font-bold mb-6">Edit Offer</h1>
+        <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[1fr_300px]">
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Form */}
-        <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
-          <form onSubmit={handleSubmit}>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Offer Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleChange}
-                  placeholder="e.g. Weekend Bonanza"
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                />
-              </div>
+          {/* Left: form */}
+          <div className="space-y-5">
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Restaurant
-                  </label>
-                  <select
-                    name="restaurantId"
-                    value={formData.restaurantId}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  >
-                    <option value="">All Restaurants</option>
-                    {restaurants.map(restaurant => (
-                      <option key={restaurant.uid || restaurant.id} value={restaurant.uid || restaurant.id}>
-                        {restaurant.profile?.restaurant_name || restaurant.rest_name || restaurant.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Food Category
-                  </label>
-                  <select
-                    name="categoryId"
-                    value={formData.categoryId}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  >
-                    <option value="">All Categories</option>
-                    {categories.map((category, index) => (
-                      <option key={index} value={category.name}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Discount Type <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="discountType"
-                    value={formData.discountType}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  >
-                    <option value="PERCENTAGE">Percentage</option>
-                    <option value="FLAT">Flat Amount</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Discount Value <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="discountValue"
-                    value={formData.discountValue}
-                    onChange={handleChange}
-                    placeholder="e.g. 20"
-                    required
-                    min="0"
-                    step="0.01"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Minimum Order Value (₹)
-                  </label>
-                  <input
-                    type="number"
-                    name="minOrderValue"
-                    value={formData.minOrderValue}
-                    onChange={handleChange}
-                    placeholder="e.g. 500"
-                    min="0"
-                    step="0.01"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Max Usage Per User
-                  </label>
-                  <input
-                    type="number"
-                    name="maxUsagePerUser"
-                    value={formData.maxUsagePerUser}
-                    onChange={handleChange}
-                    placeholder="e.g. 1"
-                    min="1"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Total Usage Limit
-                </label>
-                <input
-                  type="number"
-                  name="totalUsageLimit"
-                  value={formData.totalUsageLimit}
-                  onChange={handleChange}
-                  placeholder="Leave empty for unlimited"
-                  min="1"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Start Date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    name="startDate"
-                    value={formData.startDate}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    End Date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    name="endDate"
-                    value={formData.endDate}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Start Time (Optional)
-                  </label>
-                  <input
-                    type="time"
-                    name="startTime"
-                    value={formData.startTime}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    End Time (Optional)
-                  </label>
-                  <input
-                    type="time"
-                    name="endTime"
-                    value={formData.endTime}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Offer Description
-                </label>
-                <textarea
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  placeholder="Briefly describe the offer..."
-                  rows="3"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
-                ></textarea>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Terms & Conditions
-                </label>
-                <textarea
-                  name="termsConditions"
-                  value={formData.termsConditions}
-                  onChange={handleChange}
-                  placeholder="Enter terms and conditions (one per line)"
-                  rows="4"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
-                ></textarea>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Upload Offer Image
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-red-50 file:text-red-700 hover:file:bg-red-100"
-                />
-                <p className="text-xs text-gray-500 mt-1">Recommended: 800x400px, Max 2MB</p>
-                {imagePreview && (
-                  <div className="mt-3 relative">
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      className="w-full max-w-md h-48 rounded-md object-cover border-2 border-gray-200"
+            {/* Section 1: Basic Info */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <SECTION number="1" title="Basic Info">
+                <Field label="Offer Title" required>
+                  <div className="relative">
+                    <Tag size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={formData.title}
+                      onChange={set('title')}
+                      placeholder="e.g. Weekend Bonanza"
+                      className={`${inputCls} pl-9`}
+                      maxLength={120}
                     />
+                  </div>
+                </Field>
+                <Field label="Offer Code" hint="optional">
+                  <input
+                    type="text"
+                    value={formData.offerCode}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, offerCode: e.target.value.toUpperCase() }))}
+                    placeholder="e.g. SAVE100"
+                    className={`${inputCls} font-mono tracking-wider`}
+                    maxLength={40}
+                  />
+                </Field>
+                <Field label="Description" hint="optional">
+                  <textarea
+                    value={formData.description}
+                    onChange={set('description')}
+                    placeholder="Briefly describe the offer..."
+                    rows={2}
+                    className={`${inputCls} resize-none`}
+                    maxLength={500}
+                  />
+                </Field>
+              </SECTION>
+            </div>
+
+            {/* Section 2: Targeting */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <SECTION number="2" title="Targeting">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Restaurant" hint="optional">
+                    <div className="relative">
+                      <Store size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <select value={formData.restaurantId} onChange={set('restaurantId')} className={`${inputCls} pl-9`}>
+                        <option value="">All Restaurants</option>
+                        {restaurants.map((r) => (
+                          <option key={r.uid || r.id} value={r.uid || r.id}>
+                            {r.profile?.restaurant_name || r.rest_name || r.name || r.uid}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </Field>
+                  <Field label="Category" hint="optional">
+                    <select value={formData.categoryId} onChange={set('categoryId')} className={inputCls}>
+                      <option value="">All Categories</option>
+                      {categories.map((c, i) => (
+                        <option key={i} value={c.name || c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              </SECTION>
+            </div>
+
+            {/* Section 3: Discount */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <SECTION number="3" title="Discount">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Discount Type" required>
+                    <select value={formData.discountType} onChange={set('discountType')} className={inputCls}>
+                      <option value="PERCENTAGE">Percentage (%)</option>
+                      <option value="FLAT">Flat Amount (₹)</option>
+                      <option value="BOGO">Buy One Get One</option>
+                      <option value="BUY_X_GET_Y">Buy X Get Y</option>
+                      <option value="FREE_ITEM_CART">Free Item (Cart)</option>
+                      <option value="FREE_ITEM_CATEGORY">Free Item (Category)</option>
+                      <option value="PLATFORM_CAMPAIGN">Platform Campaign</option>
+                    </select>
+                  </Field>
+                  <Field label="Discount Value" required>
+                    <div className="relative">
+                      {formData.discountType === 'PERCENTAGE'
+                        ? <Percent size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        : <IndianRupee size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />}
+                      <input
+                        type="number"
+                        value={formData.discountValue}
+                        onChange={set('discountValue')}
+                        placeholder="e.g. 20"
+                        min="0"
+                        step="0.01"
+                        className={`${inputCls} pl-9`}
+                      />
+                    </div>
+                  </Field>
+                </div>
+                <Field label="Minimum Order Value (₹)" hint="optional">
+                  <div className="relative">
+                    <IndianRupee size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="number"
+                      value={formData.minOrderValue}
+                      onChange={set('minOrderValue')}
+                      placeholder="e.g. 199"
+                      min="0"
+                      step="0.01"
+                      className={`${inputCls} pl-9`}
+                    />
+                  </div>
+                </Field>
+              </SECTION>
+            </div>
+
+            {/* Section 4: Validity */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <SECTION number="4" title="Validity">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Start Date" required>
+                    <div className="relative">
+                      <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="date"
+                        value={formData.startDate}
+                        onChange={set('startDate')}
+                        className={`${inputCls} pl-9`}
+                      />
+                    </div>
+                  </Field>
+                  <Field label="End Date" required>
+                    <div className="relative">
+                      <Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="date"
+                        value={formData.endDate}
+                        onChange={set('endDate')}
+                        className={`${inputCls} pl-9`}
+                      />
+                    </div>
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Start Time" hint="optional">
+                    <div className="relative">
+                      <Clock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input type="time" value={formData.startTime} onChange={set('startTime')} className={`${inputCls} pl-9`} />
+                    </div>
+                  </Field>
+                  <Field label="End Time" hint="optional">
+                    <div className="relative">
+                      <Clock size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input type="time" value={formData.endTime} onChange={set('endTime')} className={`${inputCls} pl-9`} />
+                    </div>
+                  </Field>
+                </div>
+              </SECTION>
+            </div>
+
+            {/* Section 5: Terms & Image */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <SECTION number="5" title="Terms & Image">
+                <Field label="Terms & Conditions" hint="optional">
+                  <textarea
+                    value={formData.termsConditions}
+                    onChange={set('termsConditions')}
+                    placeholder="Enter terms and conditions..."
+                    rows={3}
+                    className={`${inputCls} resize-none`}
+                  />
+                </Field>
+                <Field label="Offer Image" hint="optional">
+                  <label className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-4 text-center transition-all ${imagePreview ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-white hover:border-red-300 hover:bg-red-50/10'}`}>
+                    {imagePreview ? (
+                      <div className="w-full">
+                        <img src={imagePreview} alt="Preview" className="mx-auto mb-2 max-h-32 w-full rounded-lg object-cover" />
+                        <p className="text-xs font-medium text-red-500">Click to change image</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100">
+                          <ImageIcon className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <p className="text-sm font-medium text-gray-600">Click to upload image</p>
+                        <p className="text-xs text-gray-400">PNG, JPG — max 2MB, recommended 800×400</p>
+                      </>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                  </label>
+                  {imagePreview && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setImageFile(null);
-                        setImagePreview(null);
-                      }}
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                      onClick={() => { setImageFile(null); setImagePreview(null); }}
+                      className="mt-2 flex items-center gap-1 text-xs text-red-500 hover:text-red-700"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                      <X size={12} /> Remove image
                     </button>
+                  )}
+                </Field>
+              </SECTION>
+            </div>
+
+            {/* Section 6: Status */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <SECTION number="6" title="Status">
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Active</p>
+                    <p className="text-xs text-gray-400">Offer is visible and applicable to users</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, isActive: !prev.isActive }))}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none ${formData.isActive ? 'bg-red-500' : 'bg-gray-200'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${formData.isActive ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              </SECTION>
+            </div>
+          </div>
+
+          {/* Right: sticky preview */}
+          <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+            <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">Preview</p>
+
+              {imagePreview && (
+                <img src={imagePreview} alt="Offer" className="mb-4 h-32 w-full rounded-xl object-cover" />
+              )}
+
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-bold text-gray-900">{formData.title || 'Offer Title'}</h3>
+                  <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${formData.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {formData.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+
+                {formData.offerCode && (
+                  <div className="inline-flex items-center gap-1.5 rounded-lg border border-orange-100 bg-orange-50 px-2.5 py-1">
+                    <Tag size={11} className="text-orange-500" />
+                    <span className="font-mono text-xs font-bold text-orange-600">{formData.offerCode}</span>
+                  </div>
+                )}
+
+                <div className="rounded-xl bg-red-50 px-3 py-2.5">
+                  <p className="text-xl font-bold text-red-500">
+                    {formData.discountValue || '0'}
+                    {formData.discountType === 'PERCENTAGE' ? '% OFF' : formData.discountType === 'FLAT' ? '₹ OFF' : ` ${formData.discountType}`}
+                  </p>
+                  {formData.minOrderValue && (
+                    <p className="mt-0.5 text-xs text-red-400">Min order ₹{formData.minOrderValue}</p>
+                  )}
+                </div>
+
+                {selectedRestaurant && (
+                  <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2">
+                    <Store size={13} className="text-blue-500" />
+                    <span className="text-xs font-medium text-blue-700">
+                      {selectedRestaurant.profile?.restaurant_name || selectedRestaurant.rest_name || 'Restaurant'}
+                    </span>
+                  </div>
+                )}
+
+                {(formData.startDate || formData.endDate) && (
+                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <Calendar size={12} />
+                    <span>
+                      {formData.startDate || '—'} → {formData.endDate || '—'}
+                    </span>
+                  </div>
+                )}
+
+                {formData.description && (
+                  <p className="text-xs text-gray-500 leading-relaxed">{formData.description}</p>
                 )}
               </div>
             </div>
 
-            <div className="flex flex-wrap justify-center gap-4 mt-8">
-              <button
-                type="button"
-                onClick={handleReset}
-                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
-              >
-                Reset Form
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {loading ? 'Updating...' : 'Update Offer'}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Preview */}
-        <div className="bg-white rounded-lg shadow p-6 h-fit sticky top-6">
-          <h3 className="font-bold text-lg mb-4">Offer Preview</h3>
-          <div className="border rounded-lg p-4 space-y-3">
-            {imagePreview && (
-              <div className="mb-3">
-                <img
-                  src={imagePreview}
-                  alt="Offer"
-                  className="w-full h-32 rounded-md object-cover"
-                />
-              </div>
-            )}
-
-            <p className="font-semibold text-lg">
-              {formData.title || 'Offer Title'}
-            </p>
-
-            Restaurant: {restaurants.find(r => (r.uid === formData.restaurantId || r.id === formData.restaurantId))?.profile?.restaurant_name || restaurants.find(r => (r.uid === formData.restaurantId || r.id === formData.restaurantId))?.rest_name || 'All Restaurants'}
-
-            <p className="text-sm text-gray-600">
-              Category: {formData.categoryId || 'All Categories'}
-            </p>
-
-            {formData.restaurantId && (() => {
-              const selectedRestaurant = restaurants.find(r => (r.uid === formData.restaurantId || r.id === formData.restaurantId));
-              return selectedRestaurant?.profile && (
-                <div className="bg-blue-50 p-3 rounded-md space-y-1 mt-2">
-                  <p className="text-sm font-semibold text-blue-900">Restaurant Details</p>
-                  {selectedRestaurant.profile.contact_person && (
-                    <p className="text-xs text-blue-700">
-                      Contact: {selectedRestaurant.profile.contact_person}
-                    </p>
-                  )}
-                  {selectedRestaurant.profile.contact_number && (
-                    <p className="text-xs text-blue-700">
-                      Phone: {selectedRestaurant.profile.contact_number}
-                    </p>
-                  )}
-                  {selectedRestaurant.profile.avg_cost_for_two && (
-                    <p className="text-xs text-blue-700">
-                      Avg Cost for Two: ₹{selectedRestaurant.profile.avg_cost_for_two}
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-
-            <div className="bg-red-50 p-3 rounded-md">
-              <p className="text-red-500 font-bold text-xl">
-                Discount: {formData.discountValue || '0'}{formData.discountType === 'PERCENTAGE' ? '%' : '₹'}
-              </p>
-            </div>
-
-            <div className="bg-gray-50 p-3 rounded-md">
-              <p className="text-gray-700 text-sm">
-                Min Order: ₹{formData.minOrderValue || '0'}
-              </p>
-            </div>
-
-            {formData.startDate && formData.endDate && (
-              <div className="text-xs text-gray-600">
-                Valid: {formData.startDate} to {formData.endDate}
-              </div>
-            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 py-3 text-sm font-semibold text-white shadow-sm hover:bg-red-600 disabled:opacity-60"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              {loading ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/offers/existing')}
+              className="w-full rounded-xl border border-gray-200 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
           </div>
-        </div>
+        </form>
       </div>
-
-      <style>{`
-        @keyframes slide-in {
-          from {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-        .animate-slide-in {
-          animation: slide-in 0.3s ease-out;
-        }
-      `}</style>
     </div>
   );
 };

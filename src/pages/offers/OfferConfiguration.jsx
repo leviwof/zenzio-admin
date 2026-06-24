@@ -114,6 +114,7 @@ const OfferConfiguration = () => {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [bogoItems, setBogoItems] = useState([{ buyItem: "", freeItem: "" }]);
+  const [buyXItems, setBuyXItems] = useState([]); // multi-select for BUY_X_GET_Y
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -209,6 +210,7 @@ const OfferConfiguration = () => {
     }));
     if (name === "offerType" || name === "restaurantId") {
       setBogoItems([{ buyItem: "", freeItem: "" }]);
+      setBuyXItems([]);
     }
   };
 
@@ -274,11 +276,12 @@ const OfferConfiguration = () => {
       };
     }
     if (formData.offerType === "BUY_X_GET_Y") {
+      const buySnapshots = buyXItems.map(buildItemSnapshot);
       return {
         conditions: {
-          buyProduct: rules.buyItem,
-          buyProductName: buyItem?.name,
-          buyCategory: rules.buyCategory || buyItem?.category,
+          buyProducts: buyXItems,
+          buyProductNames: buySnapshots.map((s) => s?.name).filter(Boolean),
+          buyCategory: rules.buyCategory,
           buyQuantity: Number(rules.buyQuantity || 1),
         },
         rewards: {
@@ -346,12 +349,17 @@ const OfferConfiguration = () => {
     }
 
     const needsFreeItem = ["BUY_X_GET_Y", "FREE_ITEM_CART_VALUE", "FREE_ITEM_CATEGORY"].includes(formData.offerType);
-    const needsBuyItem = ["BUY_X_GET_Y"].includes(formData.offerType);
-    if ((needsFreeItem || needsBuyItem) && !restaurantAdmin && !formData.restaurantId) return "Please select a restaurant before choosing menu items";
-    if ((needsFreeItem || needsBuyItem) && menuOptions.length === 0) return "No menu items are available for the selected restaurant";
+    if (formData.offerType === "BUY_X_GET_Y") {
+      if (!restaurantAdmin && !formData.restaurantId) return "Please select a restaurant before choosing menu items";
+      if (menuOptions.length === 0) return "No menu items are available for the selected restaurant";
+      if (buyXItems.length === 0) return "Please select at least one buy item";
+      if (!formData.rules.freeItem) return "Please select the free item";
+      if (!getSelectedMenu(formData.rules.freeItem)) return "Please select a valid free item from the menu list";
+      return null;
+    }
+    if ((needsFreeItem) && !restaurantAdmin && !formData.restaurantId) return "Please select a restaurant before choosing menu items";
+    if ((needsFreeItem) && menuOptions.length === 0) return "No menu items are available for the selected restaurant";
     if (needsFreeItem && !formData.rules.freeItem) return "Please select the free item";
-    if (needsBuyItem && !formData.rules.buyItem) return "Please select the buy item";
-    if (needsBuyItem && !getSelectedMenu(formData.rules.buyItem)) return "Please select a valid buy item from the menu list";
     if (needsFreeItem && !getSelectedMenu(formData.rules.freeItem)) return "Please select a valid free item from the menu list";
     if (formData.offerType === "FREE_ITEM_CATEGORY" && !formData.rules.triggerCategory) return "Please select trigger category";
     if (formData.offerType === "FREE_ITEM_CART_VALUE" && Number(formData.rules.minimumCartAmount || formData.minOrderValue) <= 0) return "Please enter minimum cart amount";
@@ -391,6 +399,16 @@ const OfferConfiguration = () => {
                 freeQty: 1,
               })),
             }
+          : formData.offerType === "BUY_X_GET_Y"
+          ? {
+              type: formData.offerType,
+              buyProducts: buyXItems,
+              buyProductDetails: buyXItems.map(buildItemSnapshot),
+              buyQuantity: Number(formData.rules.buyQuantity || 1),
+              freeItem: formData.rules.freeItem,
+              freeItemDetails: buildItemSnapshot(formData.rules.freeItem),
+              freeQuantity: Number(formData.rules.freeQuantity || 1),
+            }
           : {
               type: formData.offerType,
               ...formData.rules,
@@ -429,6 +447,7 @@ const OfferConfiguration = () => {
   const handleReset = () => {
     setFormData({ ...initialForm, restaurantId: restaurantAdmin ? ownRestaurantUid : "", offer_scope: "ALL_MENU", included_category_ids: [], included_menu_ids: [], excluded_category_ids: [], excluded_menu_ids: [] });
     setBogoItems([{ buyItem: "", freeItem: "" }]);
+    setBuyXItems([]);
     setImageFile(null);
     setImagePreview(null);
   };
@@ -760,26 +779,90 @@ const OfferConfiguration = () => {
     }
 
     if (formData.offerType === "BUY_X_GET_Y") {
+      const buyMenuOptions = getFilteredMenus(formData.rules.buyCategory);
+      const buyMultiOptions = buyMenuOptions.map((m) => ({
+        label: `${getMenuName(m)}${m.price ? ` · ₹${m.price}` : ""}`,
+        value: getMenuId(m),
+      }));
       return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Field label="Buy Product Category" hint="Filter the buy item list by category">
-            <CategorySelect name="buyCategory" value={formData.rules.buyCategory} />
-          </Field>
-          <Field label="Buy Product" required>
-            <MenuSelect name="buyItem" value={formData.rules.buyItem} placeholder="Select buy item" category={formData.rules.buyCategory} />
-          </Field>
-          <Field label="Quantity Required" required>
-            <input type="number" name="buyQuantity" value={formData.rules.buyQuantity} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
-          </Field>
-          <Field label="Free Product Category" hint="Filter the free item list by category">
-            <CategorySelect name="freeCategory" value={formData.rules.freeCategory} />
-          </Field>
-          <Field label="Free Product" required>
-            <MenuSelect name="freeItem" value={formData.rules.freeItem} placeholder="Select free item" category={formData.rules.freeCategory} />
-          </Field>
-          <Field label="Free Quantity" required>
-            <input type="number" name="freeQuantity" value={formData.rules.freeQuantity} onChange={handleRuleChange} min="1" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
-          </Field>
+        <div className="space-y-5">
+          {itemOfferNeedsRestaurant && (
+            <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Select a restaurant first to pick menu items.
+            </p>
+          )}
+
+          {/* Buy items block */}
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-500">Buy Items (customer must buy)</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Filter by Category" hint="Narrows the item list below">
+                <CategorySelect name="buyCategory" value={formData.rules.buyCategory} />
+              </Field>
+              <Field label="Quantity Required" required hint="How many of the selected items must be bought">
+                <input
+                  type="number"
+                  name="buyQuantity"
+                  value={formData.rules.buyQuantity}
+                  onChange={handleRuleChange}
+                  min="1"
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+                />
+              </Field>
+            </div>
+            <Field label="Select Buy Items" required hint="Customer can buy any of these items to qualify">
+              <MultiSelectDropdown
+                options={buyMultiOptions}
+                selected={buyXItems}
+                onChange={setBuyXItems}
+                placeholder={itemOfferNeedsRestaurant ? "Select restaurant first" : "Search and select items (e.g. Margherita, Pepperoni…)"}
+                disabled={itemOfferNeedsRestaurant || menuOptions.length === 0}
+              />
+            </Field>
+            {buyXItems.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {buyXItems.map((id) => {
+                  const menu = menuOptions.find((m) => getMenuId(m) === id);
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+                      {getMenuName(menu) || id}
+                      <button type="button" onClick={() => setBuyXItems((prev) => prev.filter((v) => v !== id))} className="text-indigo-400 hover:text-indigo-700">
+                        <X size={10} />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Free item block */}
+          <div className="rounded-xl border border-green-100 bg-green-50/40 p-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-green-600">Free Item (what customer gets)</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label="Filter by Category" hint="Narrows the free item list below">
+                <CategorySelect name="freeCategory" value={formData.rules.freeCategory} />
+              </Field>
+              <Field label="Free Quantity" required>
+                <input
+                  type="number"
+                  name="freeQuantity"
+                  value={formData.rules.freeQuantity}
+                  onChange={handleRuleChange}
+                  min="1"
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+                />
+              </Field>
+            </div>
+            <Field label="Free Item" required>
+              <MenuSelect
+                name="freeItem"
+                value={formData.rules.freeItem}
+                placeholder="Select the free item"
+                category={formData.rules.freeCategory}
+              />
+            </Field>
+          </div>
         </div>
       );
     }
@@ -892,7 +975,7 @@ const OfferConfiguration = () => {
             {renderRuleFields()}
           </section>
 
-          <section>
+          {!["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType) && <section>
             <div className="flex items-center gap-2 mb-4">
               <Filter size={18} className="text-indigo-500" />
               <h2 className="font-semibold text-gray-900">Menu Applicability</h2>
@@ -959,7 +1042,7 @@ const OfferConfiguration = () => {
                 </Field>
               </div>
             </div>
-          </section>
+          </section>}
 
           <section>
             <div className="flex items-center gap-2 mb-4">
@@ -1045,6 +1128,18 @@ const OfferConfiguration = () => {
                     <p key={idx} className="text-xs mt-1">Buy 1 {name} → Get 1 Free</p>
                   ) : null;
                 })
+              ) : formData.offerType === "BUY_X_GET_Y" ? (
+                <>
+                  {buyXItems.length > 0 && (
+                    <p className="text-xs mt-1">
+                      Buy {formData.rules.buyQuantity || 1} of:{" "}
+                      {buyXItems.map((id) => buildItemSnapshot(id)?.name || id).join(", ")}
+                    </p>
+                  )}
+                  {selectedFreeItemName && (
+                    <p className="text-xs mt-1">Get {formData.rules.freeQuantity || 1} × {selectedFreeItemName} free</p>
+                  )}
+                </>
               ) : (
                 <>
                   {selectedBuyItemName && <p className="text-xs mt-1">Buy: {selectedBuyItemName}</p>}
