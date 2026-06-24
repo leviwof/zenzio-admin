@@ -1,59 +1,125 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getAdminOfferById } from '../../services/api';
-import { ChevronLeft, Calendar, Percent, ShoppingCart, Users, Clock, CheckCircle, XCircle, Edit, Gift } from 'lucide-react';
+import {
+  ArrowLeft, Edit, Loader2, Calendar, Clock, Store, Tag,
+  Percent, IndianRupee, Gift, ShoppingCart, ImageOff, X,
+  CheckCircle2, XCircle, Trash2,
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+import { getAdminOfferById, deleteAdminOffer } from '../../services/api';
+
+const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  ?.replace('/api/admin', '')
+  .replace('/api', '')
+  .replace(/\/+$/, '');
+
+const getImageUrl = (path) => {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  if (path.startsWith('offers/')) return `${IMAGE_BASE_URL}/uploads/${path}`;
+  return `${IMAGE_BASE_URL}/${path}`;
+};
+
+const OFFER_TYPE_LABELS = {
+  PERCENTAGE_DISCOUNT: 'Percentage Discount',
+  FIXED_AMOUNT_DISCOUNT: 'Fixed Amount',
+  BUY_ONE_GET_ONE: 'Buy 1 Get 1',
+  BUY_X_GET_Y: 'Buy X Get Y',
+  FREE_ITEM_CART_VALUE: 'Free Item (Cart)',
+  FREE_ITEM_CATEGORY: 'Free Item (Category)',
+  FREE_ITEM_OFFER: 'Free Item',
+  CART_VALUE_OFFER: 'Cart Value',
+  FESTIVAL_OFFER: 'Festival Offer',
+  PLATFORM_CAMPAIGN: 'Platform Campaign',
+};
+
+const STATUS_STYLE = {
+  ACTIVE:    { pill: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
+  INACTIVE:  { pill: 'bg-gray-100 text-gray-500',  dot: 'bg-gray-400' },
+  EXPIRED:   { pill: 'bg-orange-100 text-orange-600', dot: 'bg-orange-400' },
+  SCHEDULED: { pill: 'bg-blue-100 text-blue-700',  dot: 'bg-blue-500' },
+};
+
+const Row = ({ label, value }) => value == null || value === '' ? null : (
+  <div className="flex items-start justify-between gap-4 py-3">
+    <span className="text-sm text-gray-400">{label}</span>
+    <span className="text-right text-sm font-medium text-gray-800">{value}</span>
+  </div>
+);
+
+const ConfirmDialog = ({ title, onConfirm, onCancel }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+        <Trash2 size={22} className="text-red-500" />
+      </div>
+      <h3 className="mb-1 text-lg font-bold text-gray-900">Delete Offer?</h3>
+      <p className="mb-5 text-sm text-gray-500">
+        "<span className="font-medium text-gray-700">{title}</span>" will be permanently deleted.
+      </p>
+      <div className="flex gap-3">
+        <button onClick={onCancel} className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          Cancel
+        </button>
+        <button onClick={onConfirm} className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 const AdminOfferDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [offer, setOffer] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const IMAGE_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api/admin', '');
-  const offerTypeLabels = {
-    PERCENTAGE_DISCOUNT: 'Percentage Discount',
-    FIXED_AMOUNT_DISCOUNT: 'Fixed Amount Discount',
-    BUY_ONE_GET_ONE: 'Buy One Get One',
-    BUY_X_GET_Y: 'Buy X Get Y',
-    FREE_ITEM_CART_VALUE: 'Free Item On Cart Value',
-    FREE_ITEM_CATEGORY: 'Free Item On Category',
-    FREE_ITEM_OFFER: 'Free Item Offer',
-    CART_VALUE_OFFER: 'Cart Value Offer',
-    FESTIVAL_OFFER: 'Festival Offer',
-    PLATFORM_CAMPAIGN: 'Platform Campaign',
-  };
+  useEffect(() => { fetchOffer(); }, [id]);
 
-  useEffect(() => {
-    fetchOfferDetails();
-  }, [id]);
-
-  const fetchOfferDetails = async () => {
+  const fetchOffer = async () => {
     try {
       setLoading(true);
       const res = await getAdminOfferById(id);
       setOffer(res.data);
-    } catch (error) {
-      console.error('Error fetching offer:', error);
+    } catch {
+      toast.error('Failed to load offer');
     } finally {
       setLoading(false);
     }
   };
 
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    if (imagePath.startsWith('offers/')) {
-      return `${IMAGE_BASE_URL}/uploads/${imagePath}`;
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteAdminOffer(id);
+      toast.success('Offer deleted');
+      navigate('/offers/existing');
+    } catch {
+      toast.error('Failed to delete offer');
+      setDeleting(false);
+      setShowDelete(false);
     }
-    return `${IMAGE_BASE_URL}/${imagePath}`;
   };
 
-  const getDiscountItemSummary = () => {
-    const bogoItems = offer.conditions?.bogoItems || offer.rewards?.bogoItems;
-    if (Array.isArray(bogoItems) && bogoItems.length > 0) {
-      const names = [...new Set(
-        bogoItems.flatMap((combo) => [combo.buyItemName, combo.freeItemName].filter(Boolean))
-      )];
-      if (names.length) return names;
+  const getDiscountLabel = () => {
+    if (!offer) return '';
+    const t = offer.discountType;
+    if (t === 'PERCENTAGE') return `${offer.discountValue}% OFF`;
+    if (t === 'FLAT') return `₹${offer.discountValue} OFF`;
+    if (t === 'BOGO') return 'Buy 1 Get 1';
+    if (t === 'BUY_X_GET_Y') return 'Buy X Get Y';
+    if (t === 'FREE_ITEM_CART' || t === 'FREE_ITEM_CATEGORY') return 'Free Item';
+    return offer.discountValue ? `${offer.discountValue} OFF` : t;
+  };
+
+  const getItemNames = () => {
+    if (!offer) return [];
+    const bogo = offer.conditions?.bogoItems || offer.rewards?.bogoItems;
+    if (Array.isArray(bogo) && bogo.length) {
+      return [...new Set(bogo.flatMap(c => [c.buyItemName, c.freeItemName].filter(Boolean)))];
     }
     const names = [
       offer.discountItemNames?.buyItem,
@@ -64,38 +130,12 @@ const AdminOfferDetails = () => {
     return [...new Set(names)];
   };
 
-  const getOfferTypeLabel = () => offerTypeLabels[offer.offerType] || offer.offerType?.replaceAll('_', ' ') || offer.discountType;
-
-  const getReadableOfferRule = () => {
-    if (offer.offerType === 'BUY_ONE_GET_ONE') {
-      const bogoItems = offer.conditions?.bogoItems || offer.rewards?.bogoItems;
-      if (Array.isArray(bogoItems) && bogoItems.length > 0) {
-        if (bogoItems.length === 1) {
-          return `Buy 1 ${bogoItems[0].buyItemName || bogoItems[0].buyItem || '-'}, get 1 free`;
-        }
-        return `Buy 1 Get 1 Free — ${bogoItems.length} item combos`;
-      }
-    }
-    const buyItem = offer.discountItemNames?.buyItem || offer.conditions?.buyItemName || offer.conditions?.buyProductName;
-    const freeItem = offer.discountItemNames?.freeItem || offer.rewards?.freeItemName || offer.rewards?.freeProductName;
-    const buyQty = offer.conditions?.quantityRequired || offer.conditions?.buyQuantity || offer.ruleConfig?.buyQuantity || 1;
-    const freeQty = offer.rewards?.freeQuantity || offer.ruleConfig?.freeQuantity || 1;
-
-    if (['BUY_ONE_GET_ONE', 'BUY_X_GET_Y'].includes(offer.offerType) && buyItem && freeItem) {
-      return `Buy ${buyQty} ${buyItem}, get ${freeQty} ${freeItem} free`;
-    }
-    if (['FREE_ITEM_CART_VALUE', 'FREE_ITEM_CATEGORY', 'FREE_ITEM_OFFER'].includes(offer.offerType) && freeItem) {
-      return `Get ${freeQty} ${freeItem} free`;
-    }
-    return getOfferTypeLabel();
-  };
-
   if (loading) {
     return (
-      <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-red-500"></div>
-          <p className="mt-4 text-gray-600">Loading offer details...</p>
+          <Loader2 className="mx-auto h-10 w-10 animate-spin text-red-400" />
+          <p className="mt-3 text-sm text-gray-400">Loading offer...</p>
         </div>
       </div>
     );
@@ -103,13 +143,11 @@ const AdminOfferDetails = () => {
 
   if (!offer) {
     return (
-      <div className="p-6 bg-gray-50 min-h-screen">
-        <div className="text-center py-12">
-          <p className="text-xl text-gray-600">Offer not found</p>
-          <button
-            onClick={() => navigate('/offers/existing')}
-            className="mt-4 px-6 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
-          >
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
+          <X className="mx-auto mb-4 h-12 w-12 text-red-300" />
+          <h2 className="mb-4 text-xl font-bold text-gray-800">Offer not found</h2>
+          <button onClick={() => navigate('/offers/existing')} className="rounded-xl bg-red-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-red-600">
             Back to Offers
           </button>
         </div>
@@ -117,113 +155,121 @@ const AdminOfferDetails = () => {
     );
   }
 
+  const imgUrl = getImageUrl(offer.offerImage);
+  const statusStyle = STATUS_STYLE[offer.status] || STATUS_STYLE.INACTIVE;
+  const itemNames = getItemNames();
+  const offerTypeLabel = OFFER_TYPE_LABELS[offer.offerType] || offer.offerType?.replace(/_/g, ' ');
+
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="min-h-screen bg-gray-50 p-6">
+      {showDelete && (
+        <ConfirmDialog
+          title={offer.title}
+          onConfirm={handleDelete}
+          onCancel={() => setShowDelete(false)}
+        />
+      )}
+
+      {/* Top bar */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <button
           onClick={() => navigate('/offers/existing')}
-          className="flex items-center text-gray-600 hover:text-gray-900"
+          className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50"
         >
-          <ChevronLeft size={20} />
-          <span className="ml-1">Back to Offers</span>
+          <ArrowLeft size={16} /> Back
         </button>
 
-        <button
-          onClick={() => navigate(`/offers/edit/${id}`)}
-          className="flex items-center space-x-2 px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
-        >
-          <Edit size={18} />
-          <span>Edit Offer</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowDelete(true)}
+            disabled={deleting}
+            className="flex items-center gap-1.5 rounded-xl border border-red-100 bg-white px-3 py-2 text-sm font-medium text-red-500 shadow-sm hover:bg-red-50"
+          >
+            <Trash2 size={15} /> Delete
+          </button>
+          <button
+            onClick={() => navigate(`/offers/edit/${id}`)}
+            className="flex items-center gap-1.5 rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-600"
+          >
+            <Edit size={15} /> Edit Offer
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Offer Image & Title Card */}
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            {offer.offerImage && (
-              <div className="w-full h-64 bg-gray-100">
+      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+
+        {/* Left */}
+        <div className="space-y-5">
+
+          {/* Hero card */}
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            {imgUrl && (
+              <div className="relative h-52 w-full overflow-hidden bg-gray-100">
                 <img
-                  src={getImageUrl(offer.offerImage)}
+                  src={imgUrl}
                   alt={offer.title}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = '/logo.png';
-                  }}
+                  className="h-full w-full object-cover"
+                  onError={(e) => { e.target.style.display = 'none'; }}
                 />
+              </div>
+            )}
+            {!imgUrl && (
+              <div className="flex h-36 w-full items-center justify-center bg-gradient-to-br from-red-50 to-orange-50">
+                <Gift size={40} className="text-red-200" />
               </div>
             )}
 
             <div className="p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">{offer.title}</h1>
-                  <div className="flex items-center space-x-2">
-                    <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full ${offer.status === 'ACTIVE'
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-gray-100 text-gray-800'
-                      }`}>
-                      {offer.status === 'ACTIVE' ? <CheckCircle size={14} className="mr-1" /> : <XCircle size={14} className="mr-1" />}
-                      {offer.status}
+              <div className="mb-4 flex flex-wrap items-start gap-3">
+                <div className="flex-1">
+                  <h1 className="text-2xl font-bold text-gray-900">{offer.title}</h1>
+                  {offer.offerCode && (
+                    <span className="mt-1.5 inline-flex items-center gap-1 rounded-lg bg-orange-50 px-2.5 py-1 text-sm font-bold text-orange-500">
+                      <Tag size={13} /> {offer.offerCode}
                     </span>
-                  </div>
+                  )}
                 </div>
+                <span className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${statusStyle.pill}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${statusStyle.dot}`} />
+                  {offer.status}
+                </span>
               </div>
 
               {offer.description && (
-                <div className="mb-4">
-                  <p className="text-gray-700">{offer.description}</p>
-                </div>
+                <p className="mb-5 text-sm leading-relaxed text-gray-500">{offer.description}</p>
               )}
 
-              {/* Key Metrics */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-                <div className="bg-red-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <Percent className="text-red-500" size={20} />
-                  </div>
-                  <p className="text-2xl font-bold text-red-600">
-                    {offer.discountValue}{offer.discountType === 'PERCENTAGE' ? '%' : '₹'}
+              {/* Metric pills */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl bg-red-50 p-4 text-center">
+                  <p className="text-xl font-bold text-red-500">{getDiscountLabel()}</p>
+                  <p className="mt-0.5 text-xs text-gray-400">Discount</p>
+                </div>
+                <div className="rounded-xl bg-blue-50 p-4 text-center">
+                  <p className="text-xl font-bold text-blue-600">
+                    {offer.minOrderValue ? `₹${offer.minOrderValue}` : '—'}
                   </p>
-                  <p className="text-xs text-gray-600">Discount</p>
+                  <p className="mt-0.5 text-xs text-gray-400">Min Order</p>
                 </div>
-
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <ShoppingCart className="text-blue-500" size={20} />
-                  </div>
-                  <p className="text-2xl font-bold text-blue-600">₹{offer.minOrderValue || 0}</p>
-                  <p className="text-xs text-gray-600">Min Order</p>
-                </div>
-
-                <div className="bg-purple-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <Users className="text-purple-500" size={20} />
-                  </div>
-                  <p className="text-2xl font-bold text-purple-600">{offer.maxUsagePerUser}</p>
-                  <p className="text-xs text-gray-600">Usage/User</p>
-                </div>
-
-                <div className="bg-orange-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <Gift className="text-orange-500" size={20} />
-                  </div>
-                  <p className="text-sm font-bold text-orange-600 truncate">
-                    {getOfferTypeLabel()}
+                <div className="rounded-xl bg-purple-50 p-4 text-center">
+                  <p className="text-xl font-bold text-purple-600">
+                    {offer.maxUsagePerUser ?? '∞'}
                   </p>
-                  <p className="text-xs text-gray-600">Offer Type</p>
+                  <p className="mt-0.5 text-xs text-gray-400">Per User</p>
+                </div>
+                <div className="rounded-xl bg-orange-50 p-4 text-center">
+                  <p className="text-sm font-bold text-orange-600 leading-snug">{offerTypeLabel || '—'}</p>
+                  <p className="mt-0.5 text-xs text-gray-400">Type</p>
                 </div>
               </div>
 
-              {getDiscountItemSummary().length > 0 && (
-                <div className="mt-6 rounded-lg border border-orange-100 bg-orange-50 p-4">
-                  <p className="text-sm font-semibold text-orange-900">{getReadableOfferRule()}</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {getDiscountItemSummary().map((name) => (
-                      <span key={name} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-orange-700 border border-orange-100">
+              {/* Item chips */}
+              {itemNames.length > 0 && (
+                <div className="mt-5 rounded-xl border border-orange-100 bg-orange-50 p-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-orange-400">Applicable Items</p>
+                  <div className="flex flex-wrap gap-2">
+                    {itemNames.map(name => (
+                      <span key={name} className="rounded-full border border-orange-100 bg-white px-3 py-1 text-xs font-medium text-orange-700">
                         {name}
                       </span>
                     ))}
@@ -233,93 +279,71 @@ const AdminOfferDetails = () => {
             </div>
           </div>
 
-          {/* Terms & Conditions */}
+          {/* Terms */}
           {offer.termsConditions && (
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Terms & Conditions</h2>
-              <div className="prose prose-sm text-gray-700 whitespace-pre-line">
-                {offer.termsConditions}
-              </div>
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">Terms & Conditions</p>
+              <p className="whitespace-pre-line text-sm leading-relaxed text-gray-600">{offer.termsConditions}</p>
             </div>
           )}
         </div>
 
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Details Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Offer Details</h2>
+        {/* Right sidebar */}
+        <div className="space-y-4">
 
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm text-gray-500 mb-1">Restaurant</p>
-                <p className="font-medium text-gray-900">
-                  {offer.restaurant?.profile?.restaurant_name || offer.restaurant?.rest_name || 'All Restaurants'}
-                </p>
-              </div>
-
-              <div className="border-t pt-4">
-                <p className="text-sm text-gray-500 mb-1">Category</p>
-                <p className="font-medium text-gray-900">
-                  {offer.categoryId || 'All Categories'}
-                </p>
-              </div>
-
-              <div className="border-t pt-4">
-                <p className="text-sm text-gray-500 mb-1">Discount Type</p>
-                <p className="font-medium text-gray-900">
-                  {offer.discountType === 'PERCENTAGE' ? 'Percentage' : 'Flat Amount'}
-                </p>
-              </div>
-
-              <div className="border-t pt-4">
-                <p className="text-sm text-gray-500 mb-1">Total Usage Limit</p>
-                <p className="font-medium text-gray-900">
-                  {offer.totalUsageLimit || 'Unlimited'}
-                </p>
-              </div>
+          {/* Details */}
+          <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">Offer Details</p>
+            <div className="divide-y divide-gray-50">
+              <Row
+                label="Restaurant"
+                value={offer.restaurant?.profile?.restaurant_name || offer.restaurant?.rest_name || 'All Restaurants'}
+              />
+              <Row label="Category" value={offer.categoryId || 'All Categories'} />
+              <Row label="Discount Type" value={offer.discountType === 'PERCENTAGE' ? 'Percentage (%)' : offer.discountType === 'FLAT' ? 'Flat (₹)' : offer.discountType} />
+              <Row label="Total Usage Limit" value={offer.totalUsageLimit ?? 'Unlimited'} />
+              <Row label="Is Active" value={
+                <span className={`inline-flex items-center gap-1 text-xs font-semibold ${offer.isActive ? 'text-green-600' : 'text-gray-400'}`}>
+                  {offer.isActive ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                  {offer.isActive ? 'Active' : 'Inactive'}
+                </span>
+              } />
             </div>
           </div>
 
-          {/* Validity Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-              <Calendar size={20} className="mr-2 text-red-500" />
-              Validity Period
-            </h2>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">Start Date</span>
-                <span className="font-medium text-gray-900">
-                  {offer.startDate?.split('T')[0]}
-                </span>
+          {/* Validity */}
+          <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">Validity</p>
+            <div className="divide-y divide-gray-50">
+              <div className="flex items-center gap-2 py-3 text-sm">
+                <Calendar size={14} className="text-gray-400" />
+                <span className="text-gray-400">Start</span>
+                <span className="ml-auto font-medium text-gray-800">{offer.startDate?.split('T')[0] || '—'}</span>
               </div>
-
-              <div className="flex items-center justify-between border-t pt-3">
-                <span className="text-sm text-gray-500">End Date</span>
-                <span className="font-medium text-gray-900">
-                  {offer.endDate?.split('T')[0]}
-                </span>
+              <div className="flex items-center gap-2 py-3 text-sm">
+                <Calendar size={14} className="text-gray-400" />
+                <span className="text-gray-400">End</span>
+                <span className="ml-auto font-medium text-gray-800">{offer.endDate?.split('T')[0] || '—'}</span>
               </div>
-
               {(offer.startTime || offer.endTime) && (
-                <>
-                  <div className="border-t pt-3">
-                    <div className="flex items-center mb-2">
-                      <Clock size={16} className="mr-2 text-gray-400" />
-                      <span className="text-sm font-medium text-gray-700">Time Restrictions</span>
-                    </div>
-                    <div className="flex items-center justify-between pl-6">
-                      <span className="text-sm text-gray-500">
-                        {offer.startTime || '00:00'} - {offer.endTime || '23:59'}
-                      </span>
-                    </div>
-                  </div>
-                </>
+                <div className="flex items-center gap-2 py-3 text-sm">
+                  <Clock size={14} className="text-gray-400" />
+                  <span className="text-gray-400">Time</span>
+                  <span className="ml-auto font-medium text-gray-800">
+                    {offer.startTime || '00:00'} – {offer.endTime || '23:59'}
+                  </span>
+                </div>
               )}
             </div>
           </div>
+
+          {/* Edit CTA */}
+          <button
+            onClick={() => navigate(`/offers/edit/${id}`)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 py-3 text-sm font-semibold text-white shadow-sm hover:bg-red-600"
+          >
+            <Edit size={16} /> Edit This Offer
+          </button>
         </div>
       </div>
     </div>

@@ -137,6 +137,7 @@ function App() {
 
             <Route path="/offers/create" element={<OfferConfiguration />} />
             <Route path="/offers" element={<OffersList />} />
+            <Route path="/offers/edit/:id" element={<OfferEdit />} />
             <Route path="/offers/:id" element={<OfferDetails />} />
 
             <Route path="/menu" element={<MenuManagement />} />
@@ -190,7 +191,6 @@ function App() {
               <Route path="/bookings/:id" element={<BookingDetails />} />
 
               <Route path="/offers/existing" element={<ExistingOffers />} />
-              <Route path="/offers/edit/:id" element={<OfferEdit />} />
               <Route path="/offers/admin/:id" element={<AdminOfferDetails />} />
 
               <Route path="/coupon" element={<CouponManagement />} />
