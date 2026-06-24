@@ -338,6 +338,14 @@ const getOrderStatusTooltip = (order, currentStatus, timeline = []) => {
   return ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, ' ').toLowerCase();
 };
 
+const getDeliveryExecutiveName = (order) =>
+  order?.deliveryPartnerInformation?.name ||
+  order?.deliveryPartnerInformation?.fullName ||
+  order?.deliveryPartnerName ||
+  order?.partner?.label ||
+  order?.partner?.name ||
+  '';
+
 const getOfferDiscountLabel = (appliedDiscount) => {
   if (!appliedDiscount || appliedDiscount.source !== 'offer') return 'Offer Discount';
   const title = appliedDiscount.title || '';
@@ -997,6 +1005,13 @@ const OrderDetails = () => {
   const lifecycleSteps = buildLifecycleTimeline();
   const statusConfig = ORDER_ACTION_CONFIG[currentStatus];
   const isAfterAssign = ['READY', 'ASSIGNED', 'ON_THE_WAY_TO_RESTAURANT', 'REACHED_RESTAURANT', 'PICKED_UP', 'ON_THE_WAY', 'DELIVERED'].includes(currentStatus);
+  const deliveryExecutiveName = getDeliveryExecutiveName(order);
+  const getConnectorProgress = (step, nextStep, isOrderCancelled) => {
+    if (isOrderCancelled) return 0;
+    if (nextStep?.isCompleted) return 100;
+    if (step?.status === 'ASSIGNED' && step?.isCurrent && deliveryExecutiveName) return 50;
+    return 0;
+  };
   const currentActions = restaurantAdmin
     ? [...(statusConfig?.restaurant || []), ...(statusConfig?.rollback || [])]
     : (statusConfig?.admin || statusConfig?.restaurant || []);
@@ -1228,9 +1243,18 @@ const OrderDetails = () => {
             <div className="flex items-start gap-0 overflow-x-auto pb-2">
               {(() => {
                 const isOrderCancelled = TERMINAL_STATUSES.has(currentStatus) && currentStatus !== 'DELIVERED' && currentStatus !== 'COMPLETED';
-                return lifecycleSteps.map((step, idx) => (
+                return lifecycleSteps.map((step, idx) => {
+                  const isAssignedStep = step.status === 'ASSIGNED';
+                  const showExecutiveTooltip = isAssignedStep && Boolean(deliveryExecutiveName);
+                  const nextStep = lifecycleSteps[idx + 1];
+                  const connectorProgress = getConnectorProgress(step, nextStep, isOrderCancelled);
+
+                  return (
                   <React.Fragment key={step.status}>
-                    <div className="flex flex-col items-center min-w-[90px]">
+                    <div
+                      className="relative group flex flex-col items-center min-w-[90px]"
+                      title={showExecutiveTooltip ? `Delivery executive: ${deliveryExecutiveName}` : undefined}
+                    >
                       <motion.div
                         animate={step.isCurrent && !isOrderCancelled ? { scale: [1, 1.08, 1] } : { scale: 1 }}
                         transition={step.isCurrent && !isOrderCancelled ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
@@ -1259,6 +1283,13 @@ const OrderDetails = () => {
                         )}
                         {step.isCompleted ? <Check size={16} /> : idx + 1}
                       </motion.div>
+                      {showExecutiveTooltip && (
+                        <div className="pointer-events-none absolute left-1/2 top-[-54px] z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-xl group-hover:block">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Delivery Executive</p>
+                          <p className="mt-0.5 text-xs font-bold text-slate-900">{deliveryExecutiveName}</p>
+                          <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1 rotate-45 border-b border-r border-slate-200 bg-white" />
+                        </div>
+                      )}
                       <p className={`text-[11px] mt-1.5 text-center font-medium leading-tight ${
                         step.isCompleted
                           ? 'text-green-700'
@@ -1275,17 +1306,32 @@ const OrderDetails = () => {
                           {formatTime(step.timestamp)}
                         </p>
                       )}
+                      {showExecutiveTooltip && (
+                        <p className="mt-0.5 max-w-[82px] truncate text-center text-[9px] font-medium text-emerald-600">
+                          Hover for executive
+                        </p>
+                      )}
                     </div>
                     {idx < lifecycleSteps.length - 1 && (
-                      <div className={`relative flex-1 min-w-[16px] h-0.5 mt-5 overflow-hidden rounded-full ${
-                        lifecycleSteps[idx + 1].isCompleted
-                          ? 'bg-green-400'
-                          : step.isCurrent && !isOrderCancelled
-                          ? 'bg-blue-300'
-                          : isOrderCancelled
-                          ? 'bg-red-200'
-                          : 'bg-gray-200'
+                      <div className={`relative flex-1 min-w-[16px] h-1 mt-5 overflow-hidden rounded-full ${
+                        isOrderCancelled ? 'bg-red-100' : 'bg-gray-200'
                       }`}>
+                        {connectorProgress > 0 && (
+                          <motion.span
+                            className="absolute inset-y-0 left-0 rounded-full bg-green-400"
+                            initial={false}
+                            animate={{ width: `${connectorProgress}%` }}
+                            transition={{ duration: 0.35, ease: 'easeOut' }}
+                          />
+                        )}
+                        {step.status === 'ASSIGNED' && step.isCurrent && !isOrderCancelled && deliveryExecutiveName && (
+                          <motion.span
+                            className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-green-300 via-emerald-500 to-green-300"
+                            animate={{ opacity: [0.45, 0.95, 0.45] }}
+                            transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+                            style={{ width: '50%' }}
+                          />
+                        )}
                         {step.isCurrent && !isOrderCancelled && (
                           <motion.span
                             className="absolute inset-y-0 left-0 w-8 rounded-full bg-gradient-to-r from-transparent via-emerald-300 to-transparent"
@@ -1296,7 +1342,8 @@ const OrderDetails = () => {
                       </div>
                     )}
                   </React.Fragment>
-                ));
+                  );
+                });
               })()}
             </div>
           </CardContent>
