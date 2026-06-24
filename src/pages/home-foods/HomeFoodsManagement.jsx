@@ -227,6 +227,7 @@ export default function HomeFoodsManagement() {
   const [providerReloadKey, setProviderReloadKey] = useState(0);
   const [analytics, setAnalytics] = useState(null);
   const [weeklyMenuProviders, setWeeklyMenuProviders] = useState([]);
+  const [selectedPlanIds, setSelectedPlanIds] = useState([]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -244,6 +245,7 @@ export default function HomeFoodsManagement() {
 
   useEffect(() => {
     setPage(1);
+    setSelectedPlanIds([]);
     setFilters({
       search: '', status: '', provider_uid: '', plan_type: '',
       payment_status: '', meal_type: '', from_date: '', to_date: '', date: '',
@@ -293,6 +295,12 @@ export default function HomeFoodsManagement() {
       setItems(unwrapItems(response));
       setMeta(response.data?.meta || {});
       setWeeklyMenuProviders([]);
+      if (section === 'plans') {
+        setSelectedPlanIds((current) => {
+          const visibleIds = new Set(unwrapItems(response).map((item) => item.id));
+          return current.filter((id) => visibleIds.has(id));
+        });
+      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Could not load Home Foods data');
     } finally {
@@ -324,6 +332,66 @@ export default function HomeFoodsManagement() {
   const [blockLoading, setBlockLoading] = useState({});
   const [rejectTarget, setRejectTarget] = useState(null);
   const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
+
+  const selectablePlanIds = useMemo(
+    () => section === 'plans'
+      ? items
+        .filter((item) => !Number(item.paid_subscriber_count || 0))
+        .map((item) => item.id)
+        .filter(Boolean)
+      : [],
+    [items, section],
+  );
+  const selectedPlanIdSet = useMemo(() => new Set(selectedPlanIds), [selectedPlanIds]);
+  const allSelectablePlansSelected =
+    selectablePlanIds.length > 0 && selectablePlanIds.every((id) => selectedPlanIdSet.has(id));
+  const selectedPlanCount = selectedPlanIds.length;
+
+  const togglePlanSelection = useCallback((planId, checked) => {
+    setSelectedPlanIds((current) => {
+      if (checked) return current.includes(planId) ? current : [...current, planId];
+      return current.filter((id) => id !== planId);
+    });
+  }, []);
+
+  const toggleAllPlans = useCallback((checked) => {
+    setSelectedPlanIds(checked ? selectablePlanIds : []);
+  }, [selectablePlanIds]);
+
+  const bulkDeleteSelectedPlans = useCallback(() => {
+    const plansById = new Map(items.map((item) => [item.id, item]));
+    const deletableIds = selectedPlanIds.filter((id) => !Number(plansById.get(id)?.paid_subscriber_count || 0));
+
+    if (!deletableIds.length) {
+      toast.error('No deletable plans selected');
+      return;
+    }
+
+    confirm({
+      title: `Delete ${deletableIds.length} selected plan${deletableIds.length > 1 ? 's' : ''}?`,
+      message: 'Selected plans will be permanently removed. Plans with paid subscribers are automatically protected.',
+      confirmLabel: `Delete ${deletableIds.length} Plan${deletableIds.length > 1 ? 's' : ''}`,
+      onConfirm: async () => {
+        const failed = [];
+        for (const id of deletableIds) {
+          try {
+            await deleteHomeFoodPlan(id);
+          } catch (error) {
+            failed.push(plansById.get(id)?.name || id);
+          }
+        }
+
+        setSelectedPlanIds([]);
+        await load();
+
+        if (failed.length) {
+          toast.error(`Could not delete: ${failed.join(', ')}`);
+        } else {
+          toast.success(`${deletableIds.length} plan${deletableIds.length > 1 ? 's' : ''} deleted`);
+        }
+      },
+    });
+  }, [confirm, items, load, selectedPlanIds]);
 
   const toggleProviderBlock = async (item) => {
     const uid = item.provider_uid;
@@ -402,7 +470,7 @@ export default function HomeFoodsManagement() {
 
   const headers = useMemo(() => ({
     providers: ['Restaurant', 'Status', 'Mode', 'Capacity', 'Active Subscribers', 'Radius', 'Meal Types', 'Created', 'Actions'],
-    plans: ['Plan', 'Type', 'Restaurant', 'Duration', 'Price', 'Meal Types', 'Plan Menu', 'Status', 'Actions'],
+    plans: ['Select', 'Plan', 'Type', 'Restaurant', 'Duration', 'Price', 'Meal Types', 'Plan Menu', 'Status', 'Actions'],
     subscriptions: ['Subscription', 'Customer', 'Phone', 'Restaurant', 'Plan', 'Amount', 'Status', 'Payment', 'Dates', 'Actions'],
     deliveries: ['Delivery', 'Subscription', 'Customer', 'Restaurant', 'Meal', 'Date', 'Status', 'Actions'],
     menus: ['Image', 'Title', 'Provider', 'Description', 'Week Days', 'Meal Slot', 'Actions'],
@@ -439,11 +507,50 @@ export default function HomeFoodsManagement() {
             total={section === 'menus' ? undefined : (meta.total ?? items.length)}
             menuProviders={weeklyMenuProviders}
           />
+          {section === 'plans' && selectedPlanCount > 0 && (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 shadow-sm">
+              <div>
+                <p className="text-sm font-bold text-red-800">
+                  {selectedPlanCount} plan{selectedPlanCount > 1 ? 's' : ''} selected
+                </p>
+                <p className="text-xs text-red-600">Bulk delete will skip plans that have paid subscribers.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPlanIds([])}
+                  className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={bulkDeleteSelectedPlans}
+                  className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700"
+                >
+                  <Trash2 size={14} /> Delete Selected
+                </button>
+              </div>
+            </div>
+          )}
           <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px]">
                 <thead className="border-b bg-slate-50/80">
-                  <tr>{headers.map((header) => <th key={header} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">{header}</th>)}</tr>
+                  <tr>{headers.map((header) => (
+                    <th key={header} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      {section === 'plans' && header === 'Select' ? (
+                        <input
+                          type="checkbox"
+                          checked={allSelectablePlansSelected}
+                          disabled={!selectablePlanIds.length}
+                          onChange={(event) => toggleAllPlans(event.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-40"
+                          aria-label="Select all deletable plans"
+                        />
+                      ) : header}
+                    </th>
+                  ))}</tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loading ? (
@@ -456,6 +563,8 @@ export default function HomeFoodsManagement() {
                       section={section}
                       item={item}
                       onEdit={() => setModal({ type: sectionModalType, item })}
+                      selected={section === 'plans' && selectedPlanIdSet.has(item.id)}
+                      onSelectPlan={(checked) => togglePlanSelection(item.id, checked)}
                       onDelivery={updateDelivery}
                       onCancelSubscription={cancelSubscription}
                       onApproveSubscription={approveSubscription}
@@ -807,7 +916,7 @@ function ProviderWeeklyMenus({ providers, filters }) {
   );
 }
 
-function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApproveSubscription, onExtendSubscription, onDeleteProvider, onBlockProvider, onRejectProvider, blockLoading, onDeletePlan, onDeleteSubscription, onDeleteDelivery, onCancelClosure, onDeleteMenu, onToggleHomeFoodMenu }) {
+function Row({ section, item, onEdit, selected, onSelectPlan, onDelivery, onCancelSubscription, onApproveSubscription, onExtendSubscription, onDeleteProvider, onBlockProvider, onRejectProvider, blockLoading, onDeletePlan, onDeleteSubscription, onDeleteDelivery, onCancelClosure, onDeleteMenu, onToggleHomeFoodMenu }) {
   const navigate = useNavigate();
   if (section === 'providers') {
     const reviewStatus = item.review_status || (item.is_active ? 'approved' : 'pending');
@@ -890,6 +999,18 @@ function Row({ section, item, onEdit, onDelivery, onCancelSubscription, onApprov
   }
   if (section === 'plans') return (
     <tr onClick={onEdit} className="cursor-pointer hover:bg-indigo-50/40">
+      <td className="px-4 py-3">
+        <input
+          type="checkbox"
+          checked={Boolean(selected)}
+          disabled={Number(item.paid_subscriber_count || 0) > 0}
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => onSelectPlan?.(event.target.checked)}
+          title={Number(item.paid_subscriber_count || 0) > 0 ? 'Has paid subscribers — cannot bulk delete' : 'Select plan'}
+          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-30"
+          aria-label={`Select ${item.name}`}
+        />
+      </td>
       <td className="px-4 py-3 text-sm font-semibold">{item.name}</td><td className="px-4 py-3 text-xs">{item.plan_type}</td>
       <td className="px-4 py-3 text-sm">{item.restaurant_name || item.provider_uid}</td><td className="px-4 py-3 text-sm">{item.duration_days} days</td>
       <td className="px-4 py-3 text-sm font-semibold">{money(item.price)}</td><td className="px-4 py-3 text-xs">{(item.meal_types || []).join(', ')}</td>
