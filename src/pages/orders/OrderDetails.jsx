@@ -1100,6 +1100,11 @@ const OrderDetails = () => {
     : 0;
   const taxLabel = usesFinalPriceTaxModel(order, ps) ? 'Tax 5% on final item price' : 'Tax';
   const customerDisplayName = getCustomerDisplayName(order);
+  const paymentMethod = String(order.paymentMethod || order.payment_mode || '').toUpperCase();
+  const isCodPayment = paymentMethod === 'COD';
+  const normalizedPaymentStatus = String(order.paymentStatus || '').toLowerCase();
+  const isPaymentPaid = ['success', 'paid', 'captured', 'completed'].includes(normalizedPaymentStatus);
+  const displayPaymentStatus = isPaymentPaid ? 'Paid' : order.paymentStatus || 'Pending';
   const hasJourneyPricing = Boolean(order.delivery_pricing_version);
   const restaurantToCustomerKm = order.restaurant_to_customer_km ?? order.restaurantToCustomerDistance ?? null;
   const totalJourneyKm = order.total_journey_km ?? null;
@@ -1813,8 +1818,8 @@ const OrderDetails = () => {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Payment</span>
-                  <span className={`text-xs font-semibold ${(order.paymentStatus || '').toLowerCase() === 'success' ? 'text-emerald-700' : 'text-gray-700'}`}>
-                    {(order.paymentStatus || '').toLowerCase() === 'success' ? 'Paid' : order.paymentStatus || 'Pending'}
+                  <span className={`text-xs font-semibold ${isPaymentPaid ? 'text-emerald-700' : 'text-gray-700'}`}>
+                    {displayPaymentStatus}
                   </span>
                 </div>
                 {order.orderId && (
@@ -1898,7 +1903,7 @@ const OrderDetails = () => {
                     <span className="text-xs text-gray-500">Payment Status</span>
                     <div className="flex items-center gap-2">
                       <StatusBadge status={order.paymentStatus || 'PENDING'} />
-                      {order.razorpay_order_id && (order.paymentStatus || '').toLowerCase() !== 'success' && (
+                      {!isCodPayment && order.razorpay_order_id && !isPaymentPaid && (
                         <button
                           onClick={handleSyncPayment}
                           disabled={syncingPayment}
@@ -1911,13 +1916,15 @@ const OrderDetails = () => {
                       )}
                     </div>
                   </div>
+                  {!isCodPayment && (
                   <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
                     <span className="text-xs text-gray-500">Transaction ID</span>
                     <span className="max-w-[160px] truncate text-xs font-mono font-semibold text-gray-900">
-                      {order.transactionId || order.paymentTransactionId || order.razorpay_payment_id || '—'}
+                      {order.transactionId || order.paymentTransactionId || order.razorpayPaymentId || order.razorpay_payment_id || '—'}
                     </span>
                   </div>
-                  {order.razorpay_order_id && (
+                  )}
+                  {!isCodPayment && order.razorpay_order_id && (
                     <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
                       <span className="text-xs text-gray-500">Razorpay Order</span>
                       <span className="max-w-[160px] truncate text-xs font-mono font-semibold text-gray-900">
