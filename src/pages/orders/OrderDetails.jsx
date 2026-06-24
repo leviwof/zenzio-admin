@@ -59,9 +59,9 @@ const LIFECYCLE_STEPS = [
   { status: 'READY', label: 'Ready For Pickup' },
   { status: 'ASSIGNED', label: 'Assigned' },
   { status: 'ON_THE_WAY_TO_RESTAURANT', label: 'On The Way' },
-  { status: 'REACHED_RESTAURANT', label: 'Reached' },
+  { status: 'REACHED_RESTAURANT', label: 'Arrived At Restaurant' },
   { status: 'PICKED_UP', label: 'Picked Up' },
-  { status: 'ON_THE_WAY', label: 'On The Way' },
+  { status: 'ON_THE_WAY', label: 'Out For Delivery' },
   { status: 'DELIVERED', label: 'Delivered' },
 ];
 
@@ -197,6 +197,20 @@ const formatMinutes = (value) => {
   if (minutes === null) return '—';
   if (minutes <= 0) return '0 mins';
   return `${minutes} min${minutes === 1 ? '' : 's'}`;
+};
+
+const formatDurationBetween = (start, end) => {
+  const startDate = parseBackendDate(start);
+  const endDate = parseBackendDate(end);
+  if (!startDate || !endDate || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return '';
+  }
+  const diffMinutes = Math.max(0, Math.round((endDate - startDate) / 60000));
+  if (diffMinutes < 1) return 'Under 1 min';
+  if (diffMinutes < 60) return `${diffMinutes} min${diffMinutes === 1 ? '' : 's'}`;
+  const hours = Math.floor(diffMinutes / 60);
+  const minutes = diffMinutes % 60;
+  return `${hours}h${minutes ? ` ${minutes}m` : ''}`;
 };
 
 const formatVariance = (value) => {
@@ -551,16 +565,33 @@ const OrderDetails = () => {
     return STATUS_ALIASES[normalized] || normalized;
   };
 
+  const normalizeOrderFieldStatus = (status, source, orderData) => {
+    const normalized = normalizeStatus(status);
+    const hasAssignedPartner = Boolean(
+      orderData?.delivery_partner_uid ||
+      orderData?.assigned_partner_id ||
+      orderData?.deliveryPartnerInformation ||
+      orderData?.deliveryPartner ||
+      orderData?.partner,
+    );
+
+    if (source === 'deliveryPartnerStatus' && normalized === 'ACCEPTED' && hasAssignedPartner) {
+      return 'ASSIGNED';
+    }
+
+    return normalized;
+  };
+
   const getCurrentOrderStatus = (orderData) => {
     const candidates = [
-      orderData?.deliveryPartnerStatus,
-      orderData?.deliveryStatus,
-      orderData?.restaurantStatus,
-      orderData?.orderStatus,
-      orderData?.status,
+      { value: orderData?.deliveryPartnerStatus, source: 'deliveryPartnerStatus' },
+      { value: orderData?.deliveryStatus, source: 'deliveryStatus' },
+      { value: orderData?.restaurantStatus, source: 'restaurantStatus' },
+      { value: orderData?.orderStatus, source: 'orderStatus' },
+      { value: orderData?.status, source: 'status' },
     ];
     const fieldStatuses = candidates
-      .map(normalizeStatus)
+      .map((candidate) => normalizeOrderFieldStatus(candidate.value, candidate.source, orderData))
       .filter((s) => ORDER_TIMELINE_STEPS.some((step) => step.status === s) || TERMINAL_STATUSES.has(s));
 
     const timeline = Array.isArray(orderData?.orderTimeline) ? orderData.orderTimeline : [];
@@ -892,16 +923,97 @@ const OrderDetails = () => {
   };
 
   const buildLifecycleTimeline = () => {
-    const idx = getLifecycleIndex(currentStatus);
-    const isCancelled = TERMINAL_STATUSES.has(currentStatus) && currentStatus !== 'DELIVERED' && currentStatus !== 'COMPLETED';
     const timelineByStatus = {};
-    (orderTimeline || []).forEach(step => { timelineByStatus[normalizeStatus(step.status)] = step; });
-    return LIFECYCLE_STEPS.map((step, i) => {
-      const matched = timelineByStatus[step.status];
-      const isCompleted = Boolean(matched?.isCompleted || matched?.timestamp) || (idx >= 0 && i <= idx && !isCancelled);
-      const isCurrent = i === idx && !isCancelled;
-      return { ...step, timestamp: matched?.timestamp || null, isCompleted, isCurrent };
+    (orderTimeline || []).forEach(step => {
+      const status = normalizeStatus(step.status);
+      timelineByStatus[status] = step;
     });
+
+    const normalizedCurrent = normalizeStatus(currentStatus);
+    const isDelivered = normalizedCurrent === 'DELIVERED' || normalizedCurrent === 'COMPLETED';
+    const isStopped = TERMINAL_STATUSES.has(normalizedCurrent) && !isDelivered;
+
+    const fieldStatuses = [
+      { value: order?.deliveryPartnerStatus, source: 'deliveryPartnerStatus' },
+      { value: order?.deliveryStatus, source: 'deliveryStatus' },
+      { value: order?.restaurantStatus, source: 'restaurantStatus' },
+      { value: order?.orderStatus, source: 'orderStatus' },
+      { value: order?.status, source: 'status' },
+    ]
+      .map((candidate) => normalizeOrderFieldStatus(candidate.value, candidate.source, order))
+      .filter((status) => STATUS_PRIORITY[status] !== undefined);
+
+    const timelineStatuses = (orderTimeline || [])
+      .filter((step) => step?.isCompleted || step?.timestamp)
+      .map((step) => normalizeStatus(step.status))
+      .filter((status) => STATUS_PRIORITY[status] !== undefined);
+
+    const latestCompletedStatus = isDelivered
+      ? 'DELIVERED'
+      : [...fieldStatuses, ...timelineStatuses]
+        .sort((a, b) => STATUS_PRIORITY[b] - STATUS_PRIORITY[a])[0] || 'PLACED';
+
+    const latestCompletedIndex = getLifecycleIndex(latestCompletedStatus);
+    const activeIndex = isDelivered || isStopped
+      ? -1
+      : Math.min(latestCompletedIndex + 1, LIFECYCLE_STEPS.length - 1);
+
+    const baseSteps = LIFECYCLE_STEPS.map((step, i) => {
+      const matched = timelineByStatus[step.status];
+      const fallbackTimestamp = step.status === 'PLACED'
+        ? (order?.orderSummary?.orderPlacement || order?.time || order?.createdAt)
+        : i === latestCompletedIndex
+          ? (order?.updatedAt || order?.lastUpdated)
+          : null;
+      const timestamp = matched?.timestamp || matched?.createdAt || matched?.time || matched?.updatedAt || fallbackTimestamp || null;
+      const isCompleted = isDelivered || i <= latestCompletedIndex;
+      const isActive = i === activeIndex;
+      const previousTimestamp = i > 0
+        ? (timelineByStatus[LIFECYCLE_STEPS[i - 1].status]?.timestamp ||
+          timelineByStatus[LIFECYCLE_STEPS[i - 1].status]?.createdAt ||
+          timelineByStatus[LIFECYCLE_STEPS[i - 1].status]?.time ||
+          timelineByStatus[LIFECYCLE_STEPS[i - 1].status]?.updatedAt)
+        : null;
+
+      return {
+        ...step,
+        timestamp,
+        duration: isCompleted && timestamp && previousTimestamp
+          ? formatDurationBetween(previousTimestamp, timestamp)
+          : '',
+        activeSince: isActive
+          ? (timelineByStatus[latestCompletedStatus]?.timestamp ||
+            timelineByStatus[latestCompletedStatus]?.createdAt ||
+            timelineByStatus[latestCompletedStatus]?.time ||
+            timelineByStatus[latestCompletedStatus]?.updatedAt ||
+            order?.updatedAt ||
+            order?.lastUpdated ||
+            order?.createdAt)
+          : null,
+        isCompleted,
+        isCurrent: isActive,
+        isActive,
+        isTerminalStop: false,
+      };
+    });
+
+    if (isStopped) {
+      const terminalEntry =
+        (orderTimeline || []).find((step) => TERMINAL_STATUSES.has(normalizeStatus(step.status))) || {};
+      baseSteps.push({
+        status: normalizedCurrent,
+        label: normalizedCurrent === 'REJECTED' ? 'Rejected' : normalizedCurrent === 'FAILED' ? 'Failed' : 'Cancelled',
+        timestamp: terminalEntry.timestamp || terminalEntry.createdAt || terminalEntry.time || terminalEntry.updatedAt || order?.updatedAt || order?.lastUpdated,
+        duration: '',
+        activeSince: null,
+        isCompleted: false,
+        isCurrent: false,
+        isActive: false,
+        isTerminalStop: true,
+      });
+    }
+
+    return baseSteps;
   };
 
   const handleOrderAction = async (apiStatus) => {
@@ -1007,9 +1119,10 @@ const OrderDetails = () => {
   const isAfterAssign = ['READY', 'ASSIGNED', 'ON_THE_WAY_TO_RESTAURANT', 'REACHED_RESTAURANT', 'PICKED_UP', 'ON_THE_WAY', 'DELIVERED'].includes(currentStatus);
   const deliveryExecutiveName = getDeliveryExecutiveName(order);
   const getConnectorProgress = (step, nextStep, isOrderCancelled) => {
+    if (isOrderCancelled && step?.isCompleted && nextStep?.isTerminalStop) return 100;
     if (isOrderCancelled) return 0;
     if (nextStep?.isCompleted) return 100;
-    if (step?.status === 'ASSIGNED' && step?.isCurrent && deliveryExecutiveName) return 50;
+    if (step?.isCompleted && nextStep?.isActive) return 55;
     return 0;
   };
   const currentActions = restaurantAdmin
@@ -1248,6 +1361,13 @@ const OrderDetails = () => {
                   const showExecutiveTooltip = isAssignedStep && Boolean(deliveryExecutiveName);
                   const nextStep = lifecycleSteps[idx + 1];
                   const connectorProgress = getConnectorProgress(step, nextStep, isOrderCancelled);
+                  const isActiveStep = step.isActive && !isOrderCancelled;
+                  const isTerminalStop = step.isTerminalStop;
+                  const activeHelperText = step.status === 'ASSIGNED' && !deliveryExecutiveName
+                    ? 'Waiting for executive'
+                    : step.activeSince
+                      ? `Started ${formatRelativeTime(step.activeSince)}`
+                      : 'Currently in progress';
 
                   return (
                   <React.Fragment key={step.status}>
@@ -1256,18 +1376,19 @@ const OrderDetails = () => {
                       title={showExecutiveTooltip ? `Delivery executive: ${deliveryExecutiveName}` : undefined}
                     >
                       <motion.div
-                        animate={step.isCurrent && !isOrderCancelled ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-                        transition={step.isCurrent && !isOrderCancelled ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+                        animate={isActiveStep ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+                        transition={isActiveStep ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
+                        style={isActiveStep ? { background: 'conic-gradient(#22c55e 0deg 190deg, #dcfce7 190deg 360deg)' } : undefined}
                         className={`relative w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                         step.isCompleted
                           ? 'bg-green-500 text-white'
-                          : step.isCurrent && !isOrderCancelled
-                          ? 'bg-blue-500 text-white ring-4 ring-blue-100'
-                          : isOrderCancelled
-                          ? 'bg-red-100 text-red-400'
+                          : isActiveStep
+                          ? 'text-green-700 ring-4 ring-green-100 shadow-lg shadow-green-100'
+                          : isTerminalStop
+                          ? 'bg-red-500 text-white ring-4 ring-red-100'
                           : 'bg-gray-100 text-gray-400'
                       }`}>
-                        {step.isCurrent && !isOrderCancelled && (
+                        {isActiveStep && (
                           <>
                             <motion.span
                               className="absolute inset-0 rounded-full bg-green-400/40"
@@ -1281,7 +1402,15 @@ const OrderDetails = () => {
                             />
                           </>
                         )}
-                        {step.isCompleted ? <Check size={16} /> : idx + 1}
+                        {step.isCompleted ? (
+                          <Check size={16} />
+                        ) : isActiveStep ? (
+                          <span className="relative z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-[11px] font-black text-green-700">◐</span>
+                        ) : isTerminalStop ? (
+                          <X size={15} />
+                        ) : (
+                          idx + 1
+                        )}
                       </motion.div>
                       {showExecutiveTooltip && (
                         <div className="pointer-events-none absolute left-1/2 top-[-54px] z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 py-2 text-left shadow-xl group-hover:block">
@@ -1293,18 +1422,31 @@ const OrderDetails = () => {
                       <p className={`text-[11px] mt-1.5 text-center font-medium leading-tight ${
                         step.isCompleted
                           ? 'text-green-700'
-                          : step.isCurrent && !isOrderCancelled
-                          ? 'text-blue-700'
-                          : isOrderCancelled
+                          : isActiveStep
+                          ? 'text-green-700'
+                          : isTerminalStop
                           ? 'text-red-500'
                           : 'text-gray-400'
                       }`}>
                         {step.label}
                       </p>
                       {step.timestamp && (
-                        <p className="text-[9px] text-gray-400 text-center mt-0.5 whitespace-nowrap">
+                        <p className={`text-[9px] text-center mt-0.5 whitespace-nowrap ${isTerminalStop ? 'text-red-400' : 'text-gray-400'}`}>
                           {formatTime(step.timestamp)}
                         </p>
+                      )}
+                      {step.duration && (
+                        <p className="mt-0.5 whitespace-nowrap text-center text-[9px] text-slate-400">
+                          Duration: {step.duration}
+                        </p>
+                      )}
+                      {isActiveStep && (
+                        <div className="mt-1 flex flex-col items-center">
+                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-black tracking-wide text-green-700">LIVE</span>
+                          <span className="mt-0.5 max-w-[86px] text-center text-[9px] leading-tight text-green-600">
+                            {activeHelperText}
+                          </span>
+                        </div>
                       )}
                       {showExecutiveTooltip && (
                         <p className="mt-0.5 max-w-[82px] truncate text-center text-[9px] font-medium text-emerald-600">
@@ -1318,21 +1460,21 @@ const OrderDetails = () => {
                       }`}>
                         {connectorProgress > 0 && (
                           <motion.span
-                            className="absolute inset-y-0 left-0 rounded-full bg-green-400"
+                            className={`absolute inset-y-0 left-0 rounded-full ${nextStep?.isTerminalStop ? 'bg-red-400' : 'bg-green-400'}`}
                             initial={false}
                             animate={{ width: `${connectorProgress}%` }}
                             transition={{ duration: 0.35, ease: 'easeOut' }}
                           />
                         )}
-                        {step.status === 'ASSIGNED' && step.isCurrent && !isOrderCancelled && deliveryExecutiveName && (
+                        {step.isCompleted && nextStep?.isActive && !isOrderCancelled && (
                           <motion.span
                             className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-green-300 via-emerald-500 to-green-300"
                             animate={{ opacity: [0.45, 0.95, 0.45] }}
                             transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
-                            style={{ width: '50%' }}
+                            style={{ width: `${connectorProgress}%` }}
                           />
                         )}
-                        {step.isCurrent && !isOrderCancelled && (
+                        {step.isCompleted && nextStep?.isActive && !isOrderCancelled && (
                           <motion.span
                             className="absolute inset-y-0 left-0 w-8 rounded-full bg-gradient-to-r from-transparent via-emerald-300 to-transparent"
                             animate={{ x: ['-100%', '220%'] }}
