@@ -117,6 +117,7 @@ const getApiErrorMessage = (error, fallback) => {
 
 const emptyForm = {
   restaurant_uid: '',
+  restaurant_uids: [],
   offer_tag: '',
   offer_title: '',
   offer_description: '',
@@ -163,6 +164,15 @@ const BannerManagement = () => {
     () => restaurants.find((restaurant) => restaurant.restaurant_uid === formData.restaurant_uid),
     [restaurants, formData.restaurant_uid],
   );
+  const selectedRestaurantUids = Array.isArray(formData.restaurant_uids)
+    ? formData.restaurant_uids
+    : [];
+  const selectedRestaurants = useMemo(
+    () => selectedRestaurantUids.map((uid) => (
+      restaurants.find((restaurant) => restaurant.restaurant_uid === uid) || { restaurant_uid: uid }
+    )),
+    [restaurants, selectedRestaurantUids],
+  );
 
   useEffect(() => {
     if (activeTab === 'image') {
@@ -179,10 +189,10 @@ const BannerManagement = () => {
   }, [search]);
 
   useEffect(() => {
-    if (!modalOpen || !isRestaurantOffer) return undefined;
+    if (!modalOpen) return undefined;
     const timer = setTimeout(() => fetchRestaurants(restaurantSearch), 300);
     return () => clearTimeout(timer);
-  }, [modalOpen, restaurantSearch, isRestaurantOffer]);
+  }, [modalOpen, restaurantSearch]);
 
   const fetchImageBanners = async () => {
     try {
@@ -321,6 +331,7 @@ const BannerManagement = () => {
       priority: String(banner.priority || 1),
       is_active: Boolean(banner.is_active),
       cta_label: banner.cta_label || 'View Offer',
+      restaurant_uids: banner.restaurant_uid ? [banner.restaurant_uid] : [],
     });
     setDynamicImageFile(null);
     setDynamicImagePreview(getBannerImageUrl(banner));
@@ -342,8 +353,8 @@ const BannerManagement = () => {
   };
 
   const validateDynamicForm = () => {
-    if (isRestaurantOffer && !formData.restaurant_uid) {
-      toast.error('Restaurant is required');
+    if (isRestaurantOffer && selectedRestaurantUids.length === 0) {
+      toast.error('Select at least one restaurant');
       return false;
     }
 
@@ -368,7 +379,8 @@ const BannerManagement = () => {
 
   const buildDynamicPayload = () => ({
     banner_type: currentTab.bannerType,
-    restaurant_uid: isRestaurantOffer ? formData.restaurant_uid : undefined,
+    restaurant_uid: isRestaurantOffer ? selectedRestaurantUids[0] : (formData.restaurant_uid || undefined),
+    restaurant_uids: isRestaurantOffer ? JSON.stringify(selectedRestaurantUids) : undefined,
     offer_tag: isRestaurantOffer ? undefined : formData.offer_tag.trim(),
     offer_title: formData.offer_title.trim(),
     offer_description: formData.offer_description.trim(),
@@ -593,7 +605,16 @@ const BannerManagement = () => {
                       <p className="font-medium text-gray-900">{banner.offer_title}</p>
                       <p className="text-xs text-gray-500">{banner.offer_tag || banner.cta_label || banner.coupon_code || '-'}</p>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{banner.restaurant_name || '-'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {banner.restaurant_uid ? (
+                        <div>
+                          <p className="font-medium text-gray-800">{banner.restaurant_name || 'Restaurant'}</p>
+                          <p className="font-mono text-xs text-gray-500">{banner.restaurant_uid}</p>
+                        </div>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                     <td className="px-6 py-4">
                       <span
                         className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-700"
@@ -696,257 +717,446 @@ const BannerManagement = () => {
       </div>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl rounded-lg bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                {editingBanner ? 'Edit Banner' : 'Add Banner'}
-              </h2>
-              <button onClick={closeModal} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+
+            {/* Header */}
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {editingBanner ? 'Edit Banner' : 'Create New Banner'}
+                </h2>
+                <p className="mt-0.5 text-xs text-gray-400">{currentTab.label}</p>
+              </div>
+              <button onClick={closeModal} className="rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleDynamicSubmit} className="grid gap-6 p-6 md:grid-cols-[1fr_280px]">
-              <div className="space-y-4">
+            <form onSubmit={handleDynamicSubmit} className="flex min-h-0 flex-1">
+
+              {/* Left: scrollable form */}
+              <div className="flex-1 space-y-5 overflow-y-auto border-r border-gray-100 p-6">
+
+                {/* Section 1: Restaurant (restaurant offer only) */}
                 {isRestaurantOffer && (
-                  <>
+                  <div>
+                    <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">1</span>
+                      Restaurant
+                    </p>
+                    <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700">Search Restaurant</label>
+                        <input
+                          type="text"
+                          value={restaurantSearch}
+                          onChange={(event) => setRestaurantSearch(event.target.value)}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                          placeholder="Type restaurant name..."
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700">Select Restaurant</label>
+                        <select
+                          value=""
+                          onChange={(event) => {
+                            const uid = event.target.value;
+                            if (!uid) return;
+                            setFormData((current) => {
+                              const currentUids = Array.isArray(current.restaurant_uids) ? current.restaurant_uids : [];
+                              const nextUids = currentUids.includes(uid) ? currentUids : [...currentUids, uid];
+                              return { ...current, restaurant_uid: nextUids[0] || '', restaurant_uids: nextUids };
+                            });
+                          }}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        >
+                          <option value="">+ Add a restaurant</option>
+                          {restaurants.map((restaurant) => (
+                            <option key={restaurant.restaurant_uid} value={restaurant.restaurant_uid}>
+                              {restaurant.restaurant_name || restaurant.restaurant_uid} ({restaurant.restaurant_uid})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {selectedRestaurants.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {selectedRestaurants.map((restaurant) => (
+                            <span
+                              key={restaurant.restaurant_uid}
+                              className="inline-flex items-center gap-2 rounded-lg border border-red-100 bg-white px-3 py-2 shadow-sm"
+                            >
+                              <div className="flex flex-col">
+                                <span className="max-w-[150px] truncate text-xs font-semibold text-red-700">
+                                  {restaurant.restaurant_name || restaurant.restaurant_uid}
+                                </span>
+                                <span className="font-mono text-[10px] text-gray-400">{restaurant.restaurant_uid}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setFormData((current) => {
+                                  const nextUids = (current.restaurant_uids || []).filter((uid) => uid !== restaurant.restaurant_uid);
+                                  return { ...current, restaurant_uid: nextUids[0] || '', restaurant_uids: nextUids };
+                                })}
+                                className="rounded-full p-0.5 text-red-400 hover:bg-red-100 hover:text-red-600"
+                              >
+                                <X size={10} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section: Content */}
+                <div>
+                  <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">
+                      {isRestaurantOffer ? '2' : '1'}
+                    </span>
+                    Content
+                  </p>
+                  <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+                    {!isRestaurantOffer && (
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                          Offer Tag <span className="font-normal text-gray-400">(optional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.offer_tag}
+                          onChange={(event) => setFormData((current) => ({ ...current, offer_tag: event.target.value }))}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                          placeholder="e.g. HOT DEAL, LIMITED TIME"
+                          maxLength={60}
+                        />
+                      </div>
+                    )}
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">Search Restaurant</label>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Offer Title <span className="text-red-500">*</span>
+                      </label>
                       <input
                         type="text"
-                        value={restaurantSearch}
-                        onChange={(event) => setRestaurantSearch(event.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                        placeholder="Restaurant name or UID"
+                        value={formData.offer_title}
+                        onChange={(event) => setFormData((current) => ({ ...current, offer_title: event.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        placeholder={isRestaurantOffer ? 'Flat ₹100 Off on All Orders' : 'Meals Under ₹149'}
+                        maxLength={120}
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">Restaurant</label>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Description <span className="font-normal text-gray-400">(optional)</span>
+                      </label>
+                      <textarea
+                        value={formData.offer_description}
+                        onChange={(event) => setFormData((current) => ({ ...current, offer_description: event.target.value }))}
+                        rows={2}
+                        className="w-full resize-none rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        placeholder="Valid on orders above ₹499"
+                        maxLength={240}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section: Linked Restaurant (promo only, single, optional) */}
+                {!isRestaurantOffer && (
+                  <div>
+                    <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">2</span>
+                      Linked Restaurant
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-normal normal-case tracking-normal text-gray-400">optional</span>
+                    </p>
+                    <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700">Search & Select Restaurant</label>
+                        <input
+                          type="text"
+                          value={restaurantSearch}
+                          onChange={(event) => setRestaurantSearch(event.target.value)}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                          placeholder="Type restaurant name..."
+                        />
+                      </div>
                       <select
                         value={formData.restaurant_uid}
                         onChange={(event) => setFormData((current) => ({ ...current, restaurant_uid: event.target.value }))}
-                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
                       >
-                        <option value="">Choose restaurant</option>
+                        <option value="">No restaurant (general promo)</option>
                         {restaurants.map((restaurant) => (
                           <option key={restaurant.restaurant_uid} value={restaurant.restaurant_uid}>
-                            {restaurant.restaurant_name || restaurant.restaurant_uid}
+                            {restaurant.restaurant_name || restaurant.restaurant_uid} ({restaurant.restaurant_uid})
                           </option>
                         ))}
                       </select>
+                      {formData.restaurant_uid && (() => {
+                        const r = restaurants.find((rest) => rest.restaurant_uid === formData.restaurant_uid)
+                          || { restaurant_uid: formData.restaurant_uid, restaurant_name: null };
+                        return (
+                          <div className="flex items-center justify-between rounded-lg border border-red-100 bg-white px-3 py-2 shadow-sm">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-semibold text-red-700">
+                                {r.restaurant_name || r.restaurant_uid}
+                              </span>
+                              <span className="font-mono text-[10px] text-gray-400">{r.restaurant_uid}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setFormData((current) => ({ ...current, restaurant_uid: '' }))}
+                              className="rounded-full p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
-                  </>
-                )}
-
-                {!isRestaurantOffer && (
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">Offer Tag</label>
-                    <input
-                      type="text"
-                      value={formData.offer_tag}
-                      onChange={(event) => setFormData((current) => ({ ...current, offer_tag: event.target.value }))}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                      placeholder="HOT DEAL"
-                      maxLength={60}
-                    />
                   </div>
                 )}
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Offer Title</label>
-                  <input
-                    type="text"
-                    value={formData.offer_title}
-                    onChange={(event) => setFormData((current) => ({ ...current, offer_title: event.target.value }))}
-                    className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                    placeholder={isRestaurantOffer ? 'Flat Rs 100 Off' : 'Meals Under Rs 149'}
-                    maxLength={120}
-                  />
-                </div>
+                {/* Section: Offer Details (promo only) */}
+                {!isRestaurantOffer && (
+                  <div>
+                    <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">3</span>
+                      Offer Details
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700">Coupon Code</label>
+                        <input
+                          type="text"
+                          value={formData.coupon_code}
+                          onChange={(event) => setFormData((current) => ({ ...current, coupon_code: event.target.value.toUpperCase() }))}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 font-mono text-sm font-medium tracking-wider focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                          placeholder="SAVE100"
+                          maxLength={40}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700">Offer Amount</label>
+                        <input
+                          type="text"
+                          value={formData.offer_amount}
+                          onChange={(event) => setFormData((current) => ({ ...current, offer_amount: event.target.value }))}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                          placeholder="₹100 off / 50%"
+                          maxLength={40}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Offer Description</label>
-                  <textarea
-                    value={formData.offer_description}
-                    onChange={(event) => setFormData((current) => ({ ...current, offer_description: event.target.value }))}
-                    className="min-h-20 w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                    placeholder="Valid on orders above Rs 499"
-                    maxLength={240}
-                  />
-                </div>
+                {/* Section: CTA (restaurant offer only) */}
+                {isRestaurantOffer && (
+                  <div>
+                    <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">3</span>
+                      Button
+                    </p>
+                    <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">CTA Label</label>
+                      <select
+                        value={formData.cta_label}
+                        onChange={(event) => setFormData((current) => ({ ...current, cta_label: event.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                      >
+                        {ctaOptions.map((cta) => <option key={cta} value={cta}>{cta}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
 
+                {/* Section: Banner Image */}
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Banner Image</label>
-                  <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center transition-colors hover:bg-gray-100">
+                  <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">4</span>
+                    Banner Image
+                  </p>
+                  <label className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-5 text-center transition-all ${dynamicImagePreview ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-gray-50/70 hover:border-red-300 hover:bg-red-50/20'}`}>
                     {dynamicImagePreview ? (
-                      <img
-                        src={dynamicImagePreview}
-                        alt="Banner preview"
-                        className="mb-3 h-28 w-full rounded-lg object-cover"
-                      />
+                      <div className="w-full">
+                        <img src={dynamicImagePreview} alt="Banner preview" className="mx-auto mb-3 max-h-36 w-full rounded-lg object-cover shadow-sm" />
+                        <p className="text-xs font-medium text-red-500">Click to change image</p>
+                      </div>
                     ) : (
-                      <ImageIcon className="mb-2 h-8 w-8 text-gray-400" />
+                      <>
+                        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
+                          <ImageIcon className="h-6 w-6 text-gray-400" />
+                        </div>
+                        <p className="text-sm font-medium text-gray-700">Click to upload banner image</p>
+                        <p className="mt-1 text-xs text-gray-400">PNG, JPG, WEBP — max 5MB</p>
+                      </>
                     )}
-                    <span className="text-sm font-medium text-gray-700">
-                      {dynamicImagePreview ? 'Change banner image' : 'Upload banner image'}
-                    </span>
-                    <span className="mt-1 text-xs text-gray-400">PNG, JPG, JPEG, WEBP up to 5MB</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleDynamicImageChange}
-                    />
+                    <input type="file" accept="image/*" className="hidden" onChange={handleDynamicImageChange} />
                   </label>
                 </div>
 
-                {!isRestaurantOffer && (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">Coupon Code</label>
-                      <input
-                        type="text"
-                        value={formData.coupon_code}
-                        onChange={(event) => setFormData((current) => ({ ...current, coupon_code: event.target.value.toUpperCase() }))}
-                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                        placeholder="SAVE100"
-                        maxLength={40}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">Offer Amount</label>
-                      <input
-                        type="text"
-                        value={formData.offer_amount}
-                        onChange={(event) => setFormData((current) => ({ ...current, offer_amount: event.target.value }))}
-                        className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                        placeholder="Rs 100, Rs 149, 50%"
-                        maxLength={40}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {isRestaurantOffer && (
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">CTA</label>
-                    <select
-                      value={formData.cta_label}
-                      onChange={(event) => setFormData((current) => ({ ...current, cta_label: event.target.value }))}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                    >
-                      {ctaOptions.map((cta) => <option key={cta} value={cta}>{cta}</option>)}
-                    </select>
-                  </div>
-                )}
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
-                    <label className="mb-1 block text-sm font-medium text-gray-700">Theme Colors</label>
-                    <div className="grid gap-3 sm:grid-cols-3">
+                {/* Section: Appearance */}
+                <div>
+                  <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">5</span>
+                    Appearance
+                  </p>
+                  <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+                    <label className="mb-3 block text-sm font-medium text-gray-700">Theme Gradient Colors</label>
+                    <div className="grid grid-cols-3 gap-3">
                       {selectedThemeColors.map((color, index) => (
-                        <div key={`theme-color-${index}`} className="flex gap-2">
-                          <input
-                            type="color"
-                            value={resolveThemeColor(color, DEFAULT_THEME_COLORS[index])}
-                            onChange={(event) => {
-                              const nextColors = [...selectedThemeColors];
-                              nextColors[index] = event.target.value;
-                              setFormData((current) => ({
-                                ...current,
-                                theme_colors: nextColors,
-                                theme: buildThemeGradient(nextColors),
-                              }));
-                            }}
-                            className="h-10 w-12 rounded-lg border border-gray-300 bg-white p-1"
-                          />
-                          <input
-                            type="text"
-                            value={color}
-                            onChange={(event) => {
-                              const nextColors = [...selectedThemeColors];
-                              nextColors[index] = event.target.value;
-                              setFormData((current) => ({ ...current, theme_colors: nextColors }));
-                            }}
-                            onBlur={() => {
-                              const nextColors = selectedThemeColors.map((currentColor, colorIndex) =>
-                                resolveThemeColor(currentColor, DEFAULT_THEME_COLORS[colorIndex])
-                              );
-                              setFormData((current) => ({
-                                ...current,
-                                theme_colors: nextColors,
-                                theme: buildThemeGradient(nextColors),
-                              }));
-                            }}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                            placeholder={DEFAULT_THEME_COLORS[index]}
-                            maxLength={7}
-                          />
+                        <div key={`theme-color-${index}`} className="flex flex-col gap-1.5">
+                          <span className="text-xs text-gray-500">Color {index + 1}</span>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={resolveThemeColor(color, DEFAULT_THEME_COLORS[index])}
+                              onChange={(event) => {
+                                const nextColors = [...selectedThemeColors];
+                                nextColors[index] = event.target.value;
+                                setFormData((current) => ({
+                                  ...current,
+                                  theme_colors: nextColors,
+                                  theme: buildThemeGradient(nextColors),
+                                }));
+                              }}
+                              className="h-9 w-9 flex-shrink-0 cursor-pointer rounded-lg border border-gray-200 bg-white p-0.5"
+                            />
+                            <input
+                              type="text"
+                              value={color}
+                              onChange={(event) => {
+                                const nextColors = [...selectedThemeColors];
+                                nextColors[index] = event.target.value;
+                                setFormData((current) => ({ ...current, theme_colors: nextColors }));
+                              }}
+                              onBlur={() => {
+                                const nextColors = selectedThemeColors.map((currentColor, colorIndex) =>
+                                  resolveThemeColor(currentColor, DEFAULT_THEME_COLORS[colorIndex])
+                                );
+                                setFormData((current) => ({
+                                  ...current,
+                                  theme_colors: nextColors,
+                                  theme: buildThemeGradient(nextColors),
+                                }));
+                              }}
+                              className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 py-2 font-mono text-xs focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                              placeholder={DEFAULT_THEME_COLORS[index]}
+                              maxLength={7}
+                            />
+                          </div>
                         </div>
                       ))}
                     </div>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">Priority</label>
-                    <select
-                      value={formData.priority}
-                      onChange={(event) => setFormData((current) => ({ ...current, priority: event.target.value }))}
-                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                    >
-                      {Array.from({ length: 6 }, (_, index) => String(index + 1)).map((priority) => (
-                        <option key={priority} value={priority}>{priority}</option>
-                      ))}
-                    </select>
+                    <div
+                      className="mt-3 h-8 w-full rounded-lg shadow-inner"
+                      style={{ background: selectedThemeBackground }}
+                    />
                   </div>
                 </div>
 
-                <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
-                  <input
-                    type="checkbox"
-                    checked={formData.is_active}
-                    onChange={(event) => setFormData((current) => ({ ...current, is_active: event.target.checked }))}
-                    className="h-4 w-4 rounded border-gray-300 text-red-500 focus:ring-red-500"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Active</span>
-                </label>
+                {/* Section: Settings */}
+                <div>
+                  <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">6</span>
+                    Settings
+                  </p>
+                  <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-gray-700">
+                        Priority <span className="font-normal text-gray-400">(1 = highest)</span>
+                      </label>
+                      <div className="flex gap-2">
+                        {Array.from({ length: 6 }, (_, index) => String(index + 1)).map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setFormData((current) => ({ ...current, priority: p }))}
+                            className={`flex h-9 w-9 items-center justify-center rounded-lg text-sm font-semibold transition-all ${
+                              formData.priority === p
+                                ? 'bg-red-500 text-white shadow-sm'
+                                : 'border border-gray-200 bg-white text-gray-600 hover:border-red-300 hover:text-red-500'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Active</p>
+                        <p className="text-xs text-gray-400">Visible to users in the app</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormData((current) => ({ ...current, is_active: !current.is_active }))}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none ${formData.is_active ? 'bg-red-500' : 'bg-gray-200'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${formData.is_active ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="rounded-xl p-5 shadow-sm" style={{ background: selectedThemeBackground, color: selectedThemeTextColor }}>
+              {/* Right: sticky preview + actions */}
+              <div className="flex w-[272px] flex-shrink-0 flex-col p-5">
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">Live Preview</p>
+                <div
+                  className="w-full overflow-hidden rounded-2xl p-5 shadow-md"
+                  style={{ background: selectedThemeBackground, color: selectedThemeTextColor }}
+                >
                   {dynamicImagePreview && (
                     <img
                       src={dynamicImagePreview}
                       alt="Banner preview"
-                      className="mb-4 h-32 w-full rounded-lg border border-white/20 object-cover"
+                      className="mb-4 h-28 w-full rounded-xl border border-white/20 object-cover shadow-sm"
                     />
                   )}
-                  <p className="text-xs font-bold uppercase tracking-wide">{isRestaurantOffer ? selectedRestaurant?.restaurant_name || 'Restaurant Offer' : formData.offer_tag || 'Offer Tag'}</p>
-                  <h3 className="mt-3 text-2xl font-bold">{formData.offer_title || 'Offer Title'}</h3>
-                  <p className="mt-2 text-sm opacity-90">{formData.offer_description || 'Offer description appears here'}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">
+                    {isRestaurantOffer
+                      ? selectedRestaurants.length > 1
+                        ? `${selectedRestaurants.length} Restaurants Selected`
+                        : selectedRestaurant?.restaurant_name || selectedRestaurants[0]?.restaurant_name || 'Restaurant Name'
+                      : formData.offer_tag || 'OFFER TAG'}
+                  </p>
+                  <h3 className="mt-2 text-xl font-bold leading-tight">
+                    {formData.offer_title || 'Your offer title here'}
+                  </h3>
+                  <p className="mt-2 text-xs leading-relaxed opacity-80">
+                    {formData.offer_description || 'Short description appears here...'}
+                  </p>
                   {!isRestaurantOffer && formData.coupon_code && (
-                    <p className="mt-4 rounded-lg bg-white/20 px-3 py-2 text-sm font-semibold">Coupon: {formData.coupon_code}</p>
+                    <div className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold">
+                      CODE: {formData.coupon_code}
+                    </div>
                   )}
                   {isRestaurantOffer && formData.cta_label && (
-                    <p className="mt-4 inline-flex rounded-lg bg-white px-3 py-2 text-sm font-semibold text-gray-900">{formData.cta_label}</p>
+                    <div className="mt-4 inline-flex rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-gray-900">
+                      {formData.cta_label} →
+                    </div>
                   )}
                 </div>
 
-                <div className="flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
+                <div className="mt-auto space-y-2 pt-5">
                   <button
                     type="submit"
                     disabled={saving}
-                    className="inline-flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                     {editingBanner ? 'Save Changes' : 'Create Banner'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+                  >
+                    Cancel
                   </button>
                 </div>
               </div>
