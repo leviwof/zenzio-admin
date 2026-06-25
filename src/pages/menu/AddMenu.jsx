@@ -9,11 +9,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     ArrowLeft, Save, Loader2, Upload, X,
     UtensilsCrossed, IndianRupee, Tag,
-    FileText, ImageIcon, CheckCircle, ChevronDown, Search
+    FileText, ImageIcon, CheckCircle, ChevronDown, Search, Plus, Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getAllRestaurants, createMenuByAdminWithImage, createMenuForRestaurant, uploadMenuImages, getAllCuisineCategories } from '../../services/api';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
+import {
+    MENU_VARIANT_UNITS,
+    createEmptyMenuVariant,
+    prepareMenuVariantsForSubmit,
+} from '../../utils/menuVariants';
 
 const AddMenu = () => {
     const navigate = useNavigate();
@@ -39,6 +44,7 @@ const AddMenu = () => {
     const [restaurantSearch, setRestaurantSearch] = useState('');
     const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
     const [cuisineDropdownOpen, setCuisineDropdownOpen] = useState(false);
+    const [variants, setVariants] = useState([]);
 
     const [formData, setFormData] = useState({
         restaurant_uid: lockedRestaurantUid || '',
@@ -170,6 +176,20 @@ const AddMenu = () => {
         setImageFile(null);
     };
 
+    const addVariant = () => {
+        setVariants(prev => [...prev, createEmptyMenuVariant()]);
+    };
+
+    const updateVariant = (index, field, value) => {
+        setVariants(prev => prev.map((variant, currentIndex) => (
+            currentIndex === index ? { ...variant, [field]: value } : variant
+        )));
+    };
+
+    const removeVariant = (index) => {
+        setVariants(prev => prev.filter((_, currentIndex) => currentIndex !== index));
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -178,7 +198,17 @@ const AddMenu = () => {
             return;
         }
 
-        if (!formData.menu_name || !formData.price) {
+        let variantPayload = [];
+        try {
+            variantPayload = prepareMenuVariantsForSubmit(variants);
+        } catch (error) {
+            toast.error(error.message);
+            return;
+        }
+
+        const fallbackPrice = variantPayload[0]?.price || '';
+
+        if (!formData.menu_name || (!formData.price && !fallbackPrice)) {
             toast.error('Please fill in the required fields');
             return;
         }
@@ -191,7 +221,7 @@ const AddMenu = () => {
             if (restaurantAdmin) {
                 const response = await createMenuForRestaurant({
                     menu_name: formData.menu_name,
-                    price: parseFloat(formData.price),
+                    price: formData.price ? parseFloat(formData.price) : fallbackPrice,
                     discount: formData.discount ? parseInt(formData.discount) : 0,
                     description: formData.description || '',
                     category: formData.category || '',
@@ -199,6 +229,7 @@ const AddMenu = () => {
                     cuisine_type: formData.cuisine_type || '',
                     isActive: formData.isActive,
                     is_available: true,
+                    variants: variantPayload,
                 });
                 const createdMenu = response.data?.data?.restaurant_menu || response.data?.restaurant_menu || response.data?.data || response.data;
                 createdMenuUid = createdMenu?.menu_uid;
@@ -209,13 +240,14 @@ const AddMenu = () => {
                 const submitData = new FormData();
                 submitData.append('restaurant_uid', formData.restaurant_uid);
                 submitData.append('menu_name', formData.menu_name);
-                submitData.append('price', parseFloat(formData.price));
+                submitData.append('price', formData.price ? parseFloat(formData.price) : fallbackPrice);
                 submitData.append('discount', formData.discount ? parseInt(formData.discount) : 0);
                 submitData.append('description', formData.description || '');
                 submitData.append('category', formData.category || '');
                 submitData.append('food_type', formData.food_type || 'Veg');
                 submitData.append('cuisine_type', formData.cuisine_type || '');
                 submitData.append('isActive', formData.isActive ? '1' : '0');
+                submitData.append('variants', JSON.stringify(variantPayload));
 
                 if (imageFile) {
                     submitData.append('files', imageFile);
@@ -605,6 +637,90 @@ const AddMenu = () => {
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    { }
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center">
+                                    <Tag className="w-5 h-5 text-cyan-600" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-semibold text-gray-900">Variants</h2>
+                                    <p className="text-sm text-gray-500">Add quantity, unit, and price options</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={addVariant}
+                                disabled={!hasRestaurantSelected}
+                                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-xl text-sm font-medium hover:bg-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Plus size={16} />
+                                Add Variant
+                            </button>
+                        </div>
+
+                        {variants.length === 0 ? (
+                            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-5 text-sm text-gray-500">
+                                No variants added. The menu will use the base price until variants are configured.
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {variants.map((variant, index) => (
+                                    <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end rounded-xl border border-gray-200 p-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+                                            <input
+                                                type="number"
+                                                value={variant.quantity}
+                                                onChange={(e) => updateVariant(index, 'quantity', e.target.value)}
+                                                min="0"
+                                                step="0.001"
+                                                placeholder="250"
+                                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Unit</label>
+                                            <select
+                                                value={variant.unit}
+                                                onChange={(e) => updateVariant(index, 'unit', e.target.value)}
+                                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                            >
+                                                {MENU_VARIANT_UNITS.map(unit => (
+                                                    <option key={unit} value={unit}>{unit}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Price (Rs.)</label>
+                                            <div className="relative">
+                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">Rs.</span>
+                                                <input
+                                                    type="number"
+                                                    value={variant.price}
+                                                    onChange={(e) => updateVariant(index, 'price', e.target.value)}
+                                                    min="0"
+                                                    step="0.01"
+                                                    placeholder="100"
+                                                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                                />
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeVariant(index)}
+                                            className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                                            aria-label="Delete variant"
+                                        >
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     { }

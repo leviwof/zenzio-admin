@@ -368,6 +368,40 @@ const MenuDetails = () => {
         </div>
 
         {}
+        {Array.isArray(menu.variants) && menu.variants.length > 0 && (
+          <div className="mb-8 pb-8 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <Tag size={20} className="text-red-600" />
+              Variants
+            </h3>
+            <div className="overflow-hidden rounded-lg border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Quantity</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Unit</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {menu.variants.map((variant) => (
+                    <tr key={variant.id}>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                        {variant.quantity ?? variant.quantity_value}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{variant.unit}</td>
+                      <td className="px-4 py-3 text-sm font-semibold text-green-700">
+                        Rs. {variant.price}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {}
         {menu.images && menu.images.length > 0 && (
           <div className="mb-8 pb-8 border-b border-gray-200">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
