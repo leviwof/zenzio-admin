@@ -57,6 +57,15 @@ const planDurationDays = {
 };
 const deliveryStatuses = ['PENDING', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'MISSED', 'SKIPPED', 'CANCELLED'];
 const workingDays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+const mealSlotAvailability = (slot) => {
+  const selected = String(slot || '').toLowerCase();
+  return {
+    breakfast: selected.includes('breakfast'),
+    lunch: selected.includes('lunch'),
+    snacks: selected.includes('snack'),
+    dinner: selected.includes('dinner'),
+  };
+};
 
 const unwrapItems = (response) => response?.data?.items || response?.data?.data?.items || [];
 const date = (value) => value ? new Date(value).toLocaleDateString('en-IN') : '—';
@@ -1083,10 +1092,11 @@ function Row({ section, item, onEdit, selected, onSelectPlan, onDelivery, onCanc
       <td className="px-4 py-3">
         <div className="flex flex-wrap gap-1">
           {(() => {
-            const slots = Object.entries(item.meal_availability || {})
-              .filter(([, active]) => active)
-              .map(([slot]) => slot.toUpperCase());
-            if (!slots.length && item.home_food_meal_slot) slots.push(item.home_food_meal_slot.toUpperCase());
+            const slots = item.home_food_meal_slot
+              ? [String(item.home_food_meal_slot).toUpperCase()]
+              : Object.entries(item.meal_availability || {})
+                .filter(([, active]) => active)
+                .map(([slot]) => slot.toUpperCase());
             return slots.length
               ? slots.map((slot) => <Status key={slot} value={slot} />)
               : <Status value="UNASSIGNED" />;
@@ -2007,6 +2017,7 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
     payload.append('is_home_food_item', 'true');
     payload.append('home_food_week_days', JSON.stringify(form.home_food_week_days));
     payload.append('home_food_meal_slot', form.home_food_meal_slot);
+    payload.append('meal_availability', JSON.stringify(mealSlotAvailability(form.home_food_meal_slot)));
     payload.append('home_food_serving_start', form.home_food_serving_start);
     payload.append('home_food_serving_end', form.home_food_serving_end);
     if (imageFile) payload.append('files', imageFile);
