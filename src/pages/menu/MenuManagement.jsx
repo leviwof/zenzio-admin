@@ -1052,7 +1052,7 @@ const MenuManagement = () => {
                 { label: 'All Categories', value: 'all' },
                 ...categories.map(c => ({ label: c, value: c })),
               ]}
-              onChange={(v) => { setCategoryFilter(v); setCurrentPage(1); }}
+              onChange={setCategoryFilter}
               onClear={() => setCategoryFilter('all')}
             />
 
@@ -1064,7 +1064,7 @@ const MenuManagement = () => {
                 { label: 'All Cuisines', value: 'all' },
                 ...cuisines.map(c => ({ label: c, value: c })),
               ]}
-              onChange={(v) => { setCuisineFilter(v); setCurrentPage(1); }}
+              onChange={setCuisineFilter}
               onClear={() => setCuisineFilter('all')}
             />
 
@@ -1077,7 +1077,7 @@ const MenuManagement = () => {
                 { label: 'Veg', value: 'Veg' },
                 { label: 'Non-Veg', value: 'Non-Veg' },
               ]}
-              onChange={(v) => { setFoodTypeFilter(v); setCurrentPage(1); }}
+              onChange={setFoodTypeFilter}
               onClear={() => setFoodTypeFilter('all')}
             />
 
@@ -1090,7 +1090,7 @@ const MenuManagement = () => {
                 { label: 'Active', value: 'active' },
                 { label: 'Inactive', value: 'inactive' },
               ]}
-              onChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}
+              onChange={setStatusFilter}
               onClear={() => setStatusFilter('all')}
             />
 
@@ -1103,7 +1103,7 @@ const MenuManagement = () => {
                 { label: 'Available', value: 'available' },
                 { label: 'Unavailable', value: 'unavailable' },
               ]}
-              onChange={(v) => { setAvailFilter(v); setCurrentPage(1); }}
+              onChange={setAvailFilter}
               onClear={() => setAvailFilter('all')}
             />
 
@@ -1118,7 +1118,7 @@ const MenuManagement = () => {
                 { label: '2+ Stars', value: '2' },
                 { label: '1+ Stars', value: '1' },
               ]}
-              onChange={(v) => { setRatingFilter(v); setCurrentPage(1); }}
+              onChange={setRatingFilter}
               onClear={() => setRatingFilter('all')}
             />
 
@@ -1130,7 +1130,7 @@ const MenuManagement = () => {
                 { label: 'All', value: 'all' },
                 { label: 'Bestsellers Only', value: 'true' },
               ]}
-              onChange={(v) => { setBestsellerFilter(v); setCurrentPage(1); }}
+              onChange={setBestsellerFilter}
               onClear={() => setBestsellerFilter('all')}
             />
 
@@ -1145,7 +1145,7 @@ const MenuManagement = () => {
                 { label: 'Snacks', value: 'snacks' },
                 { label: 'Dinner', value: 'dinner' },
               ]}
-              onChange={(v) => { setMealTypeFilter(v); setCurrentPage(1); }}
+              onChange={setMealTypeFilter}
               onClear={() => setMealTypeFilter('all')}
             />
 
@@ -1154,7 +1154,7 @@ const MenuManagement = () => {
                 type="number"
                 placeholder="Min ₹"
                 value={priceMinFilter}
-                onChange={(e) => { setPriceMinFilter(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => setPriceMinFilter(e.target.value)}
                 className="w-16 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
               />
               <span className="text-xs text-gray-400">-</span>
@@ -1162,7 +1162,7 @@ const MenuManagement = () => {
                 type="number"
                 placeholder="Max ₹"
                 value={priceMaxFilter}
-                onChange={(e) => { setPriceMaxFilter(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => setPriceMaxFilter(e.target.value)}
                 className="w-16 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
               />
             </div>
@@ -1171,7 +1171,7 @@ const MenuManagement = () => {
               <input
                 type="date"
                 value={fromDateFilter}
-                onChange={(e) => { setFromDateFilter(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => setFromDateFilter(e.target.value)}
                 className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
                 title="From date"
               />
@@ -1179,7 +1179,7 @@ const MenuManagement = () => {
               <input
                 type="date"
                 value={toDateFilter}
-                onChange={(e) => { setToDateFilter(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => setToDateFilter(e.target.value)}
                 className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
                 title="To date"
               />
@@ -1434,7 +1434,7 @@ const MenuManagement = () => {
                 <span>Rows per page</span>
                 <select
                   value={itemsPerPage}
-                  onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
                   className="border border-gray-200 rounded-lg px-2 py-1 text-xs font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
                 >
                   {[10, 20, 50, 100].map((n) => (
