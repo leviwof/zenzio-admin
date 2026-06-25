@@ -174,12 +174,15 @@ const OfferConfiguration = () => {
   }, [menuOptions]);
 
   const categoryOptions = useMemo(() => {
+    if (formData.restaurantId && formData.restaurantId !== 'all') {
+      return menuCategoryOptions;
+    }
     const names = [
       ...categories.map(getCategoryName),
       ...menuCategoryOptions,
     ].filter(Boolean);
     return Array.from(new Set(names)).sort((a, b) => String(a).localeCompare(String(b)));
-  }, [categories, menuCategoryOptions]);
+  }, [categories, menuCategoryOptions, formData.restaurantId]);
 
   const getFilteredMenus = (category) => {
     if (!category) return menuOptions;
@@ -206,7 +209,7 @@ const OfferConfiguration = () => {
       ...prev,
       [name]: type === "checkbox" ? checked : value,
       ...(name === "offerType" ? { rules: { ...emptyRules } } : {}),
-      ...(name === "restaurantId" ? { rules: { ...prev.rules, buyCategory: "", buyItem: "", freeCategory: "", freeItem: "", triggerCategory: "" } } : {}),
+      ...(name === "restaurantId" ? { categoryId: "", rules: { ...prev.rules, buyCategory: "", buyItem: "", freeCategory: "", freeItem: "", triggerCategory: "" } } : {}),
     }));
     if (name === "offerType" || name === "restaurantId") {
       setBogoItems([{ buyItem: "", freeItem: "" }]);
