@@ -49,6 +49,35 @@ const isRestaurantWorking = (restaurant = {}) =>
 const isRestaurantNotWorking = (restaurant = {}) =>
   !isRestaurantBlocked(restaurant) && !isRestaurantCurrentlyServiceable(restaurant);
 
+const RESTAURANT_TYPE_OPTIONS = [
+  { value: "pure_veg", label: "Pure Veg" },
+  { value: "veg", label: "Veg Restaurant" },
+  { value: "non_veg", label: "Non Veg Restaurant" },
+];
+
+const getRestaurantTypeValue = (restaurant = {}) =>
+  restaurant.restaurant_type || restaurant.profile?.restaurant_type || "";
+
+const getRestaurantTypeLabel = (value) =>
+  RESTAURANT_TYPE_OPTIONS.find((option) => option.value === value)?.label || "Not set";
+
+const RestaurantTypeBadge = ({ type }) => {
+  const value = type || "";
+  const classes = value === "pure_veg"
+    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+    : value === "veg"
+      ? "bg-lime-50 text-lime-700 border-lime-100"
+      : value === "non_veg"
+        ? "bg-orange-50 text-orange-700 border-orange-100"
+        : "bg-gray-50 text-gray-600 border-gray-100";
+
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${classes}`}>
+      {getRestaurantTypeLabel(value)}
+    </span>
+  );
+};
+
 // ─── Helpers ──────────────────────────────────────────
 const formatDate = (d) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-";
@@ -345,6 +374,7 @@ const MobileRestaurantCard = ({ restaurant, details, detailsLoading, selected, o
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <StatusPill restaurant={restaurant} />
+            <RestaurantTypeBadge type={getRestaurantTypeValue(restaurant)} />
             <span className="text-[11px] text-gray-400">{restaurant.city || details?.[restaurant.uid]?.city || "—"}</span>
           </div>
         </div>
@@ -403,6 +433,7 @@ const RestaurantsList = () => {
   const sortBy          = searchParams.get("sort")           || "date";
   const statusFilter    = searchParams.get("status")        || "all";
   const cityFilter      = searchParams.get("city")          || "all";
+  const restaurantTypeFilter = searchParams.get("restaurantType") || "all";
   const ratingFilter    = searchParams.get("rating")        || "all";
   const dateFilter      = searchParams.get("date")          || "all";
   const debouncedSearch = searchParams.get("search")        || "";
@@ -434,6 +465,7 @@ const RestaurantsList = () => {
   const setSortBy       = (v) => setUrlParams({ sort: v === "name" ? null : v, page: null });
   const setStatusFilter = (v) => setUrlParams({ status: v, page: null });
   const setCityFilter   = (v) => setUrlParams({ city: v, page: null });
+  const setRestaurantTypeFilter = (v) => setUrlParams({ restaurantType: v, page: null });
   const setRatingFilter = (v) => setUrlParams({ rating: v, page: null });
   const setDateFilter   = (v) => setUrlParams({ date: v, page: null });
 
@@ -477,6 +509,7 @@ const RestaurantsList = () => {
           createdAt: r.createdAt,
           updatedAt: r.updatedAt || r.updated_at || r.createdAt,
           restaurant_name: r.profile?.restaurant_name || r.restaurant_name || "-",
+          restaurant_type: getRestaurantTypeValue(r),
           verified: r.verified || r.profile?.verified || false,
           city: "-",
           email: "-",
@@ -522,7 +555,7 @@ const RestaurantsList = () => {
           const displayRating = getRestaurantDisplayRating(d);
           setRestaurantDetails((prev) => ({
             ...prev,
-            [restaurant.uid]: { email, phone, city, rating: displayRating, ratingCount, cuisines: d?.cuisines || [] },
+            [restaurant.uid]: { email, phone, city, rating: displayRating, ratingCount, cuisines: d?.cuisines || [], restaurant_type: getRestaurantTypeValue(d) },
           }));
           setRestaurants((prev) => prev.map((item) => (
             item.uid === restaurant.uid
@@ -538,13 +571,14 @@ const RestaurantsList = () => {
                   isAvailable: d.isAvailable,
                   statusLabel: d.statusLabel,
                   availability: d.availability,
+                  restaurant_type: getRestaurantTypeValue(d),
                 }
               : item
           )));
         } catch {
           setRestaurantDetails((prev) => ({
             ...prev,
-            [restaurant.uid]: { email: "-", phone: "-", city: "-", rating: DEFAULT_RATING, ratingCount: 0, cuisines: [] },
+            [restaurant.uid]: { email: "-", phone: "-", city: "-", rating: DEFAULT_RATING, ratingCount: 0, cuisines: [], restaurant_type: getRestaurantTypeValue(restaurant) },
           }));
         } finally {
           setDetailsLoading((prev) => ({ ...prev, [restaurant.uid]: false }));
@@ -580,6 +614,10 @@ const RestaurantsList = () => {
       filtered = filtered.filter((r) => restaurantDetails[r.uid]?.city === cityFilter);
     }
 
+    if (restaurantTypeFilter !== "all") {
+      filtered = filtered.filter((r) => getRestaurantTypeValue(r) === restaurantTypeFilter);
+    }
+
     // Rating filter
     if (ratingFilter !== "all") {
       const minRating = parseInt(ratingFilter);
@@ -604,6 +642,7 @@ const RestaurantsList = () => {
       filtered = filtered.filter(
         (r) =>
           r.restaurant_name?.toLowerCase().includes(q) ||
+          getRestaurantTypeLabel(getRestaurantTypeValue(r)).toLowerCase().includes(q) ||
           restaurantDetails[r.uid]?.city?.toLowerCase().includes(q) ||
           restaurantDetails[r.uid]?.email?.toLowerCase().includes(q)
       );
@@ -631,7 +670,7 @@ const RestaurantsList = () => {
     });
 
     return filtered;
-  }, [restaurants, statusFilter, cityFilter, ratingFilter, dateFilter, debouncedSearch, sortBy, restaurantDetails]);
+  }, [restaurants, statusFilter, cityFilter, restaurantTypeFilter, ratingFilter, dateFilter, debouncedSearch, sortBy, restaurantDetails]);
 
   const filtered = useMemo(() => getFilteredAndSorted(), [getFilteredAndSorted]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
@@ -725,9 +764,10 @@ const RestaurantsList = () => {
   const handleExport = () => {
     if (!filtered.length) { toast.error("No data to export"); return; }
     const csv = [
-      ["Restaurant Name", "Email", "Phone", "City", "Registration Date", "Rating", "Status"],
+      ["Restaurant Name", "Restaurant Type", "Email", "Phone", "City", "Registration Date", "Rating", "Status"],
       ...filtered.map((r) => [
         r.restaurant_name || "-",
+        getRestaurantTypeLabel(getRestaurantTypeValue(r)),
         restaurantDetails[r.uid]?.email || "-",
         restaurantDetails[r.uid]?.phone || "-",
         restaurantDetails[r.uid]?.city || "-",
@@ -792,7 +832,7 @@ const RestaurantsList = () => {
     if (searchInputRef.current) searchInputRef.current.value = "";
   };
 
-  const hasActiveFilters = statusFilter !== "all" || cityFilter !== "all" || ratingFilter !== "all" || dateFilter !== "all" || debouncedSearch;
+  const hasActiveFilters = statusFilter !== "all" || cityFilter !== "all" || restaurantTypeFilter !== "all" || ratingFilter !== "all" || dateFilter !== "all" || debouncedSearch;
 
   const isNewRestaurant = (r) => r.createdAt && Date.now() - new Date(r.createdAt).getTime() < 7 * 86400000;
   const isRecentlyUpdated = (r) => r.updatedAt && r.updatedAt !== r.createdAt && Date.now() - new Date(r.updatedAt).getTime() < 2 * 86400000;
@@ -897,7 +937,7 @@ const RestaurantsList = () => {
                 { label: "Highest Rated", value: "rating" },
                 { label: "Active First", value: "status" },
               ]}
-              onChange={(v) => { setSortBy(v); setCurrentPage(1); }}
+              onChange={setSortBy}
             />
 
             {/* Export */}
@@ -939,8 +979,20 @@ const RestaurantsList = () => {
                 { label: "Inactive", value: "inactive" },
                 { label: "Pending", value: "pending" },
               ]}
-              onChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}
+              onChange={setStatusFilter}
               onClear={() => setStatusFilter("all")}
+            />
+
+            <FilterDropdown
+              label="Restaurant Type"
+              icon={UtensilsCrossed}
+              value={restaurantTypeFilter}
+              options={[
+                { label: "All Types", value: "all" },
+                ...RESTAURANT_TYPE_OPTIONS,
+              ]}
+              onChange={setRestaurantTypeFilter}
+              onClear={() => setRestaurantTypeFilter("all")}
             />
 
             <FilterDropdown
@@ -948,7 +1000,7 @@ const RestaurantsList = () => {
               icon={MapPin}
               value={cityFilter}
               options={[{ label: "All Cities", value: "all" }, ...cities.map((c) => ({ label: c, value: c }))]}
-              onChange={(v) => { setCityFilter(v); setCurrentPage(1); }}
+              onChange={setCityFilter}
               onClear={() => setCityFilter("all")}
             />
 
@@ -963,7 +1015,7 @@ const RestaurantsList = () => {
                 { label: "2+ Stars", value: "2" },
                 { label: "1+ Stars", value: "1" },
               ]}
-              onChange={(v) => { setRatingFilter(v); setCurrentPage(1); }}
+              onChange={setRatingFilter}
               onClear={() => setRatingFilter("all")}
             />
 
@@ -977,7 +1029,7 @@ const RestaurantsList = () => {
                 { label: "This Month", value: "month" },
                 { label: "This Year", value: "year" },
               ]}
-              onChange={(v) => { setDateFilter(v); setCurrentPage(1); }}
+              onChange={setDateFilter}
               onClear={() => setDateFilter("all")}
             />
 
@@ -1057,6 +1109,7 @@ const RestaurantsList = () => {
                       </th>
                     )}
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Restaurant</th>
+                    <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">City</th>
                     <th className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Rating</th>
@@ -1125,6 +1178,10 @@ const RestaurantsList = () => {
                               )}
                             </div>
                           </div>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <RestaurantTypeBadge type={getRestaurantTypeValue(restaurant)} />
                         </td>
 
                         {/* Contact */}
