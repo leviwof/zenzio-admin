@@ -1085,7 +1085,25 @@ function Row({ section, item, onEdit, selected, onSelectPlan, onDelivery, onCanc
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><ChefHat size={18} /></div>
         )}
       </td>
-      <td className="px-4 py-3 text-sm font-semibold text-slate-800">{item.menu_name}</td>
+      <td className="px-4 py-3">
+        <p className="text-sm font-semibold text-slate-800">{item.menu_name}</p>
+        {Array.isArray(item.price_breakdown) && item.price_breakdown.length > 0 ? (
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            {item.price_breakdown.map((pi, i) => (
+              <span key={i} className="flex items-center gap-1">
+                {i > 0 && <span className="font-bold text-slate-300">+</span>}
+                <span className="rounded-md bg-slate-50 border border-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                  {pi.name} <span className="font-semibold text-indigo-600">₹{Number(pi.price).toLocaleString('en-IN')}</span>
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          item.price != null && Number(item.price) > 0 && (
+            <span className="text-xs font-semibold text-indigo-600">₹{Number(item.price).toLocaleString('en-IN')}</span>
+          )
+        )}
+      </td>
       <td className="px-4 py-3 text-sm text-slate-600">{item.restaurant_name}</td>
       <td className="max-w-64 px-4 py-3 text-xs text-slate-500"><p className="line-clamp-2">{item.description || '—'}</p></td>
       <td className="px-4 py-3 text-xs text-slate-500">{(item.home_food_week_days || []).map((day) => day.slice(0, 3)).join(', ') || 'All days'}</td>
@@ -1968,6 +1986,12 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
   const [imageFile, setImageFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
+  const existingBreakdown = Array.isArray(item?.price_breakdown) && item.price_breakdown.length > 0
+    ? item.price_breakdown
+    : (item?.price != null && Number(item.price) > 0
+        ? [{ name: item.menu_name || 'Item', price: Number(item.price) }]
+        : [{ name: '', price: '' }]);
+  const [priceItems, setPriceItems] = useState(existingBreakdown);
   const [form, setForm] = useState({
     restaurant_uid: item?.home_food_provider_uid || item?.restaurant_uid || initialProviderUid || '',
     menu_name: item?.menu_name || '',
@@ -1979,11 +2003,18 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
     isActive: item?.isActive ?? true,
   });
 
+  const addPriceItem = () => setPriceItems((prev) => [...prev, { name: '', price: '' }]);
+  const removePriceItem = (idx) => setPriceItems((prev) => prev.filter((_, i) => i !== idx));
+  const updatePriceItem = (idx, field, value) =>
+    setPriceItems((prev) => prev.map((pi, i) => i === idx ? { ...pi, [field]: value } : pi));
+  const totalPrice = priceItems.reduce((sum, pi) => sum + (Number(pi.price) || 0), 0);
+
   useEffect(() => {
     getHomeFoodProviders({ limit: 100 })
       .then((response) => setProviders(unwrapItems(response)))
       .catch(() => setProviders([]));
   }, []);
+
 
   const filteredProviders = providers.filter((provider) => {
     const query = providerSearch.trim().toLowerCase();
@@ -2008,11 +2039,15 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
       return;
     }
 
+    const validPriceItems = priceItems.filter((pi) => pi.name?.trim());
+    const computedTotal = validPriceItems.reduce((sum, pi) => sum + (Number(pi.price) || 0), 0);
+
     const payload = new FormData();
     payload.append('restaurant_uid', form.restaurant_uid);
     payload.append('menu_name', form.menu_name.trim());
     payload.append('description', form.description.trim());
-    payload.append('price', '0');
+    payload.append('price', String(computedTotal));
+    payload.append('price_breakdown', JSON.stringify(validPriceItems.map((pi) => ({ name: pi.name.trim(), price: Number(pi.price) || 0 }))));
     payload.append('isActive', String(form.isActive));
     payload.append('is_home_food_item', 'true');
     payload.append('home_food_week_days', JSON.stringify(form.home_food_week_days));
@@ -2071,6 +2106,47 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
 
         <Field label="Dish Title"><input value={form.menu_name} onChange={(e) => setForm({ ...form, menu_name: e.target.value })} className={inputClass} required /></Field>
         <Field label="Meal Slot"><select value={form.home_food_meal_slot} onChange={(e) => setForm({ ...form, home_food_meal_slot: e.target.value })} className={inputClass}>{mealTypes.map((meal) => <option key={meal}>{meal}</option>)}</select></Field>
+        <div className="md:col-span-2">
+          <Field label="Price Breakdown">
+            <div className="space-y-2">
+              {priceItems.map((pi, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  {idx > 0 && (
+                    <span className="shrink-0 text-sm font-bold text-slate-400">+</span>
+                  )}
+                  <input
+                    type="text"
+                    value={pi.name}
+                    onChange={(e) => updatePriceItem(idx, 'name', e.target.value)}
+                    placeholder="Dish name (e.g. Chapati)"
+                    className={`${inputClass} flex-1`}
+                  />
+                  <div className="relative w-28 shrink-0">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pi.price}
+                      onChange={(e) => updatePriceItem(idx, 'price', e.target.value)}
+                      placeholder="0"
+                      className={`${inputClass} pl-7`}
+                    />
+                  </div>
+                  {priceItems.length > 1 && (
+                    <button type="button" onClick={() => removePriceItem(idx)} className="shrink-0 rounded-lg p-1.5 text-red-400 hover:bg-red-50">
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-1">
+                <button type="button" onClick={addPriceItem} className="text-xs font-medium text-indigo-600 hover:underline">+ Add item</button>
+                <span className="text-sm font-bold text-slate-700">Total: ₹{totalPrice.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          </Field>
+        </div>
         <div className="md:col-span-2"><Field label="Description"><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows="3" className={inputClass} /></Field></div>
         <Field label="Serving Start"><input type="time" value={form.home_food_serving_start} onChange={(e) => setForm({ ...form, home_food_serving_start: e.target.value })} className={inputClass} /></Field>
         <Field label="Serving End"><input type="time" value={form.home_food_serving_end} onChange={(e) => setForm({ ...form, home_food_serving_end: e.target.value })} className={inputClass} /></Field>
