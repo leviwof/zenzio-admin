@@ -42,6 +42,34 @@ const MEALS = [
   { id: 'dinner', label: 'Dinner', icon: Moon, color: 'violet', time: { start: '19:00', end: '23:00' } },
 ]
 
+const RESTAURANT_TYPE_OPTIONS = [
+  { value: 'pure_veg', label: 'Pure Veg' },
+  { value: 'veg', label: 'Veg Restaurant' },
+  { value: 'non_veg', label: 'Non Veg Restaurant' },
+]
+
+const getRestaurantTypeValue = (profile = {}) => profile?.restaurant_type || ''
+
+const getRestaurantTypeLabel = (value) =>
+  RESTAURANT_TYPE_OPTIONS.find(option => option.value === value)?.label || 'Not set'
+
+const RestaurantTypeBadge = ({ type }) => {
+  const value = type || ''
+  const classes = value === 'pure_veg'
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+    : value === 'veg'
+      ? 'bg-lime-50 text-lime-700 border-lime-100'
+      : value === 'non_veg'
+        ? 'bg-orange-50 text-orange-700 border-orange-100'
+        : 'bg-gray-50 text-gray-600 border-gray-100'
+
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border ${classes}`}>
+      {getRestaurantTypeLabel(value)}
+    </span>
+  )
+}
+
 const mealColors = {
   amber: { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-600', icon: 'text-amber-500', glow: 'shadow-amber-200/50' },
   orange: { border: 'border-orange-200', bg: 'bg-orange-50', text: 'text-orange-600', icon: 'text-orange-500', glow: 'shadow-orange-200/50' },
@@ -339,6 +367,7 @@ const RestaurantDetails = () => {
   const submitProfileUpdate = async (e) => {
     e.preventDefault()
     if (!profileFormData.restaurant_name || !profileFormData.contact_number) { toast.error('Please fill required fields'); return }
+    if (!profileFormData.restaurant_type) { toast.error('Please select restaurant type'); return }
     try {
       setIsUpdatingProfile(true)
       await updateRestaurantProfileAdmin(uid, profileFormData)
@@ -793,6 +822,7 @@ const RestaurantDetails = () => {
                   if (editingSection === 'profile') { setEditingSection(null); return }
                   setProfileFormData({
                     restaurant_name: profile?.restaurant_name || '',
+                    restaurant_type: getRestaurantTypeValue(profile),
                     contact_person: profile?.contact_person || '',
                     contact_number: profile?.contact_number || '',
                     contact_email: profile?.contact_email || displayEmail,
@@ -820,6 +850,17 @@ const RestaurantDetails = () => {
                         className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-gray-50" />
                     </div>
                     <div>
+                      <label className="text-xs font-medium text-gray-500">Restaurant Type</label>
+                      <select name="restaurant_type" value={profileFormData.restaurant_type || ''} onChange={(e) => setProfileFormData(p => ({ ...p, restaurant_type: e.target.value }))}
+                        disabled={isUpdatingProfile}
+                        className="mt-1 w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-gray-50 bg-white">
+                        <option value="" disabled>Select restaurant type</option>
+                        {RESTAURANT_TYPE_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
                       <label className="text-xs font-medium text-gray-500">Contact Number *</label>
                       <input type="tel" name="contact_number" value={profileFormData.contact_number} onChange={(e) => setProfileFormData(p => ({ ...p, contact_number: e.target.value }))}
                         disabled={isUpdatingProfile} required
@@ -842,6 +883,10 @@ const RestaurantDetails = () => {
                   <div>
                     <p className="text-xs font-medium text-gray-500 mb-0.5">Restaurant Name</p>
                     <p className="text-sm font-medium text-gray-900">{profile?.restaurant_name || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-0.5">Restaurant Type</p>
+                    <RestaurantTypeBadge type={getRestaurantTypeValue(profile)} />
                   </div>
                   <div>
                     <p className="text-xs font-medium text-gray-500 mb-0.5">Email</p>
