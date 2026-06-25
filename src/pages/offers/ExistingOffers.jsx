@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getAdminOffers, deleteAdminOffer, getAllOffers } from '../../services/api';
+import { isRestaurantAdmin } from '../../utils/auth';
 
 const PAGE_SIZE = 10;
 
@@ -105,6 +106,7 @@ const ConfirmDialog = ({ offer, onConfirm, onCancel }) => (
 
 const ExistingOffers = () => {
   const navigate = useNavigate();
+  const isZenzioAdmin = !isRestaurantAdmin();
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
@@ -284,7 +286,7 @@ const ExistingOffers = () => {
                       <th className="px-4 py-3">Discount</th>
                       <th className="px-4 py-3">Validity</th>
                       <th className="px-4 py-3">Status</th>
-                      {activeTab === 'admin' && <th className="px-4 py-3 text-center">Actions</th>}
+                      {(activeTab === 'admin' || (activeTab === 'all' && isZenzioAdmin)) && <th className="px-4 py-3 text-center">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -361,25 +363,31 @@ const ExistingOffers = () => {
                             <Badge label={offer.status} />
                           </td>
 
-                          {/* Actions — admin tab only */}
-                          {activeTab === 'admin' && (
+                          {/* Actions */}
+                          {(activeTab === 'admin' || (activeTab === 'all' && isZenzioAdmin)) && (
                             <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-center gap-1">
                                 <button
-                                  onClick={() => navigate(`/offers/edit/${offer.id}`)}
+                                  onClick={() => navigate(
+                                    activeTab === 'admin'
+                                      ? `/offers/edit/${offer.id}`
+                                      : `/offers/edit/${offer.id}?scope=admin-restaurant`
+                                  )}
                                   title="Edit"
                                   className="rounded-lg p-1.5 text-gray-400 hover:bg-yellow-50 hover:text-yellow-600"
                                 >
                                   <Edit size={16} />
                                 </button>
-                                <button
-                                  onClick={() => setDeleteTarget(offer)}
-                                  title="Delete"
-                                  className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
-                                  disabled={deleting}
-                                >
-                                  <Trash2 size={16} />
-                                </button>
+                                {activeTab === 'admin' && (
+                                  <button
+                                    onClick={() => setDeleteTarget(offer)}
+                                    title="Delete"
+                                    className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                                    disabled={deleting}
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           )}

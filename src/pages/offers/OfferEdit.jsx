@@ -7,7 +7,7 @@ import {
 import toast from 'react-hot-toast';
 import {
   updateAdminOffer, getAdminOfferById, getAllRestaurants, getMenuCategories,
-  updateRestaurantOffer, getOfferDetails,
+  updateRestaurantOffer, getOfferDetails, updateAnyOfferByAdmin,
 } from '../../services/api';
 
 const SECTION = ({ number, title, children }) => (
@@ -58,7 +58,9 @@ const OfferEdit = () => {
   const navigate = useNavigate();
 
   const [searchParams] = useSearchParams();
-  const isRestaurantScope = searchParams.get('scope') === 'restaurant';
+  const scope = searchParams.get('scope');
+  const isRestaurantScope = scope === 'restaurant';
+  const isAdminRestaurantScope = scope === 'admin-restaurant';
 
   const [restaurants, setRestaurants] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -75,7 +77,7 @@ const OfferEdit = () => {
     try {
       setFetching(true);
       setFetchError(null);
-      const offerFetch = isRestaurantScope
+      const offerFetch = (isRestaurantScope || isAdminRestaurantScope)
         ? getOfferDetails(id)
         : getAdminOfferById(id);
       const [restRes, catRes, offerRes] = await Promise.all([
@@ -152,6 +154,8 @@ const OfferEdit = () => {
 
       if (isRestaurantScope) {
         await updateRestaurantOffer(id, data);
+      } else if (isAdminRestaurantScope) {
+        await updateAnyOfferByAdmin(id, data);
       } else {
         await updateAdminOffer(id, data);
       }
@@ -187,7 +191,7 @@ const OfferEdit = () => {
           <h2 className="mb-2 text-xl font-bold text-gray-800">Failed to Load</h2>
           <p className="mb-6 text-sm text-gray-500">{fetchError}</p>
           <div className="flex justify-center gap-3">
-            <button onClick={() => navigate('/offers/existing')} className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <button onClick={() => navigate(-1)} className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
               Go Back
             </button>
             <button onClick={fetchAll} className="rounded-xl bg-red-500 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-600">
@@ -206,14 +210,16 @@ const OfferEdit = () => {
         {/* Header */}
         <div className="mb-6 flex items-center gap-4">
           <button
-            onClick={() => navigate('/offers/existing')}
+            onClick={() => navigate(-1)}
             className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50"
           >
             <ArrowLeft size={16} /> Back
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Edit Offer</h1>
-            <p className="text-sm text-gray-400">ID: {id}</p>
+            <p className="text-sm text-gray-400">
+              {isAdminRestaurantScope ? 'Restaurant Offer (Admin Edit)' : isRestaurantScope ? 'Restaurant Offer' : 'Admin Offer'} · {id}
+            </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -531,7 +537,7 @@ const OfferEdit = () => {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/offers/existing')}
+              onClick={() => navigate(-1)}
               className="w-full rounded-xl border border-gray-200 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50"
             >
               Cancel

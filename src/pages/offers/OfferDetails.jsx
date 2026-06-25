@@ -444,14 +444,16 @@ const OfferDetails = () => {
           <ArrowLeft size={18} />
           Back to Offers
         </button>
-        {restaurantAdmin && (
-          <button
-            onClick={() => navigate(`/offers/edit/${id}?scope=restaurant`)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-600"
-          >
-            Edit Offer
-          </button>
-        )}
+        <button
+          onClick={() => navigate(
+            restaurantAdmin
+              ? `/offers/edit/${id}?scope=restaurant`
+              : `/offers/edit/${id}?scope=admin-restaurant`
+          )}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-600"
+        >
+          Edit Offer
+        </button>
       </div>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">

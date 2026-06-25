@@ -500,6 +500,10 @@ export const updateAdminOffer = (id, formData) =>
   });
 export const deleteAdminOffer = (id) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/offers/admin-created/${id}`);
+export const updateAnyOfferByAdmin = (id, formData) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.put(`/offers/admin-edit-restaurant/${id}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
 
 
 
