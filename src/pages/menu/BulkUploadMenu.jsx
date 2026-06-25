@@ -61,14 +61,14 @@ const BulkUploadMenu = () => {
             setDownloading(true);
             const response = await downloadMenuTemplate();
             
-            // Create a blob from the response
-            const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            // Template is CSV — save with correct extension so XLSX parser isn't used on upload
+            const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
             const url = window.URL.createObjectURL(blob);
-            
+
             // Create temporary link to trigger download
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', 'menu_upload_template.xlsx');
+            link.setAttribute('download', 'menu_upload_template.csv');
             document.body.appendChild(link);
             link.click();
             
@@ -335,7 +335,7 @@ const BulkUploadMenu = () => {
                             <h4 className="text-sm font-semibold text-blue-800 mb-2">Important Instructions:</h4>
                             <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
                                 <li><strong>Menu Name</strong> and <strong>Price</strong> are strictly required.</li>
-                                <li>Do not modify the column headers from the template.</li>
+                                <li>Column headers are flexible — "name", "item_name", "dish_name" all work for menu name.</li>
                                 <li>Only 1 worksheet (the first tab) will be scanned.</li>
                                 <li>Images cannot be uploaded in bulk — edit items later to add photos.</li>
                             </ul>
