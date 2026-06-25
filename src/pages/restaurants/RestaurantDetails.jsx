@@ -48,7 +48,8 @@ const RESTAURANT_TYPE_OPTIONS = [
   { value: 'non_veg', label: 'Non Veg Restaurant' },
 ]
 
-const getRestaurantTypeValue = (profile = {}) => profile?.restaurant_type || ''
+const getRestaurantTypeValue = (restaurantOrProfile = {}) =>
+  restaurantOrProfile?.restaurant_type || restaurantOrProfile?.profile?.restaurant_type || ''
 
 const getRestaurantTypeLabel = (value) =>
   RESTAURANT_TYPE_OPTIONS.find(option => option.value === value)?.label || 'Not set'
@@ -822,7 +823,7 @@ const RestaurantDetails = () => {
                   if (editingSection === 'profile') { setEditingSection(null); return }
                   setProfileFormData({
                     restaurant_name: profile?.restaurant_name || '',
-                    restaurant_type: getRestaurantTypeValue(profile),
+                    restaurant_type: getRestaurantTypeValue(restaurant),
                     contact_person: profile?.contact_person || '',
                     contact_number: profile?.contact_number || '',
                     contact_email: profile?.contact_email || displayEmail,
@@ -886,7 +887,7 @@ const RestaurantDetails = () => {
                   </div>
                   <div>
                     <p className="text-xs font-medium text-gray-500 mb-0.5">Restaurant Type</p>
-                    <RestaurantTypeBadge type={getRestaurantTypeValue(profile)} />
+                    <RestaurantTypeBadge type={getRestaurantTypeValue(restaurant)} />
                   </div>
                   <div>
                     <p className="text-xs font-medium text-gray-500 mb-0.5">Email</p>
