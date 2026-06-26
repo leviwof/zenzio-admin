@@ -1986,21 +1986,25 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
   const [imageFile, setImageFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
+
   const existingBreakdown = Array.isArray(item?.price_breakdown) && item.price_breakdown.length > 0
     ? item.price_breakdown
     : (item?.price != null && Number(item.price) > 0
         ? [{ name: item.menu_name || 'Item', price: Number(item.price) }]
         : [{ name: '', price: '' }]);
   const [priceItems, setPriceItems] = useState(existingBreakdown);
+
+  // meal slots — multi select
+  const existingSlots = item?.home_food_meal_slot
+    ? String(item.home_food_meal_slot).split(',').map((s) => s.trim().toUpperCase()).filter(Boolean)
+    : ['LUNCH'];
+  const [selectedMealSlots, setSelectedMealSlots] = useState(new Set(existingSlots));
+
   const [form, setForm] = useState({
     restaurant_uid: item?.home_food_provider_uid || item?.restaurant_uid || initialProviderUid || '',
     menu_name: item?.menu_name || '',
     description: item?.description || '',
     home_food_week_days: item?.home_food_week_days || workingDays.slice(0, 6),
-    home_food_meal_slot: item?.home_food_meal_slot || 'LUNCH',
-    home_food_serving_start: item?.home_food_serving_start?.slice(0, 5) || '',
-    home_food_serving_end: item?.home_food_serving_end?.slice(0, 5) || '',
-    isActive: item?.isActive ?? true,
   });
 
   const addPriceItem = () => setPriceItems((prev) => [...prev, { name: '', price: '' }]);
@@ -2009,75 +2013,92 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
     setPriceItems((prev) => prev.map((pi, i) => i === idx ? { ...pi, [field]: value } : pi));
   const totalPrice = priceItems.reduce((sum, pi) => sum + (Number(pi.price) || 0), 0);
 
+  const toggleMealSlot = (slot) => {
+    setSelectedMealSlots((prev) => {
+      const next = new Set(prev);
+      next.has(slot) ? next.delete(slot) : next.add(slot);
+      return next;
+    });
+  };
+
+  // Fetch providers list
   useEffect(() => {
     getHomeFoodProviders({ limit: 100 })
       .then((response) => setProviders(unwrapItems(response)))
       .catch(() => setProviders([]));
   }, []);
 
-
   const filteredProviders = providers.filter((provider) => {
     const query = providerSearch.trim().toLowerCase();
     if (!query) return true;
-    return `${provider.restaurant_name || ''} ${provider.provider_uid || ''}`
-      .toLowerCase()
-      .includes(query);
+    return `${provider.restaurant_name || ''} ${provider.provider_uid || ''}`.toLowerCase().includes(query);
   });
 
-  const submit = async (event) => {
-    event.preventDefault();
-    if (!form.restaurant_uid || !form.menu_name.trim()) {
-      toast.error('Provider and dish title are required');
-      return;
-    }
-    if (
-      form.home_food_serving_start
-      && form.home_food_serving_end
-      && form.home_food_serving_start >= form.home_food_serving_end
-    ) {
-      toast.error('Serving end time must be later than start time');
-      return;
-    }
-
+  const buildPayload = () => {
     const validPriceItems = priceItems.filter((pi) => pi.name?.trim());
     const computedTotal = validPriceItems.reduce((sum, pi) => sum + (Number(pi.price) || 0), 0);
-
+    const mealSlotString = Array.from(selectedMealSlots).join(',');
+    const mealAvailability = {
+      breakfast: selectedMealSlots.has('BREAKFAST'),
+      lunch: selectedMealSlots.has('LUNCH'),
+      snacks: selectedMealSlots.has('SNACKS'),
+      dinner: selectedMealSlots.has('DINNER'),
+    };
     const payload = new FormData();
     payload.append('restaurant_uid', form.restaurant_uid);
     payload.append('menu_name', form.menu_name.trim());
     payload.append('description', form.description.trim());
     payload.append('price', String(computedTotal));
     payload.append('price_breakdown', JSON.stringify(validPriceItems.map((pi) => ({ name: pi.name.trim(), price: Number(pi.price) || 0 }))));
-    payload.append('isActive', String(form.isActive));
+    payload.append('isActive', 'true');
     payload.append('is_home_food_item', 'true');
     payload.append('home_food_week_days', JSON.stringify(form.home_food_week_days));
-    payload.append('home_food_meal_slot', form.home_food_meal_slot);
-    payload.append('meal_availability', JSON.stringify(mealSlotAvailability(form.home_food_meal_slot)));
-    payload.append('home_food_serving_start', form.home_food_serving_start);
-    payload.append('home_food_serving_end', form.home_food_serving_end);
+    payload.append('home_food_meal_slot', mealSlotString);
+    payload.append('meal_availability', JSON.stringify(mealAvailability));
     if (imageFile) payload.append('files', imageFile);
+    return payload;
+  };
 
+  const validate = () => {
+    if (!form.restaurant_uid || !form.menu_name.trim()) { toast.error('Provider and dish title are required'); return false; }
+    if (selectedMealSlots.size === 0) { toast.error('Please select at least one meal slot'); return false; }
+    return true;
+  };
+
+  const resetCombo = () => {
+    setPriceItems([{ name: '', price: '' }]);
+    setForm((prev) => ({ ...prev, menu_name: '', description: '' }));
+    setImageFile(null);
+  };
+
+  const submit = async (event, addAnother = false) => {
+    event.preventDefault();
+    if (!validate()) return;
     setSaving(true);
     try {
-      if (item?.menu_uid) await editMenuByAdminWithImage(item.menu_uid, payload);
-      else await createMenuByAdminWithImage(payload);
+      if (item?.menu_uid) await editMenuByAdminWithImage(item.menu_uid, buildPayload());
+      else await createMenuByAdminWithImage(buildPayload());
       toast.success(item ? 'Kitchen dish updated' : 'Kitchen dish created');
-      onSaved();
+      if (addAnother) {
+        resetCombo();
+        setSaving(false);
+      } else {
+        onSaved();
+      }
     } catch (error) {
       const message = error.response?.data?.message;
       toast.error(Array.isArray(message) ? message.join(', ') : message || 'Could not save dish');
-    } finally {
       setSaving(false);
     }
   };
 
-  const imagePreview = imageFile
-    ? URL.createObjectURL(imageFile)
-    : item?.images?.[0] || '';
+  const imagePreview = imageFile ? URL.createObjectURL(imageFile) : item?.images?.[0] || '';
 
   return (
     <Modal title={item ? 'Edit Kitchen Dish' : 'Create Kitchen Dish'} onClose={onClose}>
-      <form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
+      <form onSubmit={(e) => submit(e, false)} className="grid gap-4 md:grid-cols-2">
+
+        {/* Provider */}
         <div className="md:col-span-2">
           <Field label="Home Foods Provider">
             <div className="space-y-2">
@@ -2087,33 +2108,79 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
                   <input value={providerSearch} onChange={(e) => setProviderSearch(e.target.value)} className={`${inputClass} pl-9`} placeholder="Search provider name" />
                 </div>
               )}
-              <select disabled={Boolean(item)} value={form.restaurant_uid} onChange={(e) => setForm({ ...form, restaurant_uid: e.target.value })} className={inputClass} required>
+              <select
+                disabled={Boolean(item)}
+                value={form.restaurant_uid}
+                onChange={(e) => setForm({ ...form, restaurant_uid: e.target.value })}
+                className={inputClass}
+                required
+              >
                 <option value="">Select provider</option>
-                {filteredProviders.map((provider) => <option key={provider.provider_uid} value={provider.provider_uid}>{provider.restaurant_name}</option>)}
+                {filteredProviders.map((provider) => (
+                  <option key={provider.provider_uid} value={provider.provider_uid}>{provider.restaurant_name}</option>
+                ))}
               </select>
             </div>
           </Field>
         </div>
 
+        {/* Image */}
         <div className="md:col-span-2">
           <Field label="Dish Image">
             <div className="flex items-center gap-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
-              {imagePreview ? <img src={imagePreview} alt="Dish preview" className="h-20 w-20 rounded-xl object-cover" /> : <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-white text-slate-300"><ChefHat size={25} /></div>}
+              {imagePreview
+                ? <img src={imagePreview} alt="Dish preview" className="h-20 w-20 rounded-xl object-cover" />
+                : <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-white text-slate-300"><ChefHat size={25} /></div>}
               <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] || null)} className="text-sm text-slate-500" />
             </div>
           </Field>
         </div>
 
-        <Field label="Dish Title"><input value={form.menu_name} onChange={(e) => setForm({ ...form, menu_name: e.target.value })} className={inputClass} required /></Field>
-        <Field label="Meal Slot"><select value={form.home_food_meal_slot} onChange={(e) => setForm({ ...form, home_food_meal_slot: e.target.value })} className={inputClass}>{mealTypes.map((meal) => <option key={meal}>{meal}</option>)}</select></Field>
+        {/* Dish Title */}
+        <div className="md:col-span-2">
+          <Field label="Dish Title">
+            <input
+              value={form.menu_name}
+              onChange={(e) => setForm({ ...form, menu_name: e.target.value })}
+              placeholder="e.g. Chapati + Chana Combo"
+              className={inputClass}
+              required
+            />
+          </Field>
+        </div>
+
+        {/* Meal Slots — multi select */}
+        <div className="md:col-span-2">
+          <Field label="Meal Slots">
+            <div className="flex flex-wrap gap-2">
+              {mealTypes.map((slot) => {
+                const active = selectedMealSlots.has(slot);
+                return (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => toggleMealSlot(slot)}
+                    className={`rounded-lg border px-4 py-2 text-xs font-semibold transition-colors ${
+                      active
+                        ? 'border-indigo-500 bg-indigo-600 text-white'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'
+                    }`}
+                  >
+                    {slot}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        </div>
+
+        {/* Price Breakdown */}
         <div className="md:col-span-2">
           <Field label="Price Breakdown">
             <div className="space-y-2">
               {priceItems.map((pi, idx) => (
                 <div key={idx} className="flex items-center gap-2">
-                  {idx > 0 && (
-                    <span className="shrink-0 text-sm font-bold text-slate-400">+</span>
-                  )}
+                  {idx > 0 && <span className="shrink-0 text-sm font-bold text-slate-400">+</span>}
                   <input
                     type="text"
                     value={pi.name}
@@ -2147,22 +2214,69 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
             </div>
           </Field>
         </div>
-        <div className="md:col-span-2"><Field label="Description"><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows="3" className={inputClass} /></Field></div>
-        <Field label="Serving Start"><input type="time" value={form.home_food_serving_start} onChange={(e) => setForm({ ...form, home_food_serving_start: e.target.value })} className={inputClass} /></Field>
-        <Field label="Serving End"><input type="time" value={form.home_food_serving_end} onChange={(e) => setForm({ ...form, home_food_serving_end: e.target.value })} className={inputClass} /></Field>
+
+        {/* Description */}
+        <div className="md:col-span-2">
+          <Field label="Description">
+            <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows="3" className={inputClass} />
+          </Field>
+        </div>
+
+        {/* Week Days */}
         <div className="md:col-span-2">
           <Field label="Week Days">
             <div className="flex flex-wrap gap-2">
-              {workingDays.map((day) => <label key={day} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs"><input type="checkbox" checked={form.home_food_week_days.includes(day)} onChange={() => setForm({ ...form, home_food_week_days: form.home_food_week_days.includes(day) ? form.home_food_week_days.filter((value) => value !== day) : [...form.home_food_week_days, day] })} />{day.slice(0, 3)}</label>)}
+              {workingDays.map((day) => (
+                <label key={day} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    checked={form.home_food_week_days.includes(day)}
+                    onChange={() => setForm({
+                      ...form,
+                      home_food_week_days: form.home_food_week_days.includes(day)
+                        ? form.home_food_week_days.filter((v) => v !== day)
+                        : [...form.home_food_week_days, day],
+                    })}
+                  />
+                  {day.slice(0, 3)}
+                </label>
+              ))}
             </div>
           </Field>
         </div>
-        <Field label="Status"><select value={String(form.isActive)} onChange={(e) => setForm({ ...form, isActive: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
+
+        {/* Footer */}
         <div className="md:col-span-2 flex justify-between gap-2 border-t pt-4">
-          {item ? <button type="button" disabled={saving} onClick={() => confirm({ title: 'Delete Dish', message: `Delete dish "${item.menu_name}"? This cannot be undone.`, confirmLabel: 'Delete', onConfirm: async () => { await deleteMenu(item.menu_uid); toast.success('Kitchen dish deleted'); onSaved(); } })} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50">Delete</button> : <span />}
+          {item ? (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => confirm({
+                title: 'Delete Dish',
+                message: `Delete dish "${item.menu_name}"? This cannot be undone.`,
+                confirmLabel: 'Delete',
+                onConfirm: async () => { await deleteMenu(item.menu_uid); toast.success('Kitchen dish deleted'); onSaved(); },
+              })}
+              className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          ) : <span />}
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button>
-            <button disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save Dish'}</button>
+            {!item && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={(e) => submit(e, true)}
+                className="rounded-xl border border-indigo-300 px-4 py-2.5 text-sm font-semibold text-indigo-600 disabled:opacity-50 hover:bg-indigo-50"
+              >
+                {saving ? 'Saving…' : 'Save & Add Another'}
+              </button>
+            )}
+            <button disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save Dish'}
+            </button>
           </div>
         </div>
       </form>

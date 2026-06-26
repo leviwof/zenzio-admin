@@ -415,7 +415,7 @@ const Header = ({ onLogout }) => {
   }, [markSyntheticNotifRead, markSocketNotifRead]);
 
   const handleNotificationClick = useCallback(async (notif) => {
-    if (!notif.isRead) {
+    if (!notif.isRead ) {
       if (notif._source === 'synthetic' || String(notif.id).startsWith('syn_')) {
         markSyntheticNotifRead(notif.id);
         knownSyntheticIds.current.delete(notif.id);
