@@ -2120,12 +2120,8 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
 
   const resetCombo = () => {
     setPriceItems([{ name: '', price: '' }]);
-<<<<<<< Updated upstream
-    setForm((prev) => ({ ...prev, menu_name: '', description: '', food_type: 'Veg' }));
-=======
     setForm((prev) => ({ ...prev, menu_name: '', description: '' }));
     setIsVeg(true);
->>>>>>> Stashed changes
     setImageFile(null);
   };
 
