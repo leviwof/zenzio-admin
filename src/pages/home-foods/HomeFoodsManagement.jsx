@@ -1020,7 +1020,15 @@ function Row({ section, item, onEdit, selected, onSelectPlan, onDelivery, onCanc
           aria-label={`Select ${item.name}`}
         />
       </td>
-      <td className="px-4 py-3 text-sm font-semibold">{item.name}</td><td className="px-4 py-3 text-xs">{item.plan_type}</td>
+      <td className="px-4 py-3">
+        <p className="text-sm font-semibold">{item.name}</p>
+        {item.food_type && item.food_type !== 'BOTH' && (
+          <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.food_type === 'VEG' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+            {item.food_type === 'VEG' ? 'Veg' : 'Non-Veg'}
+          </span>
+        )}
+      </td>
+      <td className="px-4 py-3 text-xs">{item.plan_type}</td>
       <td className="px-4 py-3 text-sm">{item.restaurant_name || item.provider_uid}</td><td className="px-4 py-3 text-sm">{item.duration_days} days</td>
       <td className="px-4 py-3 text-sm font-semibold">{money(item.price)}</td>
       <td className="px-4 py-3">
@@ -1689,6 +1697,7 @@ function PlanForm({ item, onClose, onSaved }) {
     meal_types: item?.meal_types || ['LUNCH'],
     weekly_menu: item?.weekly_menu || {},
     is_active: item?.is_active ?? true,
+    food_type: item?.food_type || 'BOTH',
   });
   useEffect(() => { getHomeFoodProviders({ limit: 100 }).then((response) => setProviders(unwrapItems(response))).catch(() => {}); }, []);
   const selectedProvider = providers.find((provider) => provider.provider_uid === form.provider_uid);
@@ -1739,6 +1748,15 @@ function PlanForm({ item, onClose, onSaved }) {
     <Field label="Food Type"><select value={form.food_type} onChange={(e) => setForm({ ...form, food_type: e.target.value })} className={inputClass}><option value="VEG">Veg</option><option value="NON_VEG">Non-Veg</option><option value="BOTH">Both</option></select></Field>
     <Field label="Status"><select value={String(form.is_active)} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
     <div className="md:col-span-2"><Field label="Meal Types"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs"><input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => toggleMeal(meal)} />{meal}</label>)}</div></Field></div>
+    <div className="md:col-span-2">
+      <Field label="Food Type">
+        <div className="flex gap-2">
+          {[['VEG', 'Veg Only', 'border-green-500 bg-green-600 text-white', 'border-slate-200 bg-white text-slate-600 hover:border-green-300'], ['NON_VEG', 'Non-Veg Only', 'border-red-500 bg-red-600 text-white', 'border-slate-200 bg-white text-slate-600 hover:border-red-300'], ['BOTH', 'Both', 'border-indigo-500 bg-indigo-600 text-white', 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300']].map(([value, label, activeClass, inactiveClass]) => (
+            <button key={value} type="button" onClick={() => setForm({ ...form, food_type: value })} className={`rounded-lg border px-4 py-2 text-xs font-semibold transition-colors ${form.food_type === value ? activeClass : inactiveClass}`}>{label}</button>
+          ))}
+        </div>
+      </Field>
+    </div>
     <div className="md:col-span-2">
       <Field label="Plan-Specific Weekly Menu">
         <div className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
@@ -2029,6 +2047,9 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
     : ['LUNCH'];
   const [selectedMealSlots, setSelectedMealSlots] = useState(new Set(existingSlots));
 
+  const [isVeg, setIsVeg] = useState(
+    item?.food_type ? String(item.food_type).toLowerCase() !== 'non-veg' : true,
+  );
   const [form, setForm] = useState({
     restaurant_uid: item?.home_food_provider_uid || item?.restaurant_uid || initialProviderUid || '',
     menu_name: item?.menu_name || '',
@@ -2083,6 +2104,7 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
     payload.append('price_breakdown', JSON.stringify(validPriceItems.map((pi) => ({ name: pi.name.trim(), price: Number(pi.price) || 0 }))));
     payload.append('isActive', 'true');
     payload.append('is_home_food_item', 'true');
+    payload.append('isVeg', String(isVeg));
     payload.append('home_food_week_days', JSON.stringify(form.home_food_week_days));
     payload.append('home_food_meal_slot', mealSlotString);
     payload.append('meal_availability', JSON.stringify(mealAvailability));
@@ -2098,7 +2120,12 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
 
   const resetCombo = () => {
     setPriceItems([{ name: '', price: '' }]);
+<<<<<<< Updated upstream
     setForm((prev) => ({ ...prev, menu_name: '', description: '', food_type: 'Veg' }));
+=======
+    setForm((prev) => ({ ...prev, menu_name: '', description: '' }));
+    setIsVeg(true);
+>>>>>>> Stashed changes
     setImageFile(null);
   };
 
@@ -2214,6 +2241,28 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
                   </button>
                 );
               })}
+            </div>
+          </Field>
+        </div>
+
+        {/* Veg / Non-Veg */}
+        <div className="md:col-span-2">
+          <Field label="Food Type">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsVeg(true)}
+                className={`rounded-lg border px-4 py-2 text-xs font-semibold transition-colors ${isVeg ? 'border-green-500 bg-green-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-green-300'}`}
+              >
+                Veg
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsVeg(false)}
+                className={`rounded-lg border px-4 py-2 text-xs font-semibold transition-colors ${!isVeg ? 'border-red-500 bg-red-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-red-300'}`}
+              >
+                Non-Veg
+              </button>
             </div>
           </Field>
         </div>
