@@ -122,7 +122,7 @@ const OfferConfiguration = () => {
       try {
         const requests = [
           getMenuCategories().catch(() => ({ data: [] })),
-          getAllMenus({ restaurant: restaurantAdmin ? ownRestaurantUid : undefined, limit: 1000 }).catch(() => ({ data: [] })),
+          getAllMenus({ restaurant: restaurantAdmin ? ownRestaurantUid : undefined, limit: 5000 }).catch(() => ({ data: [] })),
         ];
         if (!restaurantAdmin) requests.unshift(getAllRestaurants({}).catch(() => ({ data: [] })));
         const responses = await Promise.all(requests);
@@ -145,8 +145,8 @@ const OfferConfiguration = () => {
     const fetchMenusForRestaurant = async () => {
       try {
         const params = formData.restaurantId && formData.restaurantId !== "all"
-          ? { restaurant: formData.restaurantId, limit: 1000 }
-          : { limit: 1000 };
+          ? { restaurant: formData.restaurantId, limit: 5000 }
+          : { limit: 5000 };
         const response = await getAllMenus(params);
         setMenus(normalizeArray(response));
       } catch {
@@ -644,6 +644,121 @@ const OfferConfiguration = () => {
     );
   };
 
+  const MenuItemMultiSelect = ({ options, selected, onChange, disabled = false }) => {
+    const [search, setSearch] = useState("");
+    const lowerSearch = search.trim().toLowerCase();
+    const visible = lowerSearch
+      ? options.filter((o) => o.label.toLowerCase().includes(lowerSearch))
+      : options;
+
+    const toggle = (value) => {
+      onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]);
+    };
+
+    const selectAllVisible = () => {
+      const visibleValues = visible.map((o) => o.value);
+      onChange(Array.from(new Set([...selected, ...visibleValues])));
+    };
+
+    const allVisibleSelected = visible.length > 0 && visible.every((o) => selected.includes(o.value));
+
+    if (disabled) {
+      return (
+        <div className="px-4 py-3 border border-gray-200 rounded-lg bg-gray-100 text-gray-400 text-sm">
+          No menu items available
+        </div>
+      );
+    }
+
+    return (
+      <div className="border border-gray-200 rounded-xl overflow-hidden">
+        {/* Search + Select All */}
+        <div className="p-3 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search items (e.g. Biryani, Paneer, Pizza...)"
+            className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 bg-white"
+          />
+          <button
+            type="button"
+            onClick={selectAllVisible}
+            disabled={visible.length === 0 || allVisibleSelected}
+            className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            Select All{lowerSearch ? ` "${search.trim()}"` : ""} ({visible.length})
+          </button>
+        </div>
+
+        {/* Checkbox list */}
+        <ul className="max-h-60 overflow-y-auto divide-y divide-gray-50">
+          {visible.length === 0 ? (
+            <li className="px-4 py-4 text-sm text-gray-400 text-center">
+              No results for &ldquo;{search}&rdquo;
+            </li>
+          ) : (
+            visible.map((opt) => {
+              const isChecked = selected.includes(opt.value);
+              return (
+                <li
+                  key={opt.value}
+                  onClick={() => toggle(opt.value)}
+                  className={`px-4 py-2.5 cursor-pointer flex items-center gap-3 hover:bg-indigo-50 transition-colors ${isChecked ? "bg-indigo-50/60" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggle(opt.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="accent-indigo-600 w-4 h-4 flex-shrink-0 cursor-pointer"
+                  />
+                  <span className={`text-sm flex-1 truncate ${isChecked ? "text-indigo-700 font-medium" : "text-gray-700"}`}>
+                    {opt.label}
+                  </span>
+                  {isChecked && <span className="text-indigo-400 flex-shrink-0 text-xs">✓</span>}
+                </li>
+              );
+            })
+          )}
+        </ul>
+
+        {/* Footer stats */}
+        <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-xs text-gray-500">
+          <span>
+            {visible.length} shown{lowerSearch ? ` for "${search.trim()}"` : ""} &nbsp;·&nbsp; {options.length} total items
+          </span>
+          {selected.length > 0 && (
+            <button type="button" onClick={() => onChange([])} className="text-red-400 hover:text-red-600 font-medium">
+              Clear all ({selected.length})
+            </button>
+          )}
+        </div>
+
+        {/* Selected chips */}
+        {selected.length > 0 && (
+          <div className="p-3 border-t border-gray-200 bg-white flex flex-wrap gap-1.5 max-h-36 overflow-y-auto">
+            {selected.map((value) => {
+              const opt = options.find((o) => o.value === value);
+              return (
+                <span key={value} className="inline-flex items-center gap-1 rounded-md bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                  {opt?.label ?? value}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggle(value); }}
+                    className="text-indigo-400 hover:text-indigo-700 ml-0.5"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const SearchableSelect = ({ options, value, onChange, placeholder = "Select…", emptyLabel, disabled = false }) => {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
@@ -1009,12 +1124,11 @@ const OfferConfiguration = () => {
               )}
 
               {formData.offer_scope === "SELECTED_ITEMS" && (
-                <Field label="Included Menu Items" required hint="Offer applies only to these specific items">
-                  <MultiSelectDropdown
+                <Field label="Included Menu Items" required hint="Search by name or category, click 'Select All' to bulk-add, or uncheck individual items to remove them.">
+                  <MenuItemMultiSelect
                     options={menuSelectOptions}
                     selected={formData.included_menu_ids}
                     onChange={(vals) => setFormData((prev) => ({ ...prev, included_menu_ids: vals }))}
-                    placeholder="Search and select items…"
                     disabled={menuOptions.length === 0}
                   />
                 </Field>
