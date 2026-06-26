@@ -406,17 +406,14 @@ const MenuManagement = () => {
       const meta = response.data?.meta || response.data?.data?.meta;
       if (meta) setPagination(meta);
 
-      const existingUids = new Set(menus.map(m => m.menu_uid));
       const newMenus = hydratedMenus.filter(m => m.menu_uid);
-      if (newMenus.length > 0 && existingUids.size > 0) {
-        const updatedMenuUid = location.state?.updatedMenuUid;
-        if (updatedMenuUid && newMenus.some(m => m.menu_uid === updatedMenuUid)) {
-          const updated = newMenus.find(m => m.menu_uid === updatedMenuUid);
-          const rest = newMenus.filter(m => m.menu_uid !== updatedMenuUid);
-          setMenus([updated, ...rest]);
-        } else {
-          setMenus(newMenus);
-        }
+      const updatedMenuUid = location.state?.updatedMenuUid;
+      if (updatedMenuUid && newMenus.some(m => m.menu_uid === updatedMenuUid)) {
+        const updated = newMenus.find(m => m.menu_uid === updatedMenuUid);
+        const rest = newMenus.filter(m => m.menu_uid !== updatedMenuUid);
+        setMenus([updated, ...rest]);
+        // Clear state so re-fetches don't keep pinning
+        navigate(location.pathname + location.search, { replace: true, state: {} });
       } else {
         setMenus(newMenus);
       }

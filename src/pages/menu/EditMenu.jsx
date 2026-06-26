@@ -9,10 +9,13 @@ import toast from 'react-hot-toast';
 import { getAllRestaurants, editMenuByAdminWithImage, editMenuForRestaurant, uploadMenuImages, getMenuByUid, getMenuCategories, getAllCuisineCategories } from '../../services/api';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 import {
-    MENU_VARIANT_UNITS,
+    UNIT_GROUPS,
+    UNIT_LABELS,
     createEmptyMenuVariant,
     mapMenuVariantsFromApi,
     prepareMenuVariantsForSubmit,
+    isPortionUnit,
+    isCountUnit,
 } from '../../utils/menuVariants';
 
 const EditMenu = () => {
@@ -253,9 +256,15 @@ const EditMenu = () => {
     };
 
     const updateVariant = (index, field, value) => {
-        setVariants(prev => prev.map((variant, currentIndex) => (
-            currentIndex === index ? { ...variant, [field]: value } : variant
-        )));
+        setVariants(prev => prev.map((variant, currentIndex) => {
+            if (currentIndex !== index) return variant;
+            const updated = { ...variant, [field]: value };
+            if (field === 'unit') {
+                if (isPortionUnit(value)) updated.quantity = 1;
+                else if (isPortionUnit(variant.unit)) updated.quantity = '';
+            }
+            return updated;
+        }));
     };
 
     const removeVariant = (index) => {
@@ -662,32 +671,46 @@ const EditMenu = () => {
                             </div>
                         ) : (
                             <div className="space-y-3">
-                                {variants.map((variant, index) => (
-                                    <div key={variant.id || index} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end rounded-xl border border-gray-200 p-4">
+                                {variants.map((variant, index) => {
+                                    const isPortion = isPortionUnit(variant.unit);
+                                    const isCount = isCountUnit(variant.unit);
+                                    return (
+                                    <div key={variant.id || index} className={`grid grid-cols-1 gap-3 items-end rounded-xl border border-gray-200 p-4 ${isPortion ? 'md:grid-cols-[1fr_1fr_auto]' : 'md:grid-cols-[1fr_1fr_1fr_auto]'}`}>
+                                        {/* Unit */}
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
-                                            <input
-                                                type="number"
-                                                value={variant.quantity}
-                                                onChange={(e) => updateVariant(index, 'quantity', e.target.value)}
-                                                min="0"
-                                                step="0.001"
-                                                placeholder="250"
-                                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Unit</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Unit / Size</label>
                                             <select
                                                 value={variant.unit}
                                                 onChange={(e) => updateVariant(index, 'unit', e.target.value)}
                                                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                             >
-                                                {MENU_VARIANT_UNITS.map(unit => (
-                                                    <option key={unit} value={unit}>{unit}</option>
+                                                {UNIT_GROUPS.map(group => (
+                                                    <optgroup key={group.label} label={group.label}>
+                                                        {group.units.map(u => (
+                                                            <option key={u} value={u}>{UNIT_LABELS[u]}</option>
+                                                        ))}
+                                                    </optgroup>
                                                 ))}
                                             </select>
                                         </div>
+                                        {/* Quantity — hidden for portion units */}
+                                        {!isPortion && (
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                    {isCount ? 'Count (pcs)' : 'Quantity'}
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    value={variant.quantity}
+                                                    onChange={(e) => updateVariant(index, 'quantity', e.target.value)}
+                                                    min="0"
+                                                    step={isCount ? '1' : '0.001'}
+                                                    placeholder={isCount ? '6' : '250'}
+                                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                                />
+                                            </div>
+                                        )}
+                                        {/* Price */}
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">Price (Rs.)</label>
                                             <div className="relative">
@@ -712,7 +735,8 @@ const EditMenu = () => {
                                             <Trash2 size={18} />
                                         </button>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
