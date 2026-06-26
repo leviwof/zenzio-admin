@@ -45,6 +45,7 @@ const MEALS = [
 const RESTAURANT_TYPE_OPTIONS = [
   { value: 'pure_veg', label: 'Pure Veg' },
   { value: 'veg', label: 'Veg Restaurant' },
+  { value: 'veg_non_veg', label: 'Veg & Non Veg Restaurant' },
   { value: 'non_veg', label: 'Non Veg Restaurant' },
 ]
 
@@ -60,6 +61,8 @@ const RestaurantTypeBadge = ({ type }) => {
     ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
     : value === 'veg'
       ? 'bg-lime-50 text-lime-700 border-lime-100'
+      : value === 'veg_non_veg'
+        ? 'bg-sky-50 text-sky-700 border-sky-100'
       : value === 'non_veg'
         ? 'bg-orange-50 text-orange-700 border-orange-100'
         : 'bg-gray-50 text-gray-600 border-gray-100'
