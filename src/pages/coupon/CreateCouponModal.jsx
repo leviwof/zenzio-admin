@@ -1,9 +1,141 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getAllMenus } from '../../services/api';
+
+const getMenuName = (menu) => menu?.menu_name || menu?.title || menu?.name || menu?.menu_uid || '';
+const getMenuId = (menu) => menu?.menu_uid || menu?.menuUid || getMenuName(menu);
+const getMenuCategory = (menu) => menu?.category || menu?.category_name || menu?.categoryName || '';
+
+const normalizeMenus = (response) => {
+  const data = response?.data;
+  if (Array.isArray(data?.data?.restaurant_menus)) return data.data.restaurant_menus;
+  if (Array.isArray(data?.data?.restaurant_menu)) return data.data.restaurant_menu;
+  if (Array.isArray(data?.data?.items)) return data.data.items;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+};
+
+const MenuItemPicker = ({ selected, onChange }) => {
+  const [menus, setMenus] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    getAllMenus({ limit: 5000 })
+      .then((res) => setMenus(normalizeMenus(res).filter(Boolean)))
+      .catch(() => setMenus([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const options = menus.map((m) => ({
+    value: getMenuId(m),
+    label: `${getMenuName(m)}${getMenuCategory(m) ? ` (${getMenuCategory(m)})` : ''}${m.price ? ` · ₹${m.price}` : ''}`,
+  }));
+
+  const lowerSearch = search.trim().toLowerCase();
+  const visible = lowerSearch ? options.filter((o) => o.label.toLowerCase().includes(lowerSearch)) : options;
+
+  const toggle = (value) =>
+    onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]);
+
+  const selectAllVisible = () => {
+    const ids = visible.map((o) => o.value);
+    onChange(Array.from(new Set([...selected, ...ids])));
+  };
+
+  const allVisibleSelected = visible.length > 0 && visible.every((o) => selected.includes(o.value));
+
+  if (loading) {
+    return <div className="px-4 py-3 text-sm text-gray-400 border border-gray-200 rounded-lg">Loading menu items...</div>;
+  }
+
+  return (
+    <div className="border border-gray-300 rounded-lg overflow-hidden">
+      {/* Search + Select All */}
+      <div className="p-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search items (e.g. Biryani, Paneer...)"
+          className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-red-400/30 focus:border-red-400 bg-white"
+        />
+        <button
+          type="button"
+          onClick={selectAllVisible}
+          disabled={visible.length === 0 || allVisibleSelected}
+          className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+        >
+          Select All{lowerSearch ? ` "${search.trim()}"` : ''} ({visible.length})
+        </button>
+      </div>
+
+      {/* List */}
+      <ul className="max-h-52 overflow-y-auto divide-y divide-gray-50">
+        {visible.length === 0 ? (
+          <li className="px-4 py-3 text-sm text-gray-400 text-center">No results</li>
+        ) : (
+          visible.map((opt) => {
+            const checked = selected.includes(opt.value);
+            return (
+              <li
+                key={opt.value}
+                onClick={() => toggle(opt.value)}
+                className={`px-4 py-2 cursor-pointer flex items-center gap-3 hover:bg-red-50 transition-colors text-sm ${checked ? 'bg-red-50/60' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(opt.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="accent-red-500 w-4 h-4 flex-shrink-0 cursor-pointer"
+                />
+                <span className={`flex-1 truncate ${checked ? 'text-red-700 font-medium' : 'text-gray-700'}`}>
+                  {opt.label}
+                </span>
+              </li>
+            );
+          })
+        )}
+      </ul>
+
+      {/* Footer */}
+      <div className="px-4 py-1.5 border-t border-gray-200 bg-gray-50 flex items-center justify-between text-xs text-gray-500">
+        <span>
+          {visible.length} shown{lowerSearch ? ` for "${search.trim()}"` : ''} &nbsp;·&nbsp; {options.length} total
+        </span>
+        {selected.length > 0 && (
+          <button type="button" onClick={() => onChange([])} className="text-red-400 hover:text-red-600 font-medium">
+            Clear all ({selected.length})
+          </button>
+        )}
+      </div>
+
+      {/* Selected chips */}
+      {selected.length > 0 && (
+        <div className="p-2 border-t border-gray-200 bg-white flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+          {selected.map((value) => {
+            const opt = options.find((o) => o.value === value);
+            return (
+              <span key={value} className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                {opt?.label ?? value}
+                <button type="button" onClick={() => toggle(value)} className="text-red-400 hover:text-red-700 ml-0.5">
+                  <X size={10} />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const CreateCouponPage = ({ onClose, onSave, initialData }) => {
   const [makeActive, setMakeActive] = useState(false);
+  const [applicableMenuIds, setApplicableMenuIds] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -16,7 +148,7 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
     usageLimitPerUser: '',
     startDate: '',
     endDate: '',
-    targetAudience: 'all'
+    targetAudience: 'all',
   });
 
   useEffect(() => {
@@ -33,24 +165,24 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
         usageLimitPerUser: initialData.usageLimitPerUser || '',
         startDate: initialData.startDate ? new Date(initialData.startDate).toISOString().split('T')[0] : '',
         endDate: initialData.endDate ? new Date(initialData.endDate).toISOString().split('T')[0] : '',
-        targetAudience: initialData.targetAudience || 'all'
+        targetAudience: initialData.targetAudience || 'all',
       });
       setMakeActive(initialData.status === 'Active');
+      setApplicableMenuIds(Array.isArray(initialData.applicable_menu_ids) ? initialData.applicable_menu_ids : []);
     }
   }, [initialData]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleGenerateRandom = () => {
     const randomCode = 'COUP' + Math.random().toString(36).substring(2, 8).toUpperCase();
-    setFormData(prev => ({ ...prev, code: randomCode }));
+    setFormData((prev) => ({ ...prev, code: randomCode }));
   };
 
   const handleSubmit = () => {
-    // Basic validation
     if (!formData.code || !formData.name || !formData.discountValue || !formData.minOrderValue) {
       toast.error('Please fill in all required fields (Name, Code, Discount, Min Order)');
       return;
@@ -69,7 +201,8 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
       startDate: formData.startDate || null,
       endDate: formData.endDate || null,
       targetAudience: formData.targetAudience,
-      status: makeActive ? 'Active' : 'Inactive'
+      status: makeActive ? 'Active' : 'Inactive',
+      applicable_menu_ids: applicableMenuIds,
     };
 
     onSave(newCoupon);
@@ -96,7 +229,7 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
           <div className="grid grid-cols-2 gap-12">
             {/* Left Column */}
             <div>
-              <h3 className="font-semibold mb-6 text-gray-900">Basic Details & Code Generation</h3>
+              <h3 className="font-semibold mb-6 text-gray-900">Basic Details &amp; Code Generation</h3>
 
               <div className="mb-6">
                 <label className="block text-sm text-gray-700 mb-2">Coupon Name</label>
@@ -136,9 +269,9 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
                   name="description"
                   value={formData.description}
                   onChange={handleInputChange}
-                  rows="4"
+                  rows="3"
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                ></textarea>
+                />
               </div>
 
               <div className="mb-6">
@@ -223,7 +356,7 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
 
             {/* Right Column */}
             <div>
-              <h3 className="font-semibold mb-6 text-gray-900">Validity & Targeting</h3>
+              <h3 className="font-semibold mb-6 text-gray-900">Validity &amp; Targeting</h3>
 
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div>
@@ -289,7 +422,7 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
               </div>
 
               <div className="bg-red-50 border border-red-100 p-6 rounded-lg">
-                <h4 className="font-semibold text-red-600 mb-4">Coupon Summary & Economics</h4>
+                <h4 className="font-semibold text-red-600 mb-4">Coupon Summary &amp; Economics</h4>
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Total Customer Discount (Potential Max):</span>
@@ -305,11 +438,23 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
                       {formData.discountType === 'percentage' ? `${formData.discountValue}%` : `₹${formData.discountValue}`} off on orders over ₹{formData.minOrderValue || '0'}.
                       Valid from {formData.startDate || '[Start Date]'} to {formData.endDate || '[End Date]'}.
                       Limited to {formData.usageLimit || '0'} total uses and {formData.usageLimitPerUser || '1'} per user.
+                      {applicableMenuIds.length > 0 && ` Only valid on ${applicableMenuIds.length} selected dish${applicableMenuIds.length > 1 ? 'es' : ''}.`}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Applicable Dishes — full width */}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <div className="mb-3">
+              <h4 className="font-semibold text-gray-900">Applicable Dishes (Optional)</h4>
+              <p className="text-sm text-gray-500 mt-1">
+                Leave empty to allow coupon on any item. Select specific dishes to restrict — user must have at least one of these in their cart to apply the coupon.
+              </p>
+            </div>
+            <MenuItemPicker selected={applicableMenuIds} onChange={setApplicableMenuIds} />
           </div>
 
           <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">
