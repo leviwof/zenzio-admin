@@ -164,6 +164,7 @@ export default function ProviderDetails() {
     plan_type: 'MONTHLY',
     duration_days: 30,
     price: 0,
+    food_type: 'BOTH',
     meal_types: ['LUNCH'],
     is_active: true,
   });
@@ -241,6 +242,7 @@ export default function ProviderDetails() {
       plan_type: plan.plan_type || 'MONTHLY',
       duration_days: Number(plan.duration_days || PLAN_DURATION_DAYS[plan.plan_type] || 30),
       price: Number(plan.price || 0),
+      food_type: plan.food_type || 'BOTH',
       meal_types: Array.isArray(plan.meal_types) && plan.meal_types.length ? plan.meal_types : ['LUNCH'],
       is_active: plan.is_active ?? true,
     });
@@ -254,6 +256,7 @@ export default function ProviderDetails() {
       plan_type: 'MONTHLY',
       duration_days: 30,
       price: 0,
+      food_type: 'BOTH',
       meal_types: ['LUNCH'],
       is_active: true,
     });
@@ -559,6 +562,9 @@ export default function ProviderDetails() {
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm font-semibold text-slate-800 truncate">{plan.name}</span>
                       <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">{plan.plan_type}</span>
+                      <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${plan.food_type === 'NON_VEG' ? 'bg-red-50 text-red-700' : plan.food_type === 'VEG' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                        {plan.food_type === 'NON_VEG' ? 'Non-Veg' : plan.food_type === 'VEG' ? 'Veg' : 'Both'}
+                      </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
                       <span className="text-sm font-bold text-slate-900">{money(plan.price)}</span>
@@ -602,6 +608,13 @@ export default function ProviderDetails() {
                       </Field>
                       <Field label="Price">
                         <input type="number" min="0" step="0.01" value={planForm.price} onChange={(e) => setPlanForm({ ...planForm, price: Number(e.target.value) })} className={inputCls} />
+                      </Field>
+                      <Field label="Food Type">
+                        <select value={planForm.food_type} onChange={(e) => setPlanForm({ ...planForm, food_type: e.target.value })} className={inputCls}>
+                          <option value="VEG">Veg</option>
+                          <option value="NON_VEG">Non-Veg</option>
+                          <option value="BOTH">Both</option>
+                        </select>
                       </Field>
                       <Field label="Status">
                         <select value={String(planForm.is_active)} onChange={(e) => setPlanForm({ ...planForm, is_active: e.target.value === 'true' })} className={inputCls}>

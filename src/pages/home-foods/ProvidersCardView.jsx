@@ -391,6 +391,7 @@ function PlanEditorModal({ provider, onClose, onSaved }) {
     plan_type: 'MONTHLY',
     duration_days: 30,
     price: 0,
+    food_type: 'BOTH',
     meal_types: ['LUNCH'],
     is_active: true,
   });
@@ -405,6 +406,7 @@ function PlanEditorModal({ provider, onClose, onSaved }) {
       plan_type: plan.plan_type || 'MONTHLY',
       duration_days: Number(plan.duration_days || PLAN_DURATION_DAYS[plan.plan_type] || 30),
       price: Number(plan.price || 0),
+      food_type: plan.food_type || 'BOTH',
       meal_types: Array.isArray(plan.meal_types) && plan.meal_types.length ? plan.meal_types : ['LUNCH'],
       is_active: plan.is_active ?? true,
     });
@@ -492,7 +494,7 @@ function PlanEditorModal({ provider, onClose, onSaved }) {
             <label className="md:col-span-2 text-xs font-semibold text-slate-500">
               Select Plan
               <select value={selectedId} onChange={(e) => selectPlan(e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
-                {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} - {plan.plan_type} - {money(plan.price)}</option>)}
+                {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} - {plan.plan_type} - {plan.food_type === 'NON_VEG' ? 'Non-Veg' : plan.food_type === 'VEG' ? 'Veg' : 'Both'} - {money(plan.price)}</option>)}
               </select>
             </label>
 
@@ -513,6 +515,14 @@ function PlanEditorModal({ provider, onClose, onSaved }) {
             <label className="text-xs font-semibold text-slate-500">
               Price
               <input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+            <label className="text-xs font-semibold text-slate-500">
+              Food Type
+              <select value={form.food_type} onChange={(e) => setForm({ ...form, food_type: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
+                <option value="VEG">Veg</option>
+                <option value="NON_VEG">Non-Veg</option>
+                <option value="BOTH">Both</option>
+              </select>
             </label>
             <label className="text-xs font-semibold text-slate-500">
               Status
