@@ -230,7 +230,7 @@ export default function HomeFoodsManagement() {
   const [pageSize, setPageSize] = useState(10);
   const [filters, setFilters] = useState({
     search: '', status: '', mode: '', provider_uid: '', plan_type: '',
-    payment_status: '', meal_type: '', from_date: '', to_date: '', date: '',
+    payment_status: '', meal_type: '', from_date: '', to_date: '', date: '', food_type: '',
   });
   const [modal, setModal] = useState(null);
   const [providerReloadKey, setProviderReloadKey] = useState(0);
@@ -257,7 +257,7 @@ export default function HomeFoodsManagement() {
     setSelectedPlanIds([]);
     setFilters({
       search: '', status: '', provider_uid: '', plan_type: '',
-      payment_status: '', meal_type: '', from_date: '', to_date: '', date: '',
+      payment_status: '', meal_type: '', from_date: '', to_date: '', date: '', food_type: '',
     });
   }, [section]);
 
@@ -479,7 +479,7 @@ export default function HomeFoodsManagement() {
 
   const headers = useMemo(() => ({
     providers: ['Restaurant', 'Status', 'Mode', 'Capacity', 'Active Subscribers', 'Radius', 'Meal Types', 'Created', 'Actions'],
-    plans: ['Select', 'Plan', 'Type', 'Restaurant', 'Duration', 'Price', 'Meal Types', 'Plan Menu', 'Status', 'Actions'],
+    plans: ['Select', 'Plan', 'Type', 'Restaurant', 'Duration', 'Price', 'Food Type', 'Meal Types', 'Plan Menu', 'Status', 'Actions'],
     subscriptions: ['Subscription', 'Customer', 'Phone', 'Restaurant', 'Plan', 'Amount', 'Status', 'Payment', 'Dates', 'Actions'],
     deliveries: ['Delivery', 'Subscription', 'Customer', 'Restaurant', 'Meal', 'Date', 'Status', 'Actions'],
     menus: ['Image', 'Title', 'Provider', 'Description', 'Week Days', 'Meal Slot', 'Actions'],
@@ -1022,7 +1022,13 @@ function Row({ section, item, onEdit, selected, onSelectPlan, onDelivery, onCanc
       </td>
       <td className="px-4 py-3 text-sm font-semibold">{item.name}</td><td className="px-4 py-3 text-xs">{item.plan_type}</td>
       <td className="px-4 py-3 text-sm">{item.restaurant_name || item.provider_uid}</td><td className="px-4 py-3 text-sm">{item.duration_days} days</td>
-      <td className="px-4 py-3 text-sm font-semibold">{money(item.price)}</td><td className="px-4 py-3 text-xs">{(item.meal_types || []).join(', ')}</td>
+      <td className="px-4 py-3 text-sm font-semibold">{money(item.price)}</td>
+      <td className="px-4 py-3">
+        <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${item.food_type === 'NON_VEG' ? 'bg-red-50 text-red-700' : item.food_type === 'VEG' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+          {item.food_type === 'NON_VEG' ? 'Non-Veg' : item.food_type === 'VEG' ? 'Veg' : 'Both'}
+        </span>
+      </td>
+      <td className="px-4 py-3 text-xs">{(item.meal_types || []).join(', ')}</td>
       <td className="px-4 py-3 text-xs text-slate-500">
         {Object.values(item.weekly_menu || {}).reduce((count, meals) => count + Object.keys(meals || {}).length, 0)} scheduled meals
       </td>
@@ -1086,7 +1092,13 @@ function Row({ section, item, onEdit, selected, onSelectPlan, onDelivery, onCanc
         )}
       </td>
       <td className="px-4 py-3">
-        <p className="text-sm font-semibold text-slate-800">{item.menu_name}</p>
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`h-2.5 w-2.5 shrink-0 rounded-sm ${String(item.food_type || 'Veg').toLowerCase() === 'non-veg' ? 'bg-red-500' : 'bg-green-500'}`}
+            title={String(item.food_type || 'Veg').toLowerCase() === 'non-veg' ? 'Non-Veg' : 'Veg'}
+          />
+          <p className="text-sm font-semibold text-slate-800">{item.menu_name}</p>
+        </div>
         {Array.isArray(item.price_breakdown) && item.price_breakdown.length > 0 ? (
           <div className="mt-1 flex flex-wrap items-center gap-1">
             {item.price_breakdown.map((pi, i) => (
@@ -1138,7 +1150,7 @@ function PageFilters({ section, filters, setFilters, total, menuProviders = [] }
   const set = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const reset = () => setFilters({
     search: '', status: '', mode: '', provider_uid: '', plan_type: '',
-    payment_status: '', meal_type: '', from_date: '', to_date: '', date: '',
+    payment_status: '', meal_type: '', from_date: '', to_date: '', date: '', food_type: '',
   });
   const placeholders = {
     providers: 'Search restaurant name or UID',
@@ -1190,10 +1202,25 @@ function PageFilters({ section, filters, setFilters, total, menuProviders = [] }
             ))}
           </select>
         )}
+        {section === 'menus' && (
+          <select value={filters.food_type} onChange={(event) => set('food_type', event.target.value)} className={inputClass}>
+            <option value="">All types (Veg &amp; Non-Veg)</option>
+            <option value="Veg">Veg only</option>
+            <option value="Non-Veg">Non-Veg only</option>
+          </select>
+        )}
         {section === 'plans' && (
           <select value={filters.plan_type} onChange={(event) => set('plan_type', event.target.value)} className={inputClass}>
             <option value="">All plan types</option>
             {planTypes.map((value) => <option key={value}>{value}</option>)}
+          </select>
+        )}
+        {section === 'plans' && (
+          <select value={filters.food_type} onChange={(event) => set('food_type', event.target.value)} className={inputClass}>
+            <option value="">All food types</option>
+            <option value="VEG">Veg only</option>
+            <option value="NON_VEG">Non-Veg only</option>
+            <option value="BOTH">Both (Veg &amp; Non-Veg)</option>
           </select>
         )}
         {section === 'providers' && (
@@ -1658,6 +1685,7 @@ function PlanForm({ item, onClose, onSaved }) {
     plan_type: item?.plan_type || 'MONTHLY',
     duration_days: Number(item?.duration_days || 30),
     price: Number(item?.price || 0),
+    food_type: item?.food_type || 'BOTH',
     meal_types: item?.meal_types || ['LUNCH'],
     weekly_menu: item?.weekly_menu || {},
     is_active: item?.is_active ?? true,
@@ -1708,6 +1736,7 @@ function PlanForm({ item, onClose, onSaved }) {
     <Field label="Plan Type"><select value={form.plan_type} onChange={(e) => setForm({ ...form, plan_type: e.target.value, duration_days: planDurationDays[e.target.value] })} className={inputClass}>{planTypes.map((type) => <option key={type}>{type}</option>)}</select></Field>
     <Field label="Duration Days"><input type="number" min="1" value={form.duration_days} onChange={(e) => setForm({ ...form, duration_days: Number(e.target.value) })} className={inputClass} /></Field>
     <Field label="Price"><input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className={inputClass} /></Field>
+    <Field label="Food Type"><select value={form.food_type} onChange={(e) => setForm({ ...form, food_type: e.target.value })} className={inputClass}><option value="VEG">Veg</option><option value="NON_VEG">Non-Veg</option><option value="BOTH">Both</option></select></Field>
     <Field label="Status"><select value={String(form.is_active)} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
     <div className="md:col-span-2"><Field label="Meal Types"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs"><input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => toggleMeal(meal)} />{meal}</label>)}</div></Field></div>
     <div className="md:col-span-2">
@@ -2004,6 +2033,7 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
     restaurant_uid: item?.home_food_provider_uid || item?.restaurant_uid || initialProviderUid || '',
     menu_name: item?.menu_name || '',
     description: item?.description || '',
+    food_type: String(item?.food_type || 'Veg').toLowerCase() === 'non-veg' ? 'Non-Veg' : 'Veg',
     home_food_week_days: item?.home_food_week_days || workingDays.slice(0, 6),
   });
 
@@ -2048,6 +2078,7 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
     payload.append('restaurant_uid', form.restaurant_uid);
     payload.append('menu_name', form.menu_name.trim());
     payload.append('description', form.description.trim());
+    payload.append('food_type', form.food_type);
     payload.append('price', String(computedTotal));
     payload.append('price_breakdown', JSON.stringify(validPriceItems.map((pi) => ({ name: pi.name.trim(), price: Number(pi.price) || 0 }))));
     payload.append('isActive', 'true');
@@ -2067,7 +2098,7 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
 
   const resetCombo = () => {
     setPriceItems([{ name: '', price: '' }]);
-    setForm((prev) => ({ ...prev, menu_name: '', description: '' }));
+    setForm((prev) => ({ ...prev, menu_name: '', description: '', food_type: 'Veg' }));
     setImageFile(null);
   };
 
@@ -2146,6 +2177,19 @@ function KitchenMenuForm({ item, initialProviderUid, onClose, onSaved }) {
               className={inputClass}
               required
             />
+          </Field>
+        </div>
+
+        <div className="md:col-span-2">
+          <Field label="Food Type">
+            <select
+              value={form.food_type}
+              onChange={(e) => setForm({ ...form, food_type: e.target.value })}
+              className={inputClass}
+            >
+              <option value="Veg">Veg</option>
+              <option value="Non-Veg">Non-Veg</option>
+            </select>
           </Field>
         </div>
 
