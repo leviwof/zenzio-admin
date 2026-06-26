@@ -659,6 +659,8 @@ export const createDynamicBanner = (data) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/banners/admin/promotional', data, {
     headers: isMultipartPayload(data) ? { 'Content-Type': 'multipart/form-data' } : undefined,
   });
+export const reorderDynamicBanners = (items) =>
+  api.post('/banners/admin/promotional/reorder', { items });
 export const updateDynamicBanner = (id, data) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/banners/admin/promotional/${id}`, data, {
     headers: isMultipartPayload(data) ? { 'Content-Type': 'multipart/form-data' } : undefined,

@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import {
   AlertCircle,
   Edit2,
+  GripVertical,
   Image as ImageIcon,
   Loader2,
   Plus,
@@ -19,10 +20,13 @@ import {
   getBannerRestaurantOptions,
   getBanners,
   getDynamicBannersAdmin,
+  reorderDynamicBanners,
   updateDynamicBanner,
   updateDynamicBannerStatus,
   uploadBanner,
 } from '../../services/api';
+
+const BANNER_LIMIT = 15;
 
 const tabs = [
   { id: 'image', label: 'Image Banners' },
@@ -125,7 +129,6 @@ const emptyForm = {
   offer_amount: '',
   theme: DEFAULT_THEME_COLOR,
   theme_colors: DEFAULT_THEME_COLORS,
-  priority: '1',
   is_active: true,
   cta_label: 'View Offer',
 };
@@ -149,6 +152,10 @@ const BannerManagement = () => {
   const [search, setSearch] = useState('');
   const [restaurantSearch, setRestaurantSearch] = useState('');
   const [deleteConfirmBanner, setDeleteConfirmBanner] = useState(null);
+  const [draggedBannerId, setDraggedBannerId] = useState(null);
+  const [reorderLoading, setReorderLoading] = useState(false);
+
+  const canReorder = !search.trim();
 
   const currentTab = tabs.find((tab) => tab.id === activeTab) || tabs[0];
   const isRestaurantOffer = currentTab.bannerType === 'RESTAURANT_OFFER';
@@ -368,12 +375,6 @@ const BannerManagement = () => {
       return false;
     }
 
-    const priority = Number(formData.priority);
-    if (!Number.isInteger(priority) || priority < 1 || priority > 6) {
-      toast.error('Priority must be between 1 and 6');
-      return false;
-    }
-
     return true;
   };
 
@@ -387,7 +388,6 @@ const BannerManagement = () => {
     coupon_code: isRestaurantOffer ? undefined : formData.coupon_code.trim(),
     offer_amount: isRestaurantOffer ? undefined : formData.offer_amount.trim(),
     theme: buildThemeGradient(selectedThemePreviewColors),
-    priority: Number(formData.priority),
     is_active: Boolean(formData.is_active),
     cta_label: isRestaurantOffer ? formData.cta_label : undefined,
   });
@@ -452,6 +452,52 @@ const BannerManagement = () => {
       fetchDynamicBanners();
     } catch (error) {
       toast.error(getApiErrorMessage(error, 'Failed to delete banner'));
+    }
+  };
+
+  const handleDragStart = (event, banner) => {
+    if (!canReorder || reorderLoading) return;
+    setDraggedBannerId(banner.id);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(banner.id));
+  };
+
+  const handleDragOver = (event) => {
+    if (!canReorder || reorderLoading || !draggedBannerId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (event, targetBanner) => {
+    event.preventDefault();
+    if (!canReorder || reorderLoading || !draggedBannerId || draggedBannerId === targetBanner.id) {
+      setDraggedBannerId(null);
+      return;
+    }
+
+    const fromIndex = dynamicBanners.findIndex((b) => b.id === draggedBannerId);
+    const toIndex = dynamicBanners.findIndex((b) => b.id === targetBanner.id);
+    if (fromIndex < 0 || toIndex < 0) { setDraggedBannerId(null); return; }
+
+    const prev = dynamicBanners;
+    const next = [...dynamicBanners];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    const reordered = next.map((b, i) => ({ ...b, priority: i + 1 }));
+
+    setDynamicBanners(reordered);
+    setDraggedBannerId(null);
+
+    try {
+      setReorderLoading(true);
+      await reorderDynamicBanners(reordered.map((b) => ({ id: b.id, priority: b.priority })));
+      toast.success('Banner order updated');
+      fetchDynamicBanners();
+    } catch (err) {
+      setDynamicBanners(prev);
+      toast.error(err?.response?.data?.message || 'Failed to update banner order');
+    } finally {
+      setReorderLoading(false);
     }
   };
 
@@ -546,7 +592,9 @@ const BannerManagement = () => {
           </div>
           <button
             onClick={openCreateModal}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-600"
+            disabled={dynamicBanners.length >= BANNER_LIMIT}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+            title={dynamicBanners.length >= BANNER_LIMIT ? `Maximum ${BANNER_LIMIT} banners reached` : ''}
           >
             <Plus size={18} />
             Add Banner
@@ -559,12 +607,12 @@ const BannerManagement = () => {
           <table className="w-full min-w-[1040px]">
             <thead className="border-b border-gray-200 bg-gray-50">
               <tr>
+                <th className="w-10 px-3 py-3" />
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Image</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Type</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Offer Title</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Restaurant</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Theme</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Priority</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Order</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
               </tr>
@@ -586,7 +634,23 @@ const BannerManagement = () => {
                 </tr>
               ) : (
                 dynamicBanners.map((banner) => (
-                  <tr key={banner.id} className="hover:bg-gray-50">
+                  <tr
+                    key={banner.id}
+                    className={`hover:bg-gray-50 ${draggedBannerId === banner.id ? 'bg-red-50/60 opacity-60' : ''}`}
+                    onDragOver={handleDragOver}
+                    onDrop={(event) => handleDrop(event, banner)}
+                  >
+                    <td className="w-10 px-3 py-4">
+                      <button
+                        draggable={canReorder}
+                        onDragStart={(e) => handleDragStart(e, banner)}
+                        onDragEnd={() => setDraggedBannerId(null)}
+                        className={`rounded p-1 transition-colors ${canReorder ? 'cursor-grab text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:cursor-grabbing' : 'cursor-not-allowed text-gray-200'}`}
+                        title={canReorder ? 'Drag to reorder' : 'Clear search to reorder'}
+                      >
+                        <GripVertical size={18} />
+                      </button>
+                    </td>
                     <td className="px-6 py-4">
                       {getBannerImageUrl(banner) ? (
                         <img
@@ -600,7 +664,6 @@ const BannerManagement = () => {
                         </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{banner.banner_type}</td>
                     <td className="px-6 py-4">
                       <p className="font-medium text-gray-900">{banner.offer_title}</p>
                       <p className="text-xs text-gray-500">{banner.offer_tag || banner.cta_label || banner.coupon_code || '-'}</p>
@@ -1065,27 +1128,6 @@ const BannerManagement = () => {
                     Settings
                   </p>
                   <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-gray-700">
-                        Priority <span className="font-normal text-gray-400">(1 = highest)</span>
-                      </label>
-                      <div className="flex gap-2">
-                        {Array.from({ length: 6 }, (_, index) => String(index + 1)).map((p) => (
-                          <button
-                            key={p}
-                            type="button"
-                            onClick={() => setFormData((current) => ({ ...current, priority: p }))}
-                            className={`flex h-9 w-9 items-center justify-center rounded-lg text-sm font-semibold transition-all ${
-                              formData.priority === p
-                                ? 'bg-red-500 text-white shadow-sm'
-                                : 'border border-gray-200 bg-white text-gray-600 hover:border-red-300 hover:text-red-500'
-                            }`}
-                          >
-                            {p}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
                     <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
                       <div>
                         <p className="text-sm font-medium text-gray-700">Active</p>
