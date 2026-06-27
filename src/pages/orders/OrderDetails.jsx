@@ -323,7 +323,7 @@ const ORDER_STATUS_TOOLTIP_MESSAGES = {
   ON_THE_WAY_TO_RESTAURANT: 'Executive is going to restaurant.',
   REACHED_RESTAURANT: 'Executive reached restaurant.',
   PICKED_UP: 'Order picked up.',
-  ON_THE_WAY: 'Executive is going to customer.',
+  ON_THE_WAY: 'Delivering to customer. Estimated arrival in progress.',
   CANCELLED: 'Order cancelled.',
   ADMIN_CANCELLED: 'Cancelled by admin.',
   FAILED: 'Order failed.',
@@ -442,7 +442,7 @@ const StatusBadge = ({ status, tooltip }) => {
     ON_THE_WAY_TO_RESTAURANT: { label: 'On Way to Restaurant', color: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
     REACHED_RESTAURANT: { label: 'Reached Restaurant', color: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
     PICKED_UP: { label: 'Picked Up', color: 'bg-orange-50 text-orange-700 border border-orange-200' },
-    ON_THE_WAY: { label: 'On Way to Customer', color: 'bg-purple-50 text-purple-700 border border-purple-200' },
+    ON_THE_WAY: { label: 'Delivering...', color: 'bg-purple-50 text-purple-700 border border-purple-200' },
     DELIVERED: { label: 'Delivered', color: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
     CANCELLED: { label: 'Cancelled', color: 'bg-red-50 text-red-700 border border-red-200' },
     ADMIN_CANCELLED: { label: 'Admin Cancelled', color: 'bg-red-50 text-red-700 border border-red-200' },
@@ -593,6 +593,10 @@ const OrderDetails = () => {
     const fieldStatuses = candidates
       .map((candidate) => normalizeOrderFieldStatus(candidate.value, candidate.source, orderData))
       .filter((s) => ORDER_TIMELINE_STEPS.some((step) => step.status === s) || TERMINAL_STATUSES.has(s));
+    const activeDeliveryFieldStatus = candidates
+      .filter((candidate) => ['deliveryPartnerStatus', 'deliveryStatus'].includes(candidate.source))
+      .map((candidate) => normalizeOrderFieldStatus(candidate.value, candidate.source, orderData))
+      .find((s) => STATUS_PRIORITY[s] !== undefined && s !== 'DELIVERED');
 
     const timeline = Array.isArray(orderData?.orderTimeline) ? orderData.orderTimeline : [];
     const timelineStatuses = timeline
@@ -600,10 +604,14 @@ const OrderDetails = () => {
       .filter((s) => ORDER_TIMELINE_STEPS.some((step) => step.status === s) || TERMINAL_STATUSES.has(s));
 
     const allStatuses = [...fieldStatuses, ...timelineStatuses];
-    const terminal = allStatuses.find((s) => TERMINAL_STATUSES.has(s));
+    const terminal = allStatuses.find((s) =>
+      TERMINAL_STATUSES.has(s) &&
+      (!activeDeliveryFieldStatus || !['DELIVERED', 'COMPLETED'].includes(s))
+    );
     if (terminal) return terminal;
 
     const advanced = allStatuses
+      .filter((s) => !activeDeliveryFieldStatus || !['DELIVERED', 'COMPLETED'].includes(s))
       .filter((s) => STATUS_PRIORITY[s] !== undefined)
       .sort((a, b) => STATUS_PRIORITY[b] - STATUS_PRIORITY[a])[0];
     if (advanced) return advanced;
@@ -954,8 +962,11 @@ const OrderDetails = () => {
         .sort((a, b) => STATUS_PRIORITY[b] - STATUS_PRIORITY[a])[0] || 'PLACED';
 
     const latestCompletedIndex = getLifecycleIndex(latestCompletedStatus);
+    const isDeliveringToCustomer = latestCompletedStatus === 'ON_THE_WAY' && !isDelivered && !isStopped;
     const activeIndex = isDelivered || isStopped
       ? -1
+      : isDeliveringToCustomer
+        ? -1
       : Math.min(latestCompletedIndex + 1, LIFECYCLE_STEPS.length - 1);
 
     const baseSteps = LIFECYCLE_STEPS.map((step, i) => {
@@ -1010,6 +1021,30 @@ const OrderDetails = () => {
         isCurrent: false,
         isActive: false,
         isTerminalStop: true,
+      });
+    }
+
+    if (isDeliveringToCustomer) {
+      const outForDeliveryEntry = timelineByStatus.ON_THE_WAY || {};
+      const outForDeliveryIndex = baseSteps.findIndex((step) => step.status === 'ON_THE_WAY');
+      baseSteps.splice(outForDeliveryIndex + 1, 0, {
+        status: 'DELIVERING',
+        label: 'Delivering...',
+        timestamp: null,
+        duration: '',
+        activeSince:
+          outForDeliveryEntry.timestamp ||
+          outForDeliveryEntry.createdAt ||
+          outForDeliveryEntry.time ||
+          outForDeliveryEntry.updatedAt ||
+          order?.updatedAt ||
+          order?.lastUpdated ||
+          order?.createdAt,
+        isCompleted: false,
+        isCurrent: true,
+        isActive: true,
+        isDeliveryTransit: true,
+        isTerminalStop: false,
       });
     }
 
@@ -1078,7 +1113,9 @@ const OrderDetails = () => {
 
   const hasDeliveryPartner = order.deliveryPartnerInformation !== null;
   const currentStatus = getCurrentOrderStatus(order);
-  const currentDeliveryStatus = currentStatus.toLowerCase();
+  const deliveryStatusDisplayText = currentStatus === 'ON_THE_WAY'
+    ? 'Delivering...'
+    : currentStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const orderTimeline = buildOrderTimeline(order);
   const orderStatusTooltip = getOrderStatusTooltip(
     order,
@@ -1127,6 +1164,8 @@ const OrderDetails = () => {
     if (isOrderCancelled && step?.isCompleted && nextStep?.isTerminalStop) return 100;
     if (isOrderCancelled) return 0;
     if (nextStep?.isCompleted) return 100;
+    if (step?.isCompleted && nextStep?.isDeliveryTransit) return 100;
+    if (step?.isDeliveryTransit && nextStep?.status === 'DELIVERED') return 55;
     if (step?.isCompleted && nextStep?.isActive) return 55;
     return 0;
   };
@@ -1238,7 +1277,7 @@ const OrderDetails = () => {
                 </div>
                 <div>
                   <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wider">Delivery Status</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-0.5 uppercase">{currentDeliveryStatus.replace(/_/g, ' ')}</p>
+                  <p className="text-sm font-semibold text-gray-900 mt-0.5 uppercase">{deliveryStatusDisplayText}</p>
                 </div>
               </div>
             </CardContent>
@@ -1368,7 +1407,9 @@ const OrderDetails = () => {
                   const connectorProgress = getConnectorProgress(step, nextStep, isOrderCancelled);
                   const isActiveStep = step.isActive && !isOrderCancelled;
                   const isTerminalStop = step.isTerminalStop;
-                  const activeHelperText = step.status === 'ASSIGNED' && !deliveryExecutiveName
+                  const activeHelperText = step.isDeliveryTransit
+                    ? 'Estimated arrival in progress'
+                    : step.status === 'ASSIGNED' && !deliveryExecutiveName
                     ? 'Waiting for executive'
                     : step.activeSince
                       ? `Started ${formatRelativeTime(step.activeSince)}`
@@ -1410,7 +1451,9 @@ const OrderDetails = () => {
                         {step.isCompleted ? (
                           <Check size={16} />
                         ) : isActiveStep ? (
-                          <span className="relative z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-[11px] font-black text-green-700">◐</span>
+                          <span className="relative z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-green-700">
+                            <Loader2 size={15} className="animate-spin" />
+                          </span>
                         ) : isTerminalStop ? (
                           <X size={15} />
                         ) : (
@@ -1479,7 +1522,7 @@ const OrderDetails = () => {
                             style={{ width: `${connectorProgress}%` }}
                           />
                         )}
-                        {step.isCompleted && nextStep?.isActive && !isOrderCancelled && (
+                        {((step.isCompleted && nextStep?.isActive) || step.isDeliveryTransit) && !isOrderCancelled && (
                           <motion.span
                             className="absolute inset-y-0 left-0 w-8 rounded-full bg-gradient-to-r from-transparent via-emerald-300 to-transparent"
                             animate={{ x: ['-100%', '220%'] }}
@@ -1529,10 +1572,10 @@ const OrderDetails = () => {
                 <div className="flex items-center justify-between p-3 bg-indigo-50 rounded-xl">
                   <div>
                     <p className="text-xs text-indigo-500 font-medium">Delivery Status</p>
-                    <p className="font-bold text-indigo-700 text-sm mt-0.5 uppercase">{currentDeliveryStatus.replace(/_/g, ' ')}</p>
+                    <p className="font-bold text-indigo-700 text-sm mt-0.5 uppercase">{deliveryStatusDisplayText}</p>
                   </div>
                   <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${currentStatus === 'DELIVERED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {currentStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                    {deliveryStatusDisplayText}
                   </span>
                 </div>
               </div>
