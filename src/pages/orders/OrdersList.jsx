@@ -93,6 +93,10 @@ const resolveDisplayStatus = (order) => {
 };
 
 const STATUS_TERMINAL = new Set(["DELIVERED", "COMPLETED", "CANCELLED", "ADMIN_CANCELLED", "REJECTED"]);
+const ORDER_DELETE_ALLOWED_STATUSES = new Set(["CANCELLED", "ADMIN_CANCELLED"]);
+
+const isOrderDeleteAllowed = (order) =>
+  ORDER_DELETE_ALLOWED_STATUSES.has(resolveDisplayStatus(order));
 
 const ORDER_STATUS_TOOLTIP_MESSAGES = {
   NEW: "Waiting for restaurant acceptance.",
@@ -277,6 +281,7 @@ const ActionMenu = ({ order, onView, onCancel, onDelete }) => {
   }, []);
 
   const isTerminal = STATUS_TERMINAL.has(resolveDisplayStatus(order));
+  const canDeleteOrder = isOrderDeleteAllowed(order);
 
   return (
     <div className="relative" ref={ref}>
@@ -314,7 +319,7 @@ const ActionMenu = ({ order, onView, onCancel, onDelete }) => {
                 Cancel Order
               </button>
             )}
-            {onDelete && (
+            {onDelete && canDeleteOrder && (
               <button
                 onClick={(e) => { e.stopPropagation(); setOpen(false); onDelete(order); }}
                 className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
@@ -362,6 +367,7 @@ const MobileOrderCard = ({ order, onView, onCancel, onDelete, isHighlighted, con
   const orderId = order.orderId || order.id;
   const customerInitial = (order.customer_name || order.customer || "G").charAt(0).toUpperCase();
   const isTerminal = STATUS_TERMINAL.has(resolveDisplayStatus(order));
+  const canDeleteOrder = isOrderDeleteAllowed(order);
   const showingConfirm = confirmDeleteId === orderId;
 
   return (
@@ -386,7 +392,7 @@ const MobileOrderCard = ({ order, onView, onCancel, onDelete, isHighlighted, con
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <ActionMenu order={order} onView={onView} onCancel={onCancel} onDelete={onDelete} />
+          <ActionMenu order={order} onView={onView} onCancel={onCancel} onDelete={canDeleteOrder ? onDelete : null} />
         </div>
       </div>
       {showingConfirm && (
@@ -781,10 +787,21 @@ const OrdersList = () => {
   };
 
   const zenzioAdmin = isZenzioAdmin();
+  const deletableOrderIds = orders
+    .filter(isOrderDeleteAllowed)
+    .map((order) => order.orderId || order.id)
+    .filter(Boolean);
+  const allDeletableSelected =
+    deletableOrderIds.length > 0 && deletableOrderIds.every((id) => selectedIds.has(id));
 
   const handleDelete = async (order) => {
     const id = order.orderId || order.id;
     if (!id) return;
+    if (!isOrderDeleteAllowed(order)) {
+      toast.error("Only cancelled orders can be deleted.");
+      setConfirmDeleteId(null);
+      return;
+    }
     setIsDeleting(true);
     try {
       await deleteOrder(id);
@@ -801,6 +818,13 @@ const OrdersList = () => {
   const handleBulkDelete = async () => {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
+    const selectedOrders = orders.filter((order) => ids.includes(order.orderId || order.id));
+    const blockedOrders = selectedOrders.filter((order) => !isOrderDeleteAllowed(order));
+    if (blockedOrders.length > 0) {
+      toast.error("Only cancelled orders can be deleted. Please remove active or delivered orders from selection.");
+      setBulkDeleteConfirm(false);
+      return;
+    }
     setIsDeleting(true);
     try {
       const res = await bulkDeleteOrders(ids);
@@ -1454,10 +1478,10 @@ const OrdersList = () => {
                   <tr className="border-b border-gray-100 bg-gray-50/50">
                     <th className="w-10 px-4 py-3.5 text-left">
                       <button onClick={() => {
-                        if (selectedIds.size === orders.length) setSelectedIds(new Set());
-                        else setSelectedIds(new Set(orders.map(o => o.orderId || o.id)));
-                      }} className="text-gray-400 hover:text-gray-600 transition-colors">
-                        {selectedIds.size === orders.length && orders.length > 0
+                        if (allDeletableSelected) setSelectedIds(new Set());
+                        else setSelectedIds(new Set(deletableOrderIds));
+                      }} disabled={deletableOrderIds.length === 0} className="text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 transition-colors" title={deletableOrderIds.length === 0 ? "Only cancelled orders can be deleted" : "Select cancelled orders"}>
+                        {allDeletableSelected
                           ? <CheckSquare size={16} className="text-indigo-600" />
                           : <Square size={16} />
                         }
@@ -1479,6 +1503,7 @@ const OrdersList = () => {
                     const orderId = order.orderId || order.id;
                     const isHighlighted = highlightedIds.has(orderId);
                     const selected = selectedIds.has(orderId);
+                    const canDeleteOrder = isOrderDeleteAllowed(order);
                     const customerInitial = (order.customer_name || order.customer || "G").charAt(0).toUpperCase();
                     return (
                       <motion.tr
@@ -1496,12 +1521,16 @@ const OrdersList = () => {
                         {/* Checkbox */}
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => {
+                            if (!canDeleteOrder) {
+                              toast.error("Only cancelled orders can be selected for delete.");
+                              return;
+                            }
                             setSelectedIds(prev => {
                               const n = new Set(prev);
                               if (n.has(orderId)) n.delete(orderId); else n.add(orderId);
                               return n;
                             });
-                          }} className="text-gray-300 hover:text-indigo-600 transition-colors">
+                          }} disabled={!canDeleteOrder} className="text-gray-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-35 transition-colors" title={canDeleteOrder ? "Select for delete" : "Only cancelled orders can be deleted"}>
                             {selected ? <CheckSquare size={16} className="text-indigo-600" /> : <Square size={16} />}
                           </button>
                         </td>
@@ -1579,7 +1608,7 @@ const OrdersList = () => {
                         {/* Actions */}
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                            {zenzioAdmin ? (
+                            {zenzioAdmin && canDeleteOrder ? (
                               confirmDeleteId === orderId ? (
                                 <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2 py-1">
                                   <span className="text-[11px] font-medium text-red-700">Delete?</span>
@@ -1615,7 +1644,7 @@ const OrdersList = () => {
                                 View
                               </button>
                             )}
-                            <ActionMenu order={order} onView={handleView} onCancel={handleOpenCancelModal} onDelete={zenzioAdmin ? (o) => setConfirmDeleteId(o.orderId || o.id) : null} />
+                            <ActionMenu order={order} onView={handleView} onCancel={handleOpenCancelModal} onDelete={zenzioAdmin && canDeleteOrder ? (o) => setConfirmDeleteId(o.orderId || o.id) : null} />
                           </div>
                         </td>
                       </motion.tr>
