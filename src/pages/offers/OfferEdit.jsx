@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Tag, Calendar, Clock, Image as ImageIcon,
   Loader2, Save, RotateCcw, X, Store, Percent, IndianRupee,
+  Truck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -51,6 +52,7 @@ const emptyForm = {
   endTime: '',
   termsConditions: '',
   isActive: true,
+  allowFreeDelivery: false,
 };
 
 const OfferEdit = () => {
@@ -102,14 +104,15 @@ const OfferEdit = () => {
         offerCode: offer.offerCode || '',
         description: offer.description || '',
         discountType: offer.discountType || 'PERCENTAGE',
-        discountValue: offer.discountValue || '',
-        minOrderValue: offer.minOrderValue || '',
+        discountValue: offer.discountValue ?? '',
+        minOrderValue: offer.minOrderValue ?? '',
         startDate: (offer.startDate || '').split('T')[0],
         endDate: (offer.endDate || '').split('T')[0],
         startTime: offer.startTime || '',
         endTime: offer.endTime || '',
         termsConditions: offer.termsConditions || '',
         isActive: offer.isActive !== false,
+        allowFreeDelivery: offer.allowFreeDelivery === true,
       });
 
       if (offer.offerImage) {
@@ -137,7 +140,10 @@ const OfferEdit = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.title.trim()) { toast.error('Offer title is required'); return; }
-    if (!formData.discountValue) { toast.error('Discount value is required'); return; }
+    if (formData.discountValue === '' || formData.discountValue === undefined || formData.discountValue === null) {
+      toast.error('Discount value is required');
+      return;
+    }
     if (!formData.startDate || !formData.endDate) { toast.error('Start and end dates are required'); return; }
 
     setLoading(true);
@@ -145,7 +151,7 @@ const OfferEdit = () => {
       const data = new FormData();
       const allowed = ['title', 'restaurantId', 'categoryId', 'offerCode', 'description',
         'discountType', 'discountValue', 'minOrderValue', 'startDate', 'endDate',
-        'startTime', 'endTime', 'termsConditions', 'isActive'];
+        'startTime', 'endTime', 'termsConditions', 'isActive', 'allowFreeDelivery'];
       allowed.forEach((key) => {
         const val = formData[key];
         if (val !== '' && val !== undefined && val !== null) data.append(key, val);
@@ -359,6 +365,26 @@ const OfferEdit = () => {
                     />
                   </div>
                 </Field>
+                <div className="flex items-center justify-between gap-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-emerald-600 shadow-sm">
+                      <Truck size={18} />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Free Delivery</p>
+                      <p className="text-xs text-gray-500">Waive delivery fee when this offer is applied.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, allowFreeDelivery: !prev.allowFreeDelivery }))}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${formData.allowFreeDelivery ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                    aria-pressed={formData.allowFreeDelivery}
+                    aria-label="Toggle free delivery"
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${formData.allowFreeDelivery ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
               </SECTION>
             </div>
 
@@ -502,6 +528,13 @@ const OfferEdit = () => {
                     <p className="mt-0.5 text-xs text-red-400">Min order ₹{formData.minOrderValue}</p>
                   )}
                 </div>
+
+                {formData.allowFreeDelivery && (
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    <Truck size={12} />
+                    Free delivery enabled
+                  </div>
+                )}
 
                 {selectedRestaurant && (
                   <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2">
