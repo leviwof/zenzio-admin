@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Calendar, ChevronLeft, Filter, Gift, ImagePlus, Loader2, RotateCcw, Save, Store, Tag, X } from "lucide-react";
+import { Calendar, ChevronLeft, Filter, Gift, ImagePlus, Loader2, RotateCcw, Save, Store, Tag, Truck, X } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   createOffer,
@@ -58,6 +58,7 @@ const initialForm = {
   endTime: "",
   termsConditions: "",
   description: "",
+  allowFreeDelivery: false,
   rules: emptyRules,
   offer_scope: "ALL_MENU",
   included_category_ids: [],
@@ -387,6 +388,7 @@ const OfferConfiguration = () => {
       data.append("discountType", TYPE_TO_DISCOUNT[formData.offerType]);
       data.append("discountValue", String(formData.discountValue || 0));
       data.append("minOrderValue", String(formData.minOrderValue || formData.rules.minimumCartAmount || 0));
+      data.append("allowFreeDelivery", String(Boolean(formData.allowFreeDelivery)));
       data.append("startDate", formData.startDate);
       data.append("endDate", formData.endDate);
       data.append("ruleConfig", JSON.stringify(
@@ -838,6 +840,26 @@ const OfferConfiguration = () => {
           <Field label="Minimum Order Value">
             <input type="number" name="minOrderValue" value={formData.minOrderValue} onChange={handleChange} min="0" step="0.01" className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
           </Field>
+          <div className="md:col-span-2 flex items-center justify-between gap-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-emerald-600 shadow-sm">
+                <Truck size={18} />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Free Delivery</p>
+                <p className="text-xs text-gray-500">Waive delivery fee when this offer is applied.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFormData((prev) => ({ ...prev, allowFreeDelivery: !prev.allowFreeDelivery }))}
+              className={`relative h-6 w-11 rounded-full transition-colors ${formData.allowFreeDelivery ? "bg-emerald-500" : "bg-gray-300"}`}
+              aria-pressed={formData.allowFreeDelivery}
+              aria-label="Toggle free delivery"
+            >
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${formData.allowFreeDelivery ? "translate-x-5" : "translate-x-0.5"}`} />
+            </button>
+          </div>
         </div>
       );
     }
@@ -1091,6 +1113,28 @@ const OfferConfiguration = () => {
               <h2 className="font-semibold text-gray-900">Discount Logic</h2>
             </div>
             {renderRuleFields()}
+            {!["PERCENTAGE_DISCOUNT", "FIXED_AMOUNT_DISCOUNT", "FESTIVAL_OFFER", "PLATFORM_CAMPAIGN"].includes(formData.offerType) && (
+              <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-emerald-600 shadow-sm">
+                    <Truck size={18} />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Free Delivery</p>
+                    <p className="text-xs text-gray-500">Waive delivery fee when this offer is applied.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev) => ({ ...prev, allowFreeDelivery: !prev.allowFreeDelivery }))}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${formData.allowFreeDelivery ? "bg-emerald-500" : "bg-gray-300"}`}
+                  aria-pressed={formData.allowFreeDelivery}
+                  aria-label="Toggle free delivery"
+                >
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${formData.allowFreeDelivery ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+            )}
           </section>
 
           {!["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType) && <section>
@@ -1262,6 +1306,12 @@ const OfferConfiguration = () => {
                   {selectedBuyItemName && <p className="text-xs mt-1">Buy: {selectedBuyItemName}</p>}
                   {selectedFreeItemName && <p className="text-xs mt-1">Free: {selectedFreeItemName}</p>}
                 </>
+              )}
+              {formData.allowFreeDelivery && (
+                <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  <Truck size={12} />
+                  Free delivery enabled
+                </div>
               )}
             </div>
             <div className="text-xs text-gray-500">
