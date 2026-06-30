@@ -14,15 +14,21 @@ import {
   X,
 } from 'lucide-react';
 import {
+  createPopupBanner,
   createDynamicBanner,
   deleteBanner,
   deleteDynamicBanner,
+  deletePopupBanner,
   getBannerRestaurantOptions,
   getBanners,
   getDynamicBannersAdmin,
+  getPopupBannersAdmin,
   reorderDynamicBanners,
+  reorderPopupBanners,
   updateDynamicBanner,
   updateDynamicBannerStatus,
+  updatePopupBanner,
+  updatePopupBannerStatus,
   uploadBanner,
 } from '../../services/api';
 
@@ -32,6 +38,7 @@ const tabs = [
   { id: 'image', label: 'Image Banners' },
   { id: 'promotional', label: 'Promotional Banners', bannerType: 'PROMOTIONAL' },
   { id: 'restaurant', label: 'Restaurant Offer Banners', bannerType: 'RESTAURANT_OFFER' },
+  { id: 'popup', label: 'Popup Banners' },
 ];
 
 const DEFAULT_THEME_COLOR = '#ec4899';
@@ -133,31 +140,67 @@ const emptyForm = {
   cta_label: 'View Offer',
 };
 
+const emptyPopupForm = {
+  title: '',
+  description: '',
+  redirect_url: '',
+  priority: '1',
+  is_active: true,
+  start_time: '',
+  end_time: '',
+};
+
+const toDatetimeLocalValue = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
+};
+
+const formatDateTime = (value) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString();
+};
+
 const BannerManagement = () => {
   const [activeTab, setActiveTab] = useState('image');
   const [banners, setBanners] = useState([]);
   const [dynamicBanners, setDynamicBanners] = useState([]);
+  const [popupBanners, setPopupBanners] = useState([]);
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dynamicLoading, setDynamicLoading] = useState(false);
+  const [popupLoading, setPopupLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [dynamicImageFile, setDynamicImageFile] = useState(null);
   const [dynamicImagePreview, setDynamicImagePreview] = useState(null);
+  const [popupImageFile, setPopupImageFile] = useState(null);
+  const [popupImagePreview, setPopupImagePreview] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [popupModalOpen, setPopupModalOpen] = useState(false);
   const [editingBanner, setEditingBanner] = useState(null);
+  const [editingPopupBanner, setEditingPopupBanner] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [popupFormData, setPopupFormData] = useState(emptyPopupForm);
   const [search, setSearch] = useState('');
   const [restaurantSearch, setRestaurantSearch] = useState('');
   const [deleteConfirmBanner, setDeleteConfirmBanner] = useState(null);
+  const [deleteConfirmPopupBanner, setDeleteConfirmPopupBanner] = useState(null);
   const [draggedBannerId, setDraggedBannerId] = useState(null);
+  const [draggedPopupBannerId, setDraggedPopupBannerId] = useState(null);
   const [reorderLoading, setReorderLoading] = useState(false);
+  const [popupReorderLoading, setPopupReorderLoading] = useState(false);
 
   const canReorder = !search.trim();
 
   const currentTab = tabs.find((tab) => tab.id === activeTab) || tabs[0];
+  const isPopupTab = activeTab === 'popup';
   const isRestaurantOffer = currentTab.bannerType === 'RESTAURANT_OFFER';
   const selectedThemeColors = Array.isArray(formData.theme_colors)
     ? formData.theme_colors
@@ -184,6 +227,8 @@ const BannerManagement = () => {
   useEffect(() => {
     if (activeTab === 'image') {
       fetchImageBanners();
+    } else if (activeTab === 'popup') {
+      fetchPopupBanners();
     } else {
       fetchDynamicBanners();
     }
@@ -191,7 +236,13 @@ const BannerManagement = () => {
 
   useEffect(() => {
     if (activeTab === 'image') return undefined;
-    const timer = setTimeout(fetchDynamicBanners, 350);
+    const timer = setTimeout(() => {
+      if (activeTab === 'popup') {
+        fetchPopupBanners();
+      } else {
+        fetchDynamicBanners();
+      }
+    }, 350);
     return () => clearTimeout(timer);
   }, [search]);
 
@@ -228,6 +279,23 @@ const BannerManagement = () => {
       toast.error(getApiErrorMessage(error, 'Failed to load dynamic banners'));
     } finally {
       setDynamicLoading(false);
+    }
+  };
+
+  const fetchPopupBanners = async () => {
+    try {
+      setPopupLoading(true);
+      const response = await getPopupBannersAdmin({
+        page: 1,
+        limit: 50,
+        search: search.trim() || undefined,
+        status: 'all',
+      });
+      setPopupBanners(response.data?.data || []);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to load popup banners'));
+    } finally {
+      setPopupLoading(false);
     }
   };
 
@@ -272,6 +340,24 @@ const BannerManagement = () => {
 
     setDynamicImageFile(file);
     setDynamicImagePreview(URL.createObjectURL(file));
+  };
+
+  const handlePopupImageChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select a valid image');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Popup image should be less than 2MB');
+      return;
+    }
+
+    setPopupImageFile(file);
+    setPopupImagePreview(URL.createObjectURL(file));
   };
 
   const handleUpload = async () => {
@@ -357,6 +443,122 @@ const BannerManagement = () => {
     setRestaurants([]);
     setDynamicImageFile(null);
     setDynamicImagePreview(null);
+  };
+
+  const openCreatePopupModal = () => {
+    setEditingPopupBanner(null);
+    setPopupFormData(emptyPopupForm);
+    setPopupImageFile(null);
+    setPopupImagePreview(null);
+    setDeleteConfirmPopupBanner(null);
+    setPopupModalOpen(true);
+  };
+
+  const openEditPopupModal = (banner) => {
+    setEditingPopupBanner(banner);
+    setPopupFormData({
+      title: banner.title || '',
+      description: banner.description || '',
+      redirect_url: banner.redirect_url || '',
+      priority: String(banner.priority || 1),
+      is_active: Boolean(banner.is_active),
+      start_time: toDatetimeLocalValue(banner.start_time),
+      end_time: toDatetimeLocalValue(banner.end_time),
+    });
+    setPopupImageFile(null);
+    setPopupImagePreview(getBannerImageUrl(banner));
+    setDeleteConfirmPopupBanner(null);
+    setPopupModalOpen(true);
+  };
+
+  const closePopupModal = () => {
+    setPopupModalOpen(false);
+    setEditingPopupBanner(null);
+    setPopupFormData(emptyPopupForm);
+    setPopupImageFile(null);
+    setPopupImagePreview(null);
+  };
+
+  const validatePopupForm = () => {
+    if (!editingPopupBanner && !popupImageFile) {
+      toast.error('Popup image is required');
+      return false;
+    }
+
+    const priority = Number(popupFormData.priority);
+    if (!Number.isInteger(priority) || priority < 1 || priority > 999) {
+      toast.error('Priority must be between 1 and 999');
+      return false;
+    }
+
+    if (popupFormData.start_time && popupFormData.end_time) {
+      const startTime = new Date(popupFormData.start_time);
+      const endTime = new Date(popupFormData.end_time);
+      if (startTime.getTime() > endTime.getTime()) {
+        toast.error('Start time must be before end time');
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const buildPopupFormData = () => {
+    const data = new FormData();
+    data.append('title', popupFormData.title.trim());
+    data.append('description', popupFormData.description.trim());
+    data.append('redirect_url', popupFormData.redirect_url.trim());
+    data.append('priority', String(Number(popupFormData.priority) || 1));
+    data.append('is_active', String(Boolean(popupFormData.is_active)));
+    data.append('start_time', popupFormData.start_time ? new Date(popupFormData.start_time).toISOString() : '');
+    data.append('end_time', popupFormData.end_time ? new Date(popupFormData.end_time).toISOString() : '');
+    if (popupImageFile) data.append('image', popupImageFile);
+    return data;
+  };
+
+  const handlePopupSubmit = async (event) => {
+    event.preventDefault();
+    if (!validatePopupForm()) return;
+
+    try {
+      setSaving(true);
+      const payload = buildPopupFormData();
+      if (editingPopupBanner) {
+        await updatePopupBanner(editingPopupBanner.id, payload);
+        toast.success('Popup banner updated');
+      } else {
+        await createPopupBanner(payload);
+        toast.success('Popup banner created');
+      }
+      closePopupModal();
+      fetchPopupBanners();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to save popup banner'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTogglePopupStatus = async (banner) => {
+    const nextStatus = !banner.is_active;
+    try {
+      await updatePopupBannerStatus(banner.id, nextStatus);
+      toast.success(nextStatus ? 'Popup banner activated' : 'Popup banner deactivated');
+      fetchPopupBanners();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to update popup status'));
+    }
+  };
+
+  const handleDeletePopup = async (banner) => {
+    try {
+      await deletePopupBanner(banner.id);
+      toast.success('Popup banner deleted');
+      setDeleteConfirmPopupBanner(null);
+      fetchPopupBanners();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to delete popup banner'));
+    }
   };
 
   const validateDynamicForm = () => {
@@ -498,6 +700,58 @@ const BannerManagement = () => {
       toast.error(err?.response?.data?.message || 'Failed to update banner order');
     } finally {
       setReorderLoading(false);
+    }
+  };
+
+  const handlePopupDragStart = (event, banner) => {
+    if (!canReorder || popupReorderLoading) return;
+    setDraggedPopupBannerId(banner.id);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(banner.id));
+  };
+
+  const handlePopupDragOver = (event) => {
+    if (!canReorder || popupReorderLoading || !draggedPopupBannerId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handlePopupDrop = async (event, targetBanner) => {
+    event.preventDefault();
+    if (!canReorder || popupReorderLoading || !draggedPopupBannerId || draggedPopupBannerId === targetBanner.id) {
+      setDraggedPopupBannerId(null);
+      return;
+    }
+
+    const fromIndex = popupBanners.findIndex((banner) => banner.id === draggedPopupBannerId);
+    const toIndex = popupBanners.findIndex((banner) => banner.id === targetBanner.id);
+    if (fromIndex < 0 || toIndex < 0) {
+      setDraggedPopupBannerId(null);
+      return;
+    }
+
+    const previous = popupBanners;
+    const next = [...popupBanners];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    const reordered = next.map((banner, index) => ({
+      ...banner,
+      priority: next.length - index,
+    }));
+
+    setPopupBanners(reordered);
+    setDraggedPopupBannerId(null);
+
+    try {
+      setPopupReorderLoading(true);
+      await reorderPopupBanners(reordered.map((banner) => ({ id: banner.id, priority: banner.priority })));
+      toast.success('Popup banner order updated');
+      fetchPopupBanners();
+    } catch (error) {
+      setPopupBanners(previous);
+      toast.error(getApiErrorMessage(error, 'Failed to update popup banner order'));
+    } finally {
+      setPopupReorderLoading(false);
     }
   };
 
@@ -753,6 +1007,161 @@ const BannerManagement = () => {
     </div>
   );
 
+  const renderPopupBanners = () => (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search title, description, or redirect URL..."
+              className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+            />
+          </div>
+          <button
+            onClick={openCreatePopupModal}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-600"
+          >
+            <Plus size={18} />
+            Add Popup
+          </button>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1120px]">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr>
+                <th className="w-10 px-3 py-3" />
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Image</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Title</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Redirect</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Schedule</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Priority</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {popupLoading ? (
+                <tr>
+                  <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                    <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-red-500" />
+                    Loading popup banners...
+                  </td>
+                </tr>
+              ) : popupBanners.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                    <ImageIcon className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+                    No popup banners found.
+                  </td>
+                </tr>
+              ) : (
+                popupBanners.map((banner) => (
+                  <tr
+                    key={banner.id}
+                    className={`hover:bg-gray-50 ${draggedPopupBannerId === banner.id ? 'bg-red-50/60 opacity-60' : ''}`}
+                    onDragOver={handlePopupDragOver}
+                    onDrop={(event) => handlePopupDrop(event, banner)}
+                  >
+                    <td className="w-10 px-3 py-4">
+                      <button
+                        draggable={canReorder}
+                        onDragStart={(event) => handlePopupDragStart(event, banner)}
+                        onDragEnd={() => setDraggedPopupBannerId(null)}
+                        className={`rounded p-1 transition-colors ${canReorder ? 'cursor-grab text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:cursor-grabbing' : 'cursor-not-allowed text-gray-200'}`}
+                        title={canReorder ? 'Drag to reorder' : 'Clear search to reorder'}
+                      >
+                        <GripVertical size={18} />
+                      </button>
+                    </td>
+                    <td className="px-6 py-4">
+                      <img
+                        src={getBannerImageUrl(banner)}
+                        alt={banner.title || `Popup ${banner.id}`}
+                        className="h-14 w-24 rounded-lg border border-gray-200 object-cover"
+                      />
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-gray-900">{banner.title || '-'}</p>
+                      <p className="max-w-xs truncate text-xs text-gray-500">{banner.description || '-'}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="max-w-[220px] truncate font-mono text-xs text-gray-500">{banner.redirect_url || '-'}</p>
+                    </td>
+                    <td className="px-6 py-4 text-xs text-gray-600">
+                      <p>Start: {formatDateTime(banner.start_time)}</p>
+                      <p>End: {formatDateTime(banner.end_time)}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-sm font-semibold text-red-600">{banner.priority}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${banner.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {banner.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => openEditPopupModal(banner)} className="rounded-lg p-2 text-blue-600 hover:bg-blue-50" title="Edit">
+                          <Edit2 size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleTogglePopupStatus(banner)}
+                          className={`rounded-lg p-2 ${banner.is_active ? 'text-amber-600 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'}`}
+                          title={banner.is_active ? 'Deactivate' : 'Activate'}
+                        >
+                          {banner.is_active ? <PowerOff size={18} /> : <Power size={18} />}
+                        </button>
+                        <div className="relative">
+                          {deleteConfirmPopupBanner?.id === banner.id && (
+                            <div className="absolute bottom-full right-0 z-20 mb-2 w-64 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-lg">
+                              <p className="mb-3 text-sm font-medium text-gray-800">
+                                Delete &quot;{banner.title || `Popup ${banner.id}`}&quot;?
+                              </p>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmPopupBanner(null)}
+                                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePopup(banner)}
+                                  className="rounded-md bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => setDeleteConfirmPopupBanner(banner)}
+                            className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                            title="Delete"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="mx-auto max-w-6xl">
@@ -776,8 +1185,200 @@ const BannerManagement = () => {
           ))}
         </div>
 
-        {activeTab === 'image' ? renderImageBanners() : renderDynamicBanners()}
+        {activeTab === 'image'
+          ? renderImageBanners()
+          : isPopupTab
+            ? renderPopupBanners()
+            : renderDynamicBanners()}
       </div>
+
+      {popupModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {editingPopupBanner ? 'Edit Popup Banner' : 'Create Popup Banner'}
+                </h2>
+                <p className="mt-0.5 text-xs text-gray-400">Shown once per app session by the mobile app</p>
+              </div>
+              <button onClick={closePopupModal} className="rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handlePopupSubmit} className="flex min-h-0 flex-1">
+              <div className="flex-1 space-y-5 overflow-y-auto border-r border-gray-100 p-6">
+                <div>
+                  <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">1</span>
+                    Content
+                  </p>
+                  <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">Title</label>
+                      <input
+                        type="text"
+                        value={popupFormData.title}
+                        onChange={(event) => setPopupFormData((current) => ({ ...current, title: event.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        placeholder="Weekend Offer"
+                        maxLength={120}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">Description</label>
+                      <textarea
+                        value={popupFormData.description}
+                        onChange={(event) => setPopupFormData((current) => ({ ...current, description: event.target.value }))}
+                        rows={3}
+                        className="w-full resize-none rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        placeholder="Flat Rs.100 off this weekend"
+                        maxLength={500}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">Redirect URL</label>
+                      <input
+                        type="text"
+                        value={popupFormData.redirect_url}
+                        onChange={(event) => setPopupFormData((current) => ({ ...current, redirect_url: event.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                        placeholder="/restaurants/restaurant_uid or https://..."
+                        maxLength={1000}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">2</span>
+                    Popup Image
+                  </p>
+                  <label className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-5 text-center transition-all ${popupImagePreview ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-gray-50/70 hover:border-red-300 hover:bg-red-50/20'}`}>
+                    {popupImagePreview ? (
+                      <div className="w-full">
+                        <img src={popupImagePreview} alt="Popup preview" className="mx-auto mb-3 aspect-video max-h-56 w-full rounded-lg object-cover shadow-sm" />
+                        <p className="text-xs font-medium text-red-500">Click to change image</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100">
+                          <ImageIcon className="h-6 w-6 text-gray-400" />
+                        </div>
+                        <p className="text-sm font-medium text-gray-700">Click to upload popup image</p>
+                        <p className="mt-1 text-xs text-gray-400">16:9, PNG/JPG/WEBP, max 2MB</p>
+                      </>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={handlePopupImageChange} />
+                  </label>
+                </div>
+
+                <div>
+                  <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">3</span>
+                    Schedule
+                  </p>
+                  <div className="grid gap-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">Start Date & Time</label>
+                      <input
+                        type="datetime-local"
+                        value={popupFormData.start_time}
+                        onChange={(event) => setPopupFormData((current) => ({ ...current, start_time: event.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">End Date & Time</label>
+                      <input
+                        type="datetime-local"
+                        value={popupFormData.end_time}
+                        onChange={(event) => setPopupFormData((current) => ({ ...current, end_time: event.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-500">4</span>
+                    Settings
+                  </p>
+                  <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50/70 p-4">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">Priority</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        value={popupFormData.priority}
+                        onChange={(event) => setPopupFormData((current) => ({ ...current, priority: event.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Active</p>
+                        <p className="text-xs text-gray-400">Eligible popup can be shown to users</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPopupFormData((current) => ({ ...current, is_active: !current.is_active }))}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none ${popupFormData.is_active ? 'bg-red-500' : 'bg-gray-200'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${popupFormData.is_active ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex w-[300px] flex-shrink-0 flex-col p-5">
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">Preview</p>
+                <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-md">
+                  {popupImagePreview ? (
+                    <img src={popupImagePreview} alt="Popup preview" className="aspect-video w-full object-cover" />
+                  ) : (
+                    <div className="flex aspect-video w-full items-center justify-center bg-gray-50 text-gray-300">
+                      <ImageIcon size={32} />
+                    </div>
+                  )}
+                  <div className="p-4">
+                    <h3 className="text-base font-semibold text-gray-900">{popupFormData.title || 'Popup title'}</h3>
+                    <p className="mt-1 line-clamp-3 text-sm text-gray-500">{popupFormData.description || 'Popup description appears here.'}</p>
+                    {popupFormData.redirect_url && (
+                      <p className="mt-3 truncate rounded-lg bg-gray-50 px-3 py-2 font-mono text-xs text-gray-500">
+                        {popupFormData.redirect_url}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-auto space-y-2 pt-5">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {editingPopupBanner ? 'Save Changes' : 'Create Popup'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closePopupModal}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
