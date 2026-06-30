@@ -532,6 +532,54 @@ export const getAllMenus = (params = {}) => {
 export const getMenusByRestaurant = (restaurantUid, params) =>
   api.get(`/restaurant-menu`, { params: { restaurant: restaurantUid, includeInactive: 'true', ...params } });
 
+const getMenusFromResponse = (response) => {
+  const data = response?.data;
+  if (Array.isArray(data?.data?.restaurant_menus)) return data.data.restaurant_menus;
+  if (Array.isArray(data?.data?.restaurant_menu)) return data.data.restaurant_menu;
+  if (Array.isArray(data?.data?.items)) return data.data.items;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+};
+
+export const getAllMenusForPicker = async (params = {}) => {
+  const pageSize = Math.max(Number(params.limit) || 5000, 1);
+  const firstResponse = await getAllMenus({ ...params, page: 1, limit: pageSize });
+  const firstMenus = getMenusFromResponse(firstResponse);
+  const meta = firstResponse?.data?.meta || {};
+  const totalPages = Number(meta.totalPages) || Math.ceil((Number(meta.total) || firstMenus.length) / pageSize);
+
+  if (totalPages <= 1) return firstResponse;
+
+  const remainingResponses = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) =>
+      getAllMenus({ ...params, page: index + 2, limit: pageSize }),
+    ),
+  );
+  const allMenus = [
+    ...firstMenus,
+    ...remainingResponses.flatMap(getMenusFromResponse),
+  ];
+
+  return {
+    ...firstResponse,
+    data: {
+      ...firstResponse.data,
+      data: {
+        ...(firstResponse.data?.data || {}),
+        restaurant_menus: allMenus,
+      },
+      meta: {
+        ...meta,
+        total: Number(meta.total) || allMenus.length,
+        page: 1,
+        limit: pageSize,
+        totalPages,
+      },
+    },
+  };
+};
+
 export const getMenuByUid = (menuUid) => api.get(`/restaurant-menu/admin/${menuUid}`);
 export const getPublicMenuByUid = (menuUid) => api.get(`/restaurant-menu/${menuUid}`);
 export const getMenuAvailability = (menuUid) => api.get(`/restaurant-menu/${menuUid}/availability`);

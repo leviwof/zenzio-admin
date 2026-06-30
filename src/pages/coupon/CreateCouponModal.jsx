@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getAllMenus } from '../../services/api';
+import { getAllMenusForPicker } from '../../services/api';
 
 const getMenuName = (menu) => menu?.menu_name || menu?.title || menu?.name || menu?.menu_uid || '';
 const getMenuId = (menu) => menu?.menu_uid || menu?.menuUid || getMenuName(menu);
@@ -23,7 +23,7 @@ const MenuItemPicker = ({ selected, onChange }) => {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    getAllMenus({ limit: 5000 })
+    getAllMenusForPicker()
       .then((res) => setMenus(normalizeMenus(res).filter(Boolean)))
       .catch(() => setMenus([]))
       .finally(() => setLoading(false));

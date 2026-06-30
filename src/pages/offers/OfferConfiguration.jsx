@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import {
   createOffer,
   createOfferByAdmin,
-  getAllMenus,
+  getAllMenusForPicker,
   getAllRestaurants,
   getMenuCategories,
 } from "../../services/api";
@@ -123,7 +123,7 @@ const OfferConfiguration = () => {
       try {
         const requests = [
           getMenuCategories().catch(() => ({ data: [] })),
-          getAllMenus({ restaurant: restaurantAdmin ? ownRestaurantUid : undefined, limit: 5000 }).catch(() => ({ data: [] })),
+          getAllMenusForPicker({ restaurant: restaurantAdmin ? ownRestaurantUid : undefined }).catch(() => ({ data: [] })),
         ];
         if (!restaurantAdmin) requests.unshift(getAllRestaurants({}).catch(() => ({ data: [] })));
         const responses = await Promise.all(requests);
@@ -146,9 +146,9 @@ const OfferConfiguration = () => {
     const fetchMenusForRestaurant = async () => {
       try {
         const params = formData.restaurantId && formData.restaurantId !== "all"
-          ? { restaurant: formData.restaurantId, limit: 5000 }
-          : { limit: 5000 };
-        const response = await getAllMenus(params);
+          ? { restaurant: formData.restaurantId }
+          : {};
+        const response = await getAllMenusForPicker(params);
         setMenus(normalizeArray(response));
       } catch {
         setMenus([]);
