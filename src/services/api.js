@@ -717,6 +717,22 @@ export const updateDynamicBannerStatus = (id, isActive) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/banners/admin/promotional/${id}/status`, { is_active: isActive });
 export const deleteDynamicBanner = (id) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/banners/admin/promotional/${id}`);
+export const getPopupBannersAdmin = (params = {}) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/banners/admin/popup', { params });
+export const createPopupBanner = (data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/banners/admin/popup', data, {
+    headers: isMultipartPayload(data) ? { 'Content-Type': 'multipart/form-data' } : undefined,
+  });
+export const reorderPopupBanners = (items) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/banners/admin/popup/reorder', { items });
+export const updatePopupBanner = (id, data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/banners/admin/popup/${id}`, data, {
+    headers: isMultipartPayload(data) ? { 'Content-Type': 'multipart/form-data' } : undefined,
+  });
+export const updatePopupBannerStatus = (id, isActive) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/banners/admin/popup/${id}/status`, { is_active: isActive });
+export const deletePopupBanner = (id) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/banners/admin/popup/${id}`);
 
 export const getQuickMenusAdmin = (params = {}) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/quick-search/admin/list', { params });
