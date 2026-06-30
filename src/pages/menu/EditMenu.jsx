@@ -9,12 +9,9 @@ import toast from 'react-hot-toast';
 import { getAllRestaurants, editMenuByAdminWithImage, editMenuForRestaurant, uploadMenuImages, getMenuByUid, getMenuCategories, getAllCuisineCategories } from '../../services/api';
 import { getCurrentRestaurantUid, isRestaurantAdmin } from '../../utils/auth';
 import {
-    UNIT_GROUPS,
-    UNIT_LABELS,
     createEmptyMenuVariant,
     mapMenuVariantsFromApi,
     prepareMenuVariantsForSubmit,
-    isPortionUnit,
     isCountUnit,
 } from '../../utils/menuVariants';
 
@@ -258,12 +255,7 @@ const EditMenu = () => {
     const updateVariant = (index, field, value) => {
         setVariants(prev => prev.map((variant, currentIndex) => {
             if (currentIndex !== index) return variant;
-            const updated = { ...variant, [field]: value };
-            if (field === 'unit') {
-                if (isPortionUnit(value)) updated.quantity = 1;
-                else if (isPortionUnit(variant.unit)) updated.quantity = '';
-            }
-            return updated;
+            return { ...variant, [field]: value };
         }));
     };
 
@@ -672,30 +664,23 @@ const EditMenu = () => {
                         ) : (
                             <div className="space-y-3">
                                 {variants.map((variant, index) => {
-                                    const isPortion = isPortionUnit(variant.unit);
                                     const isCount = isCountUnit(variant.unit);
                                     return (
-                                    <div key={variant.id || index} className={`grid grid-cols-1 gap-3 items-end rounded-xl border border-gray-200 p-4 ${isPortion ? 'md:grid-cols-[1fr_1fr_auto]' : 'md:grid-cols-[1fr_1fr_1fr_auto]'}`}>
-                                        {/* Unit */}
+                                    <div key={variant.id || index} className="grid grid-cols-1 gap-3 items-end rounded-xl border border-gray-200 p-4 md:grid-cols-[1fr_1fr_1fr_auto]">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">Unit / Size</label>
-                                            <select
+                                            <input
+                                                type="text"
                                                 value={variant.unit}
                                                 onChange={(e) => updateVariant(index, 'unit', e.target.value)}
+                                                placeholder="e.g. Small, Half, 250 ml, Bowl"
+                                                maxLength={50}
                                                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                                            >
-                                                {UNIT_GROUPS.map(group => (
-                                                    <optgroup key={group.label} label={group.label}>
-                                                        {group.units.map(u => (
-                                                            <option key={u} value={u}>{UNIT_LABELS[u]}</option>
-                                                        ))}
-                                                    </optgroup>
-                                                ))}
-                                            </select>
+                                                required
+                                            />
                                         </div>
                                         {/* Quantity — hidden for portion units */}
-                                        {!isPortion && (
-                                            <div>
+                                        <div>
                                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                                     {isCount ? 'Count (pcs)' : 'Quantity'}
                                                 </label>
@@ -707,9 +692,9 @@ const EditMenu = () => {
                                                     step={isCount ? '1' : '0.001'}
                                                     placeholder={isCount ? '6' : '250'}
                                                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                                    required
                                                 />
-                                            </div>
-                                        )}
+                                        </div>
                                         {/* Price */}
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">Price (Rs.)</label>
