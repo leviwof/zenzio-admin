@@ -48,6 +48,7 @@ const initialForm = {
   title: "",
   offerCode: "",
   restaurantId: "",
+  restaurantIds: [],
   categoryId: "",
   offerType: "PERCENTAGE_DISCOUNT",
   discountValue: "",
@@ -59,6 +60,7 @@ const initialForm = {
   termsConditions: "",
   description: "",
   allowFreeDelivery: false,
+  usageLimitPerUser: "",
   rules: emptyRules,
   offer_scope: "ALL_MENU",
   included_category_ids: [],
@@ -111,6 +113,7 @@ const OfferConfiguration = () => {
   const [formData, setFormData] = useState({
     ...initialForm,
     restaurantId: restaurantAdmin ? ownRestaurantUid : "",
+    restaurantIds: restaurantAdmin && ownRestaurantUid ? [ownRestaurantUid] : [],
   });
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -157,11 +160,21 @@ const OfferConfiguration = () => {
     fetchMenusForRestaurant();
   }, [formData.restaurantId]);
 
+  const restaurantOptions = useMemo(
+    () => restaurants.map((r) => ({ label: getRestaurantName(r), value: r.uid || r.id })),
+    [restaurants],
+  );
+
   const selectedRestaurantName = useMemo(() => {
     if (restaurantAdmin) return ownRestaurantUid || "Own Restaurant";
+    if (formData.restaurantIds?.length > 1) return `${formData.restaurantIds.length} Restaurants`;
+    if (formData.restaurantIds?.length === 1) {
+      const restaurant = restaurants.find((item) => [item.uid, item.id].includes(formData.restaurantIds[0]));
+      return getRestaurantName(restaurant) || "Selected Restaurant";
+    }
     if (!formData.restaurantId) return "All Restaurants";
     return getRestaurantName(restaurants.find((restaurant) => [restaurant.uid, restaurant.id].includes(formData.restaurantId))) || "Selected Restaurant";
-  }, [formData.restaurantId, ownRestaurantUid, restaurantAdmin, restaurants]);
+  }, [formData.restaurantId, formData.restaurantIds, ownRestaurantUid, restaurantAdmin, restaurants]);
 
   const selectedType = OFFER_TYPES.find((type) => type.value === formData.offerType)?.label || "Offer";
   const menuOptions = menus.filter(Boolean);
@@ -210,12 +223,25 @@ const OfferConfiguration = () => {
       ...prev,
       [name]: type === "checkbox" ? checked : value,
       ...(name === "offerType" ? { rules: { ...emptyRules } } : {}),
-      ...(name === "restaurantId" ? { categoryId: "", rules: { ...prev.rules, buyCategory: "", buyItem: "", freeCategory: "", freeItem: "", triggerCategory: "" } } : {}),
+      ...(name === "restaurantId" ? { restaurantIds: value ? [value] : [], categoryId: "", rules: { ...prev.rules, buyCategory: "", buyItem: "", freeCategory: "", freeItem: "", triggerCategory: "" } } : {}),
     }));
     if (name === "offerType" || name === "restaurantId") {
       setBogoItems([{ buyItem: "", freeItem: "" }]);
       setBuyXItems([]);
     }
+  };
+
+  const handleRestaurantSelection = (restaurantIds) => {
+    const selectedIds = Array.from(new Set((restaurantIds || []).filter(Boolean)));
+    setFormData((prev) => ({
+      ...prev,
+      restaurantIds: selectedIds,
+      restaurantId: selectedIds[0] || "",
+      categoryId: "",
+      rules: { ...prev.rules, buyCategory: "", buyItem: "", freeCategory: "", freeItem: "", triggerCategory: "" },
+    }));
+    setBogoItems([{ buyItem: "", freeItem: "" }]);
+    setBuyXItems([]);
   };
 
   const handleRuleChange = (event) => {
@@ -340,6 +366,7 @@ const OfferConfiguration = () => {
 
     const discountTypes = ["PERCENTAGE_DISCOUNT", "FIXED_AMOUNT_DISCOUNT", "FESTIVAL_OFFER", "PLATFORM_CAMPAIGN"];
     if (discountTypes.includes(formData.offerType) && Number(formData.discountValue) < 0) return "Discount cannot be negative";
+    if (formData.usageLimitPerUser && Number(formData.usageLimitPerUser) < 1) return "Usage limit per user must be at least 1";
 
     if (formData.offerType === "BUY_ONE_GET_ONE") {
       if (!restaurantAdmin && !formData.restaurantId) return "Please select a restaurant before choosing menu items";
@@ -389,6 +416,7 @@ const OfferConfiguration = () => {
       data.append("discountValue", String(formData.discountValue || 0));
       data.append("minOrderValue", String(formData.minOrderValue || formData.rules.minimumCartAmount || 0));
       data.append("allowFreeDelivery", String(Boolean(formData.allowFreeDelivery)));
+      if (formData.usageLimitPerUser) data.append("usageLimitPerUser", String(formData.usageLimitPerUser));
       data.append("startDate", formData.startDate);
       data.append("endDate", formData.endDate);
       data.append("ruleConfig", JSON.stringify(
@@ -425,6 +453,7 @@ const OfferConfiguration = () => {
       data.append("rewards", JSON.stringify(rewards));
 
       if (formData.restaurantId) data.append("restaurantId", formData.restaurantId);
+      data.append("restaurantIds", JSON.stringify(formData.restaurantIds || []));
       if (formData.categoryId) data.append("categoryId", formData.categoryId);
       if (formData.startTime) data.append("startTime", formData.startTime);
       if (formData.endTime) data.append("endTime", formData.endTime);
@@ -450,7 +479,7 @@ const OfferConfiguration = () => {
   };
 
   const handleReset = () => {
-    setFormData({ ...initialForm, restaurantId: restaurantAdmin ? ownRestaurantUid : "", offer_scope: "ALL_MENU", included_category_ids: [], included_menu_ids: [], excluded_category_ids: [], excluded_menu_ids: [] });
+    setFormData({ ...initialForm, restaurantId: restaurantAdmin ? ownRestaurantUid : "", restaurantIds: restaurantAdmin && ownRestaurantUid ? [ownRestaurantUid] : [], offer_scope: "ALL_MENU", included_category_ids: [], included_menu_ids: [], excluded_category_ids: [], excluded_menu_ids: [] });
     setBogoItems([{ buyItem: "", freeItem: "" }]);
     setBuyXItems([]);
     setImageFile(null);
@@ -1091,14 +1120,14 @@ const OfferConfiguration = () => {
                   placeholder="Select offer type…"
                 />
               </Field>
-              <Field label="Restaurant" hint={restaurantAdmin ? "Locked to your restaurant" : "Leave empty for platform-wide offer"}>
+              <Field label="Restaurant" hint={restaurantAdmin ? "Locked to your restaurant" : "Select multiple restaurants, or leave empty for platform-wide offer"}>
                 {restaurantAdmin ? (
                   <input value={ownRestaurantUid || "Own Restaurant"} disabled className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-100 text-gray-500" />
                 ) : (
-                  <SearchableSelect
-                    options={restaurants.map((r) => ({ label: getRestaurantName(r), value: r.uid || r.id }))}
-                    value={formData.restaurantId}
-                    onChange={(val) => handleChange({ target: { name: "restaurantId", value: val ?? "", type: "select", checked: false } })}
+                  <MultiSelectDropdown
+                    options={restaurantOptions}
+                    selected={formData.restaurantIds || []}
+                    onChange={handleRestaurantSelection}
                     placeholder="Search restaurant…"
                     emptyLabel="All Restaurants (platform-wide)"
                   />
@@ -1135,6 +1164,20 @@ const OfferConfiguration = () => {
                 </button>
               </div>
             )}
+            <div className="mt-4">
+              <Field label="Usage Limit Per User" hint="Leave empty for unlimited use">
+                <input
+                  type="number"
+                  name="usageLimitPerUser"
+                  value={formData.usageLimitPerUser}
+                  onChange={handleChange}
+                  min="1"
+                  step="1"
+                  placeholder="e.g. 1"
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+                />
+              </Field>
+            </div>
           </section>
 
           {!["BUY_ONE_GET_ONE", "BUY_X_GET_Y"].includes(formData.offerType) && <section>
@@ -1312,6 +1355,11 @@ const OfferConfiguration = () => {
                   <Truck size={12} />
                   Free delivery enabled
                 </div>
+              )}
+              {formData.usageLimitPerUser && (
+                <p className="mt-3 text-xs font-medium text-indigo-700">
+                  Limit: {formData.usageLimitPerUser} use{Number(formData.usageLimitPerUser) === 1 ? "" : "s"} per user
+                </p>
               )}
             </div>
             <div className="text-xs text-gray-500">

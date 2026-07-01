@@ -425,6 +425,22 @@ const PushNotifications = () => {
     return () => clearTimeout(timer);
   }, [loadCampaigns]);
 
+  useEffect(() => {
+    const hasLiveCampaign = campaigns.some((campaign) =>
+      ['SCHEDULED', 'PROCESSING'].includes(campaign.status),
+    );
+    if (!hasLiveCampaign) return undefined;
+
+    const interval = setInterval(() => {
+      loadCampaigns();
+      if (details?.uid && ['SCHEDULED', 'PROCESSING'].includes(details.status)) {
+        loadDetails(details.uid);
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [campaigns, details?.status, details?.uid, loadCampaigns]);
+
   const stats = useMemo(() => {
     const base = Object.fromEntries(statuses.map((status) => [status, 0]));
     campaigns.forEach((campaign) => {
@@ -602,17 +618,30 @@ const PushNotifications = () => {
                         </div>
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-700">
-                        <div className="inline-flex items-center gap-1.5">
-                          <Users size={14} className="text-gray-400" />
-                          {campaign.targetType === 'ALL_USERS' ? 'All Users' : `${campaign.selectedUserUids?.length || 0} Users`}
+                        <div className="space-y-1">
+                          <div className="inline-flex items-center gap-1.5">
+                            <Users size={14} className="text-gray-400" />
+                            {campaign.targetType === 'ALL_USERS' ? 'All Users' : 'Selected Users'}
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            {campaign.totalRecipients || 0} eligible users
+                          </p>
                         </div>
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-600">{formatDateTime(campaign.scheduledAt)}</td>
                       <td className="px-4 py-4"><StatusBadge status={campaign.status} /></td>
                       <td className="px-4 py-4 text-sm text-gray-700">
-                        <span className="font-semibold text-emerald-600">{campaign.successCount || 0}</span>
-                        <span className="text-gray-400"> / </span>
-                        <span className="font-semibold text-red-500">{campaign.failureCount || 0}</span>
+                        <div className="space-y-0.5">
+                          <p>
+                            <span className="font-semibold text-emerald-600">{campaign.successCount || 0}</span>
+                            <span className="text-gray-400"> delivered / </span>
+                            <span className="font-semibold text-red-500">{campaign.failureCount || 0}</span>
+                            <span className="text-gray-400"> failed</span>
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {campaign.pendingCount || 0} pending of {campaign.totalRecipients || 0}
+                          </p>
+                        </div>
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-1.5">
@@ -715,7 +744,9 @@ const PushNotifications = () => {
                 <div className="rounded-xl border border-gray-100 overflow-hidden">
                   <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
                     <p className="text-sm font-bold text-gray-900">Recipients</p>
-                    <p className="text-xs text-gray-500">{details.successCount || 0} sent, {details.failureCount || 0} failed</p>
+                    <p className="text-xs text-gray-500">
+                      {details.totalRecipients || 0} target, {details.successCount || 0} delivered, {details.failureCount || 0} failed, {details.pendingCount || 0} pending
+                    </p>
                   </div>
                   <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
                     {(details.recipients || []).length === 0 ? (

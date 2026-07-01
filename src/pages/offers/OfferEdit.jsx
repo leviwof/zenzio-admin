@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Tag, Calendar, Clock, Image as ImageIcon,
@@ -37,9 +37,105 @@ const Field = ({ label, required, hint, children }) => (
 
 const inputCls = 'w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100';
 
+const getRestaurantName = (restaurant) =>
+  restaurant?.profile?.restaurant_name ||
+  restaurant?.restaurant_name ||
+  restaurant?.rest_name ||
+  restaurant?.name ||
+  restaurant?.uid ||
+  restaurant?.id;
+
+const SearchableRestaurantSelect = ({ restaurants, values = [], onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const rootRef = useRef(null);
+  const selectedValues = Array.isArray(values) ? values.filter(Boolean) : [];
+  const selectedRestaurants = restaurants.filter((restaurant) =>
+    selectedValues.includes(restaurant.uid || restaurant.id),
+  );
+  const filteredRestaurants = restaurants.filter((restaurant) =>
+    String(getRestaurantName(restaurant) || '').toLowerCase().includes(search.toLowerCase()),
+  );
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, []);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={`${inputCls} flex items-center justify-between gap-2 pl-9 text-left`}
+      >
+        <span className={selectedValues.length ? 'text-gray-900' : 'text-gray-400'}>
+          {selectedValues.length === 0
+            ? 'All Restaurants'
+            : selectedValues.length === 1
+            ? getRestaurantName(selectedRestaurants[0]) || 'Selected Restaurant'
+            : `${selectedValues.length} Restaurants selected`}
+        </span>
+        <span className="text-xs text-gray-400">Search</span>
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-2 w-full rounded-xl border border-gray-100 bg-white p-2 shadow-lg">
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search restaurant..."
+            className="mb-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-red-400 focus:outline-none"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={() => {
+              onChange([]);
+              setOpen(false);
+              setSearch('');
+            }}
+            className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-red-50"
+          >
+            All Restaurants
+          </button>
+          <div className="max-h-56 overflow-y-auto">
+            {filteredRestaurants.map((restaurant) => (
+              <button
+                key={restaurant.uid || restaurant.id}
+                type="button"
+                onClick={() => {
+                  const restaurantId = restaurant.uid || restaurant.id;
+                  onChange(
+                    selectedValues.includes(restaurantId)
+                      ? selectedValues.filter((id) => id !== restaurantId)
+                      : [...selectedValues, restaurantId],
+                  );
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-red-50"
+              >
+                <span>{getRestaurantName(restaurant)}</span>
+                {selectedValues.includes(restaurant.uid || restaurant.id) && (
+                  <span className="text-xs font-semibold text-red-500">Selected</span>
+                )}
+              </button>
+            ))}
+            {filteredRestaurants.length === 0 && (
+              <p className="px-3 py-3 text-sm text-gray-400">No restaurants found</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const emptyForm = {
   title: '',
   restaurantId: '',
+  restaurantIds: [],
   categoryId: '',
   offerCode: '',
   description: '',
@@ -53,6 +149,7 @@ const emptyForm = {
   termsConditions: '',
   isActive: true,
   allowFreeDelivery: false,
+  usageLimitPerUser: '',
 };
 
 const OfferEdit = () => {
@@ -100,6 +197,11 @@ const OfferEdit = () => {
       setFormData({
         title: offer.title || '',
         restaurantId: offer.restaurantId || '',
+        restaurantIds: offer.restaurantIds?.length
+          ? offer.restaurantIds
+          : offer.restaurantId
+          ? [offer.restaurantId]
+          : [],
         categoryId: offer.categoryId || '',
         offerCode: offer.offerCode || '',
         description: offer.description || '',
@@ -113,6 +215,7 @@ const OfferEdit = () => {
         termsConditions: offer.termsConditions || '',
         isActive: offer.isActive !== false,
         allowFreeDelivery: offer.allowFreeDelivery === true,
+        usageLimitPerUser: offer.usageLimitPerUser ?? '',
       });
 
       if (offer.offerImage) {
@@ -145,17 +248,23 @@ const OfferEdit = () => {
       return;
     }
     if (!formData.startDate || !formData.endDate) { toast.error('Start and end dates are required'); return; }
+    if (formData.usageLimitPerUser && Number(formData.usageLimitPerUser) < 1) {
+      toast.error('Usage limit per user must be at least 1');
+      return;
+    }
 
     setLoading(true);
     try {
       const data = new FormData();
       const allowed = ['title', 'restaurantId', 'categoryId', 'offerCode', 'description',
         'discountType', 'discountValue', 'minOrderValue', 'startDate', 'endDate',
-        'startTime', 'endTime', 'termsConditions', 'isActive', 'allowFreeDelivery'];
+        'startTime', 'endTime', 'termsConditions', 'isActive', 'allowFreeDelivery',
+        'usageLimitPerUser'];
       allowed.forEach((key) => {
         const val = formData[key];
         if (val !== '' && val !== undefined && val !== null) data.append(key, val);
       });
+      data.append('restaurantIds', JSON.stringify(formData.restaurantIds || []));
       if (imageFile) data.append('image', imageFile);
 
       if (isRestaurantScope) {
@@ -297,14 +406,17 @@ const OfferEdit = () => {
                   <Field label="Restaurant" hint="optional">
                     <div className="relative">
                       <Store size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <select value={formData.restaurantId} onChange={set('restaurantId')} className={`${inputCls} pl-9`}>
-                        <option value="">All Restaurants</option>
-                        {restaurants.map((r) => (
-                          <option key={r.uid || r.id} value={r.uid || r.id}>
-                            {r.profile?.restaurant_name || r.rest_name || r.name || r.uid}
-                          </option>
-                        ))}
-                      </select>
+                      <SearchableRestaurantSelect
+                        restaurants={restaurants}
+                        values={formData.restaurantIds || []}
+                        onChange={(restaurantIds) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            restaurantIds,
+                            restaurantId: restaurantIds[0] || '',
+                          }))
+                        }
+                      />
                     </div>
                   </Field>
                   <Field label="Category" hint="optional">
@@ -364,6 +476,17 @@ const OfferEdit = () => {
                       className={`${inputCls} pl-9`}
                     />
                   </div>
+                </Field>
+                <Field label="Usage Limit Per User" hint="leave empty for unlimited">
+                  <input
+                    type="number"
+                    value={formData.usageLimitPerUser}
+                    onChange={set('usageLimitPerUser')}
+                    placeholder="e.g. 1"
+                    min="1"
+                    step="1"
+                    className={inputCls}
+                  />
                 </Field>
                 <div className="flex items-center justify-between gap-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -527,6 +650,11 @@ const OfferEdit = () => {
                   {formData.minOrderValue && (
                     <p className="mt-0.5 text-xs text-red-400">Min order ₹{formData.minOrderValue}</p>
                   )}
+                  {formData.usageLimitPerUser && (
+                    <p className="mt-0.5 text-xs text-red-400">
+                      Limit {formData.usageLimitPerUser} use{Number(formData.usageLimitPerUser) === 1 ? '' : 's'} per user
+                    </p>
+                  )}
                 </div>
 
                 {formData.allowFreeDelivery && (
@@ -540,7 +668,7 @@ const OfferEdit = () => {
                   <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2">
                     <Store size={13} className="text-blue-500" />
                     <span className="text-xs font-medium text-blue-700">
-                      {selectedRestaurant.profile?.restaurant_name || selectedRestaurant.rest_name || 'Restaurant'}
+                      {getRestaurantName(selectedRestaurant) || 'Restaurant'}
                     </span>
                   </div>
                 )}
