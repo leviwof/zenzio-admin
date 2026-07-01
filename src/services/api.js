@@ -688,6 +688,26 @@ export const getNotifications = (params) => {
   return api.get(`/notifications${qs}`);
 };
 export const markNotificationAsRead = (id) => api.patch(`/notifications/${id}/read`);
+export const getPushNotificationCampaigns = (params = {}) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get('/notifications/list', { params });
+export const getPushNotificationCampaign = (uid) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.get(`/notifications/${uid}`);
+export const createPushNotificationCampaign = (data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post('/notifications/create', data);
+export const uploadPushNotificationImage = (file) => {
+  if (isRestaurantAdmin()) return rejectRestrictedApi();
+  const formData = new FormData();
+  formData.append('image', file);
+  return api.post('/notifications/upload-image', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+export const updatePushNotificationCampaign = (uid, data) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.put(`/notifications/${uid}`, data);
+export const deletePushNotificationCampaign = (uid) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/notifications/${uid}`);
+export const sendPushNotificationCampaignNow = (uid) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.post(`/notifications/${uid}/send-now`);
 
 
 
