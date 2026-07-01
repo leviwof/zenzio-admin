@@ -117,17 +117,32 @@ const ORDER_STATUS_TOOLTIP_MESSAGES = {
   FAILED: "Order failed.",
 };
 
-const getCancellationReason = (order) =>
-  order?.cancellationReason ||
-  order?.cancellation_reason ||
-  order?.rejectionReason ||
-  order?.rejection_reason ||
-  order?.rejectReason ||
-  order?.reject_reason ||
-  order?.cancelReason ||
-  order?.cancel_reason ||
-  order?.reason ||
-  "";
+const getCancellationReason = (order) => {
+  const direct =
+    order?.cancellationReason ||
+    order?.cancellation_reason ||
+    order?.rejectionReason ||
+    order?.rejection_reason ||
+    order?.rejectReason ||
+    order?.reject_reason ||
+    order?.cancelReason ||
+    order?.cancel_reason ||
+    order?.reason;
+  if (direct) return direct;
+
+  const timeline = order?.status_timeline || order?.orderTimeline || [];
+  if (!Array.isArray(timeline)) return "";
+
+  const cancelEntry = timeline.find((e) => {
+    const s = String(e?.status || "").toUpperCase();
+    return ["CANCELLED", "ADMIN_CANCELLED", "REJECTED"].includes(s);
+  });
+  if (!cancelEntry?.message) return "";
+
+  const msg = cancelEntry.message;
+  const colonIdx = msg.indexOf(": ");
+  return colonIdx !== -1 ? msg.slice(colonIdx + 2) : msg;
+};
 
 const getOrderStatusTooltip = (order) => {
   const status = resolveDisplayStatus(order);
@@ -135,19 +150,22 @@ const getOrderStatusTooltip = (order) => {
   if (["CANCELLED", "ADMIN_CANCELLED", "REJECTED"].includes(status)) {
     const reason = getCancellationReason(order);
     const label = status === "REJECTED" ? "Rejected" : "Cancelled";
-    return `${label}: ${reason || "No reason provided."}`;
+    return reason ? `${label}: ${reason}` : label;
   }
 
   if (status === "DELIVERED" || status === "COMPLETED") {
     const executiveName =
       order?.deliveryPartnerInformation?.name ||
+      order?.deliveryPartnerInformation?.fullName ||
       order?.deliveryPartnerName ||
       order?.delivery_partner_name ||
       order?.executiveName ||
       order?.fleet_name ||
+      order?.partner?.label ||
+      order?.partner?.name ||
       order?.partner_name ||
-      "the assigned delivery executive";
-    return `Delivered by ${executiveName}`;
+      "";
+    return executiveName ? `Delivery by ${executiveName}` : "Delivered";
   }
 
   return ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, " ").toLowerCase();

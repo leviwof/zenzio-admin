@@ -295,6 +295,12 @@ const getTimelineEntry = (timeline = [], statuses = []) => {
   return timeline.find((entry) => statusSet.has(String(entry?.status || '').toUpperCase()));
 };
 
+const extractReasonFromMessage = (msg) => {
+  if (!msg) return '';
+  const colonIdx = msg.indexOf(': ');
+  return colonIdx !== -1 ? msg.slice(colonIdx + 2) : msg;
+};
+
 const getRejectionReason = (order, timeline = []) => {
   const rejectedEntry = getTimelineEntry(timeline, ['REJECTED', 'CANCELLED', 'ADMIN_CANCELLED']);
   return (
@@ -309,7 +315,7 @@ const getRejectionReason = (order, timeline = []) => {
     rejectedEntry?.reason ||
     rejectedEntry?.remarks ||
     rejectedEntry?.note ||
-    rejectedEntry?.message ||
+    extractReasonFromMessage(rejectedEntry?.message) ||
     ''
   );
 };
@@ -334,19 +340,25 @@ const getOrderStatusTooltip = (order, currentStatus, timeline = []) => {
   if (!order) return '';
   const status = String(currentStatus || '').toUpperCase();
 
-  if (status === 'REJECTED') {
+  if (status === 'REJECTED' || status === 'CANCELLED' || status === 'ADMIN_CANCELLED') {
     const reason = getRejectionReason(order, timeline);
-    return `Rejected: ${reason || 'No reason provided.'}`;
+    const label = status === 'REJECTED' ? 'Rejected' : 'Cancelled';
+    return reason ? `${label}: ${reason}` : label;
   }
 
   if (status === 'DELIVERED' || status === 'COMPLETED') {
     const executiveName =
       order?.deliveryPartnerInformation?.name ||
       order?.deliveryPartnerInformation?.fullName ||
+      order?.deliveryPartnerName ||
+      order?.delivery_partner_name ||
+      order?.executiveName ||
+      order?.fleet_name ||
       order?.partner?.label ||
       order?.partner?.name ||
-      'the assigned delivery executive';
-    return `Delivered by ${executiveName}`;
+      order?.partner_name ||
+      '';
+    return executiveName ? `Delivery by ${executiveName}` : 'Delivered';
   }
 
   return ORDER_STATUS_TOOLTIP_MESSAGES[status] || status.replace(/_/g, ' ').toLowerCase();
