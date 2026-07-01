@@ -58,6 +58,7 @@ import ActivityLog from "./pages/activity/ActivityLog";
 import DownloadRedirect from "./pages/download/DownloadRedirect";
 import HomeFoodsManagement from "./pages/home-foods/HomeFoodsManagement";
 import ProviderDetails from "./pages/home-foods/ProviderDetails";
+import PushNotifications from "./pages/marketing/PushNotifications";
 
 function App() {
   const [authReady, setAuthReady] = useState(false);
@@ -170,6 +171,7 @@ function App() {
               <Route path="/home-foods/deliveries" element={<HomeFoodsManagement />} />
               <Route path="/home-foods/menus" element={<HomeFoodsManagement />} />
               <Route path="/home-foods/analytics" element={<HomeFoodsManagement />} />
+              <Route path="/marketing/push-notifications" element={<PushNotifications />} />
 
               <Route path="/customers" element={<CustomersList />} />
               <Route path="/customers/:id" element={<CustomerDetails />} />

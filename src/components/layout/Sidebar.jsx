@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, Users, Utensils, Truck,
+  LayoutDashboard, Users, Utensils, Truck, Bell,
   ClipboardList, Tag, Menu, BarChart3,
   Settings, CheckCircle, Calendar,
   Gift, Navigation, Image, ChevronLeft,
-  ChevronRight, ChevronDown, Plus, Search, X, ChefHat, Store, CreditCard, PackageCheck
+  ChevronRight, ChevronDown, Plus, Search, X, ChefHat, Store, CreditCard, PackageCheck,
+  Megaphone
 } from 'lucide-react';
 import logo from '../../assets/logo.png';
 import { getAdminProfile } from '../../services/api';
@@ -32,6 +33,16 @@ const menuItems = [
       { id: 'home-foods-deliveries', path: '/home-foods/deliveries', icon: PackageCheck, label: 'Deliveries' },
       { id: 'home-foods-menus', path: '/home-foods/menus', icon: Utensils, label: 'Kitchens Menu' },
       { id: 'home-foods-analytics', path: '/home-foods/analytics', icon: BarChart3, label: 'Analytics' },
+    ],
+  },
+  {
+    id: 'marketing-section',
+    icon: Megaphone,
+    label: 'Marketing',
+    adminOnly: true,
+    isDropdown: true,
+    children: [
+      { id: 'push-notifications', path: '/marketing/push-notifications', icon: Bell, label: 'Push Notifications' },
     ],
   },
   { id: 'subscription', path: '/subscription', icon: Calendar, label: 'Subscription', isUpcoming: true },
@@ -64,6 +75,9 @@ const Sidebar = ({ isOpen }) => {
   const [hoveredItem, setHoveredItem] = useState(null);
   const [homeFoodsOpen, setHomeFoodsOpen] = useState(
     location.pathname.startsWith('/home-foods'),
+  );
+  const [marketingOpen, setMarketingOpen] = useState(
+    location.pathname.startsWith('/marketing'),
   );
   const [homeFoodsLabel, setHomeFoodsLabel] = useState('Home Foods');
   const [search, setSearch] = useState('');
@@ -132,6 +146,7 @@ const Sidebar = ({ isOpen }) => {
   };
 
   const isHomeFoodsActive = location.pathname.startsWith('/home-foods');
+  const isMarketingActive = location.pathname.startsWith('/marketing');
 
   if (!isOpen) return null;
 
@@ -231,6 +246,9 @@ const Sidebar = ({ isOpen }) => {
         {visibleMenuItems.map((item) => {
           if (item.isDropdown) {
             const dropdownLabel = item.id === 'home-foods-section' ? homeFoodsLabel : item.label;
+            const dropdownOpen = item.id === 'marketing-section' ? marketingOpen : homeFoodsOpen;
+            const setDropdownOpen = item.id === 'marketing-section' ? setMarketingOpen : setHomeFoodsOpen;
+            const dropdownActive = item.id === 'marketing-section' ? isMarketingActive : isHomeFoodsActive;
             return (
               <div key={item.id} className="relative group">
                 <motion.button
@@ -239,13 +257,13 @@ const Sidebar = ({ isOpen }) => {
                   onClick={() => {
                     if (collapsed) {
                       setCollapsed(false);
-                      setHomeFoodsOpen(true);
+                      setDropdownOpen(true);
                     } else {
-                      setHomeFoodsOpen((prev) => !prev);
+                      setDropdownOpen((prev) => !prev);
                     }
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 ${
-                    isHomeFoodsActive
+                    dropdownActive
                       ? 'text-indigo-300 bg-indigo-500/10'
                       : 'text-gray-400 hover:text-gray-200 hover:bg-sidebar-hover'
                   }`}
@@ -253,7 +271,7 @@ const Sidebar = ({ isOpen }) => {
                   onMouseLeave={() => setHoveredItem(null)}
                 >
                   <motion.div
-                    animate={isHomeFoodsActive ? { scale: 1.05 } : { scale: 1 }}
+                    animate={dropdownActive ? { scale: 1.05 } : { scale: 1 }}
                     className="flex-shrink-0"
                   >
                     <item.icon size={collapsed ? 20 : 18} />
@@ -283,7 +301,7 @@ const Sidebar = ({ isOpen }) => {
                   </AnimatePresence>
                   {!collapsed && (
                     <motion.div
-                      animate={{ rotate: homeFoodsOpen ? 180 : 0 }}
+                      animate={{ rotate: dropdownOpen ? 180 : 0 }}
                       transition={{ duration: 0.2 }}
                       className="flex-shrink-0"
                     >
@@ -299,7 +317,7 @@ const Sidebar = ({ isOpen }) => {
                 )}
 
                 <AnimatePresence initial={false}>
-                  {homeFoodsOpen && !collapsed && (
+                  {dropdownOpen && !collapsed && (
                     <motion.div
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
