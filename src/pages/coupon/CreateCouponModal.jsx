@@ -7,6 +7,14 @@ const getMenuName = (menu) => menu?.menu_name || menu?.title || menu?.name || me
 const getMenuId = (menu) => menu?.menu_uid || menu?.menuUid || getMenuName(menu);
 const getMenuCategory = (menu) => menu?.category || menu?.category_name || menu?.categoryName || '';
 const getMenuRestaurantUid = (menu) => menu?.restaurant_uid || menu?.restaurantUid || menu?.restaurant?.uid || '';
+const getRestaurantUid = (restaurant) =>
+  restaurant?.restaurant_uid ||
+  restaurant?.restaurantUid ||
+  restaurant?.uid ||
+  restaurant?.restaurant?.uid ||
+  restaurant?.profile?.restaurantUid ||
+  restaurant?.id ||
+  '';
 const getRestaurantName = (restaurant) =>
   restaurant?.profile?.restaurant_name ||
   restaurant?.restaurant_name ||
@@ -48,7 +56,7 @@ const RestaurantMultiSelect = ({ selected, onChange }) => {
   }, []);
 
   const options = restaurants.map((restaurant) => ({
-    value: restaurant.uid || restaurant.id,
+    value: getRestaurantUid(restaurant),
     label: getRestaurantName(restaurant),
   })).filter((option) => option.value);
   const lowerSearch = search.trim().toLowerCase();
