@@ -1,11 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getAllMenusForPicker } from '../../services/api';
+import { getAllMenusForPicker, getAllRestaurants } from '../../services/api';
 
 const getMenuName = (menu) => menu?.menu_name || menu?.title || menu?.name || menu?.menu_uid || '';
 const getMenuId = (menu) => menu?.menu_uid || menu?.menuUid || getMenuName(menu);
 const getMenuCategory = (menu) => menu?.category || menu?.category_name || menu?.categoryName || '';
+const getMenuRestaurantUid = (menu) => menu?.restaurant_uid || menu?.restaurantUid || menu?.restaurant?.uid || '';
+const getRestaurantName = (restaurant) =>
+  restaurant?.profile?.restaurant_name ||
+  restaurant?.restaurant_name ||
+  restaurant?.rest_name ||
+  restaurant?.name ||
+  restaurant?.uid ||
+  restaurant?.id ||
+  '';
 
 const normalizeMenus = (response) => {
   const data = response?.data;
@@ -17,7 +26,89 @@ const normalizeMenus = (response) => {
   return [];
 };
 
-const MenuItemPicker = ({ selected, onChange }) => {
+const normalizeRestaurants = (response) => {
+  const data = response?.data;
+  if (Array.isArray(data?.data?.restaurants)) return data.data.restaurants;
+  if (Array.isArray(data?.restaurants)) return data.restaurants;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data)) return data;
+  return [];
+};
+
+const RestaurantMultiSelect = ({ selected, onChange }) => {
+  const [restaurants, setRestaurants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    getAllRestaurants({})
+      .then((res) => setRestaurants(normalizeRestaurants(res).filter(Boolean)))
+      .catch(() => setRestaurants([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const options = restaurants.map((restaurant) => ({
+    value: restaurant.uid || restaurant.id,
+    label: getRestaurantName(restaurant),
+  })).filter((option) => option.value);
+  const lowerSearch = search.trim().toLowerCase();
+  const visible = lowerSearch ? options.filter((option) => option.label.toLowerCase().includes(lowerSearch)) : options;
+  const toggle = (value) =>
+    onChange(selected.includes(value) ? selected.filter((id) => id !== value) : [...selected, value]);
+
+  if (loading) {
+    return <div className="px-4 py-3 text-sm text-gray-400 border border-gray-200 rounded-lg">Loading restaurants...</div>;
+  }
+
+  return (
+    <div className="border border-gray-300 rounded-lg overflow-hidden">
+      <div className="p-2 border-b border-gray-200 bg-gray-50">
+        <input
+          type="text"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search restaurants..."
+          className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-red-400/30 focus:border-red-400 bg-white"
+        />
+      </div>
+      <ul className="max-h-48 overflow-y-auto divide-y divide-gray-50">
+        {visible.length === 0 ? (
+          <li className="px-4 py-3 text-sm text-gray-400 text-center">No restaurants found</li>
+        ) : visible.map((option) => {
+          const checked = selected.includes(option.value);
+          return (
+            <li
+              key={option.value}
+              onClick={() => toggle(option.value)}
+              className={`px-4 py-2 cursor-pointer flex items-center gap-3 hover:bg-red-50 transition-colors text-sm ${checked ? 'bg-red-50/60' : ''}`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggle(option.value)}
+                onClick={(event) => event.stopPropagation()}
+                className="accent-red-500 w-4 h-4 flex-shrink-0 cursor-pointer"
+              />
+              <span className={`flex-1 truncate ${checked ? 'text-red-700 font-medium' : 'text-gray-700'}`}>
+                {option.label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="px-4 py-1.5 border-t border-gray-200 bg-gray-50 flex items-center justify-between text-xs text-gray-500">
+        <span>{selected.length ? `${selected.length} selected` : 'All restaurants'}</span>
+        {selected.length > 0 && (
+          <button type="button" onClick={() => onChange([])} className="text-red-400 hover:text-red-600 font-medium">
+            Clear all
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const MenuItemPicker = ({ selected, onChange, restaurantUids = [] }) => {
   const [menus, setMenus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -29,7 +120,11 @@ const MenuItemPicker = ({ selected, onChange }) => {
       .finally(() => setLoading(false));
   }, []);
 
-  const options = menus.map((m) => ({
+  const scopedMenus = restaurantUids.length
+    ? menus.filter((menu) => restaurantUids.includes(getMenuRestaurantUid(menu)))
+    : menus;
+
+  const options = scopedMenus.map((m) => ({
     value: getMenuId(m),
     label: `${getMenuName(m)}${getMenuCategory(m) ? ` (${getMenuCategory(m)})` : ''}${m.price ? ` · ₹${m.price}` : ''}`,
   }));
@@ -136,6 +231,7 @@ const MenuItemPicker = ({ selected, onChange }) => {
 const CreateCouponPage = ({ onClose, onSave, initialData }) => {
   const [makeActive, setMakeActive] = useState(false);
   const [applicableMenuIds, setApplicableMenuIds] = useState([]);
+  const [restaurantUids, setRestaurantUids] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -169,6 +265,7 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
       });
       setMakeActive(initialData.status === 'Active');
       setApplicableMenuIds(Array.isArray(initialData.applicable_menu_ids) ? initialData.applicable_menu_ids : []);
+      setRestaurantUids(Array.isArray(initialData.restaurant_uids) ? initialData.restaurant_uids : []);
     }
   }, [initialData]);
 
@@ -203,6 +300,7 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
       targetAudience: formData.targetAudience,
       status: makeActive ? 'Active' : 'Inactive',
       applicable_menu_ids: applicableMenuIds,
+      restaurant_uids: restaurantUids,
     };
 
     onSave(newCoupon);
@@ -410,6 +508,20 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
               </div>
 
               <div className="mb-6">
+                <label className="block text-sm text-gray-700 mb-2">Restaurants (Optional)</label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Leave empty to allow this coupon for all restaurants. Select restaurants to restrict the coupon.
+                </p>
+                <RestaurantMultiSelect
+                  selected={restaurantUids}
+                  onChange={(ids) => {
+                    setRestaurantUids(ids);
+                    setApplicableMenuIds([]);
+                  }}
+                />
+              </div>
+
+              <div className="mb-6">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -438,6 +550,7 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
                       {formData.discountType === 'percentage' ? `${formData.discountValue}%` : `₹${formData.discountValue}`} off on orders over ₹{formData.minOrderValue || '0'}.
                       Valid from {formData.startDate || '[Start Date]'} to {formData.endDate || '[End Date]'}.
                       Limited to {formData.usageLimit || '0'} total uses and {formData.usageLimitPerUser || '1'} per user.
+                      {restaurantUids.length > 0 && ` Valid for ${restaurantUids.length} selected restaurant${restaurantUids.length > 1 ? 's' : ''}.`}
                       {applicableMenuIds.length > 0 && ` Only valid on ${applicableMenuIds.length} selected dish${applicableMenuIds.length > 1 ? 'es' : ''}.`}
                     </div>
                   </div>
@@ -454,7 +567,7 @@ const CreateCouponPage = ({ onClose, onSave, initialData }) => {
                 Leave empty to allow coupon on any item. Select specific dishes to restrict — user must have at least one of these in their cart to apply the coupon.
               </p>
             </div>
-            <MenuItemPicker selected={applicableMenuIds} onChange={setApplicableMenuIds} />
+            <MenuItemPicker selected={applicableMenuIds} onChange={setApplicableMenuIds} restaurantUids={restaurantUids} />
           </div>
 
           <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">
