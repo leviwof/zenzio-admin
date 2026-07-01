@@ -586,7 +586,7 @@ export const getMenuAvailability = (menuUid) => api.get(`/restaurant-menu/${menu
 
 
 export const toggleMenuStatus = (menuUid, newStatus) =>
-  isRestaurantAdmin() ? api.patch(`/restaurant-menu/${menuUid}/toggle`) : api.patch(`/restaurant-menu/${menuUid}/status/admin`, {
+  api.patch(`/restaurant-menu/${menuUid}/status/admin`, {
     status: newStatus ? 1 : 0,
     isActive: newStatus ? 1 : 0
   });
