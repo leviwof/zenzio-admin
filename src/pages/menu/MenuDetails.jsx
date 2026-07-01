@@ -19,7 +19,8 @@ const MenuDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [menu, setMenu] = useState(null);
-  const [toggling, setToggling] = useState(false);
+  const [statusToggling, setStatusToggling] = useState(false);
+  const [availabilityToggling, setAvailabilityToggling] = useState(false);
 
   useEffect(() => {
     console.log('🔍 MenuDetails mounted with UID:', menuUid);
@@ -77,10 +78,9 @@ const MenuDetails = () => {
   
   const handleToggleStatus = async () => {
     try {
-      setToggling(true);
+      setStatusToggling(true);
       const state = getMenuAvailabilityState(menu);
-      const togglesItemAvailability = restaurantAdmin;
-      const currentStatus = togglesItemAvailability ? state.menuIsAvailable : state.menuStatus;
+      const currentStatus = state.menuStatus;
       const newStatus = !currentStatus;
       
       console.log('🔄 Toggling menu status:', {
@@ -95,9 +95,7 @@ const MenuDetails = () => {
         body: { status: newStatus ? 1 : 0, isActive: newStatus ? 1 : 0 }
       });
       
-      const response = togglesItemAvailability
-        ? await toggleMenuAvailability(menuUid, newStatus)
-        : await toggleMenuStatus(menuUid, newStatus);
+      const response = await toggleMenuStatus(menuUid, newStatus);
       
       
       console.log('📥 API Response:', response);
@@ -106,11 +104,7 @@ const MenuDetails = () => {
       
       if (response.data?.status === 'success' || response.data?.code === 200) {
         await fetchMenuDetails();
-        const successLabel = togglesItemAvailability
-          ? (newStatus ? 'available' : 'unavailable')
-          : (newStatus ? 'enabled' : 'disabled');
-        
-        
+        const successLabel = newStatus ? 'enabled' : 'disabled';
         toast.success(`Menu ${successLabel} successfully`);
       } else {
         throw new Error('Toggle failed - unexpected response');
@@ -124,7 +118,32 @@ const MenuDetails = () => {
       
       fetchMenuDetails();
     } finally {
-      setToggling(false);
+      setStatusToggling(false);
+    }
+  };
+
+  const handleToggleAvailability = async () => {
+    try {
+      setAvailabilityToggling(true);
+      const state = getMenuAvailabilityState(menu);
+      const currentAvailability = state.menuIsAvailable;
+      const newAvailability = !currentAvailability;
+
+      const response = await toggleMenuAvailability(menuUid, newAvailability, menu?.menu_name);
+
+      if (response.data?.status === 'success' || response.data?.code === 200) {
+        await fetchMenuDetails();
+        toast.success(`Menu marked ${newAvailability ? 'available' : 'unavailable'} successfully`);
+      } else {
+        throw new Error('Toggle failed - unexpected response');
+      }
+    } catch (error) {
+      console.error('Error toggling menu availability:', error);
+      console.error('Error response:', error.response?.data);
+      toast.error(error.response?.data?.message || 'Failed to update menu availability');
+      fetchMenuDetails();
+    } finally {
+      setAvailabilityToggling(false);
     }
   };
 
@@ -195,10 +214,8 @@ const MenuDetails = () => {
   const manualAvailabilityActive = availabilityState.menuIsAvailable;
   const canOrder = availabilityState.canOrder;
   const reasonText = availabilityState.reasonText || (canOrder ? 'Can be ordered' : 'Currently unavailable');
-  const toggleActive = restaurantAdmin ? manualAvailabilityActive : adminStatusActive;
-  const toggleLabel = restaurantAdmin
-    ? (manualAvailabilityActive ? 'Mark Unavailable' : 'Mark Available')
-    : (adminStatusActive ? 'Disable' : 'Enable');
+  const statusToggleLabel = adminStatusActive ? 'Turn Off' : 'Turn On';
+  const availabilityToggleLabel = manualAvailabilityActive ? 'Mark Unavailable' : 'Mark Available';
   return (
     <div className="p-6">
       <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -218,7 +235,7 @@ const MenuDetails = () => {
                 ? 'bg-green-100 text-green-800' 
                 : 'bg-gray-100 text-gray-800'
             }`}>
-              Admin Status: {adminStatusActive ? 'On' : 'Off'}
+              Status: {adminStatusActive ? 'On' : 'Off'}
             </span>
             <span
               className={`px-4 py-2 rounded-full text-sm font-medium ${
@@ -231,24 +248,49 @@ const MenuDetails = () => {
             
             <button
               onClick={handleToggleStatus}
-              disabled={toggling}
+              disabled={statusToggling}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                toggleActive
+                adminStatusActive
                   ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
                   : 'bg-green-100 text-green-700 hover:bg-green-200'
-              } ${toggling ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title={restaurantAdmin ? 'Toggle item availability' : 'Toggle admin menu status'}
+              } ${statusToggling ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title="Toggle menu status"
             >
-              {toggling ? (
+              {statusToggling ? (
                 <>
                   <Loader2 size={18} className="animate-spin" />
                   <span className="text-sm font-medium">Processing...</span>
                 </>
               ) : (
                 <>
-                  {toggleActive ? <PowerOff size={18} /> : <Power size={18} />}
+                  {adminStatusActive ? <PowerOff size={18} /> : <Power size={18} />}
                   <span className="text-sm font-medium">
-                    {toggleLabel}
+                    {statusToggleLabel}
+                  </span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleToggleAvailability}
+              disabled={availabilityToggling}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                manualAvailabilityActive
+                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+              } ${availabilityToggling ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title="Toggle temporary menu availability"
+            >
+              {availabilityToggling ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span className="text-sm font-medium">Processing...</span>
+                </>
+              ) : (
+                <>
+                  {manualAvailabilityActive ? <PowerOff size={18} /> : <Power size={18} />}
+                  <span className="text-sm font-medium">
+                    {availabilityToggleLabel}
                   </span>
                 </>
               )}

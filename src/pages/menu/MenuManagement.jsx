@@ -23,20 +23,6 @@ import { getMenuAvailabilityState, mergeMenuAvailability } from '../../utils/men
 const formatDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
 
-const getStatusBadge = (isActive) => {
-  if (isActive) {
-    return { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-600/20', dot: 'bg-emerald-500', label: 'On' };
-  }
-  return { bg: 'bg-gray-50', text: 'text-gray-700', ring: 'ring-gray-600/20', dot: 'bg-gray-400', label: 'Off' };
-};
-
-const getAvailBadge = (isAvailable) => {
-  if (isAvailable) {
-    return { bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-600/20', dot: 'bg-blue-500', label: 'Orderable' };
-  }
-  return { bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-600/20', dot: 'bg-amber-500', label: 'Blocked' };
-};
-
 const FilterDropdown = ({ label, icon: Icon, value, options, onChange, onClear }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -1293,8 +1279,6 @@ const MenuManagement = () => {
                 <tbody className="divide-y divide-gray-50">
                   {menus.map((menu, idx) => {
                     const availabilityState = getMenuAvailabilityState(menu);
-                    const statusBadge = getStatusBadge(availabilityState.menuStatus);
-                    const availBadge = getAvailBadge(availabilityState.canOrder);
                     const selected = selectedIds.has(menu.menu_uid);
                     const unavailableTitle = availabilityState.reasonText
                       ? `Unavailable: ${availabilityState.reasonText}`
@@ -1369,31 +1353,25 @@ const MenuManagement = () => {
                           </span>
                         </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          {restaurantAdmin ? (
-                            <span
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset ${statusBadge.bg} ${statusBadge.text} ${statusBadge.ring}`}
-                              title="Admin status is controlled by Zenzio Admin"
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${statusBadge.dot}`} />
-                              {statusBadge.label}
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleToggleStatus(menu)}
-                              disabled={toggleLoading[menu.menu_uid]}
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset cursor-pointer transition-all duration-150
-                                ${!toggleLoading[menu.menu_uid] ? 'hover:ring-2' : ''} disabled:opacity-50 disabled:cursor-not-allowed
-                                ${statusBadge.bg} ${statusBadge.text} ${statusBadge.ring}`}
-                              title={`Click to ${availabilityState.menuStatus ? 'disable' : 'enable'} admin status`}
-                            >
-                              {toggleLoading[menu.menu_uid] ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : (
-                                <span className={`w-1.5 h-1.5 rounded-full ${statusBadge.dot}`} />
-                              )}
-                              {toggleLoading[menu.menu_uid] ? 'Updating...' : statusBadge.label}
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleToggleAvailability(menu)}
+                            disabled={toggleLoading[menu.menu_uid]}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset cursor-pointer transition-all duration-150
+                              ${!toggleLoading[menu.menu_uid] ? 'hover:ring-2' : ''} disabled:opacity-50 disabled:cursor-not-allowed
+                              ${availabilityState.menuIsAvailable ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' : 'bg-red-50 text-red-700 ring-red-600/20'}`}
+                            title={unavailableTitle}
+                          >
+                            {toggleLoading[menu.menu_uid] ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <span className={`w-1.5 h-1.5 rounded-full ${availabilityState.menuIsAvailable ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                            )}
+                            {toggleLoading[menu.menu_uid]
+                              ? 'Updating...'
+                              : availabilityState.menuIsAvailable
+                                ? 'Available'
+                                : 'Unavailable'}
+                          </button>
                         </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <button
