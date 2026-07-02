@@ -393,6 +393,8 @@ export const uploadProviderProfileImage = (file) => {
 };
 export const getHomeFoodProviderDetail = (providerUid) =>
   homeFoodsAdminOnly(() => api.get(`/admin/home-foods/providers/${providerUid}`));
+export const getHomeFoodProviderMenus = (providerUid) =>
+  homeFoodsAdminOnly(() => api.get(`/home-food/providers/${providerUid}/menus`));
 export const updateHomeFoodProviderAdmin = (providerUid, data) =>
   homeFoodsAdminOnly(() => api.patch(`/admin/home-foods/providers/${providerUid}`, data));
 export const deleteHomeFoodProvider = (providerUid) =>

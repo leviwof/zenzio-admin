@@ -16,6 +16,12 @@ import {
   deleteHomeFoodProvider,
   rejectHomeFoodProvider,
 } from '../../services/api';
+import PlanPricingEditor, {
+  buildPlanOptionsPayload,
+  normalizePlanOptions,
+  planOptionsLabel,
+  validatePlanOptions,
+} from './PlanPricingEditor';
 
 // ── constants ──────────────────────────────────────────────────────────────────
 const MEAL_STYLES = {
@@ -27,9 +33,6 @@ const MEAL_STYLES = {
 const DAYS_ORDER = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
 const DAY_ABBR   = { MONDAY:'Mon', TUESDAY:'Tue', WEDNESDAY:'Wed', THURSDAY:'Thu', FRIDAY:'Fri', SATURDAY:'Sat', SUNDAY:'Sun' };
 const MEAL_TYPES = ['BREAKFAST', 'LUNCH', 'SNACKS', 'DINNER'];
-const PLAN_TYPES = ['TRIAL', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'HALF_YEARLY'];
-const PLAN_DURATION_DAYS = { TRIAL: 1, WEEKLY: 7, MONTHLY: 30, QUARTERLY: 90, HALF_YEARLY: 180 };
-
 // ── helpers ────────────────────────────────────────────────────────────────────
 const fmt   = (v) => v ? new Date(v).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
 const money = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
@@ -388,9 +391,7 @@ function PlanEditorModal({ provider, onClose, onSaved }) {
   const [selectedId, setSelectedId] = useState('');
   const [form, setForm] = useState({
     name: '',
-    plan_type: 'MONTHLY',
-    duration_days: 30,
-    price: 0,
+    planOptions: [{ type: 'MONTHLY', duration: 30, price: 0 }],
     food_type: 'BOTH',
     meal_types: ['LUNCH'],
     is_active: true,
@@ -403,9 +404,7 @@ function PlanEditorModal({ provider, onClose, onSaved }) {
     setSelectedId(plan.id);
     setForm({
       name: plan.name || '',
-      plan_type: plan.plan_type || 'MONTHLY',
-      duration_days: Number(plan.duration_days || PLAN_DURATION_DAYS[plan.plan_type] || 30),
-      price: Number(plan.price || 0),
+      planOptions: normalizePlanOptions(plan),
       food_type: plan.food_type || 'BOTH',
       meal_types: Array.isArray(plan.meal_types) && plan.meal_types.length ? plan.meal_types : ['LUNCH'],
       is_active: plan.is_active ?? true,
@@ -450,14 +449,18 @@ function PlanEditorModal({ provider, onClose, onSaved }) {
       toast.error('Select at least one meal type');
       return;
     }
+    const optionError = validatePlanOptions(form.planOptions);
+    if (optionError) {
+      toast.error(optionError);
+      return;
+    }
 
     setSaving(true);
     try {
       await updateHomeFoodPlan(selectedId, {
         ...form,
+        ...buildPlanOptionsPayload(form.planOptions),
         name: form.name.trim(),
-        duration_days: Number(form.duration_days),
-        price: Number(form.price),
       });
       toast.success('Subscription plan updated');
       await loadPlans(selectedId);
@@ -494,7 +497,7 @@ function PlanEditorModal({ provider, onClose, onSaved }) {
             <label className="md:col-span-2 text-xs font-semibold text-slate-500">
               Select Plan
               <select value={selectedId} onChange={(e) => selectPlan(e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
-                {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} - {plan.plan_type} - {plan.food_type === 'NON_VEG' ? 'Non-Veg' : plan.food_type === 'VEG' ? 'Veg' : 'Both'} - {money(plan.price)}</option>)}
+                {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} - {plan.food_type === 'NON_VEG' ? 'Non-Veg' : plan.food_type === 'VEG' ? 'Veg' : 'Both'} - {planOptionsLabel(plan, money)}</option>)}
               </select>
             </label>
 
@@ -502,20 +505,15 @@ function PlanEditorModal({ provider, onClose, onSaved }) {
               Plan Name
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
             </label>
-            <label className="text-xs font-semibold text-slate-500">
-              Plan Type
-              <select value={form.plan_type} onChange={(e) => setForm({ ...form, plan_type: e.target.value, duration_days: PLAN_DURATION_DAYS[e.target.value] || form.duration_days })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
-                {PLAN_TYPES.map((type) => <option key={type}>{type}</option>)}
-              </select>
-            </label>
-            <label className="text-xs font-semibold text-slate-500">
-              Duration Days
-              <input type="number" min="1" value={form.duration_days} onChange={(e) => setForm({ ...form, duration_days: Number(e.target.value) })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
-            </label>
-            <label className="text-xs font-semibold text-slate-500">
-              Price
-              <input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
-            </label>
+            <div className="md:col-span-2">
+              <p className="mb-2 text-xs font-semibold text-slate-500">Plan Pricing</p>
+              <PlanPricingEditor
+                value={form.planOptions}
+                onChange={(planOptions) => setForm({ ...form, planOptions })}
+                inputClass="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                compact
+              />
+            </div>
             <label className="text-xs font-semibold text-slate-500">
               Food Type
               <select value={form.food_type} onChange={(e) => setForm({ ...form, food_type: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
