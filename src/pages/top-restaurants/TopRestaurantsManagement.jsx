@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit2,
+  GripVertical,
   Loader2,
   Plus,
   Power,
@@ -19,10 +20,14 @@ import {
   deleteTopRestaurant,
   getTopRestaurantOptions,
   getTopRestaurantsAdmin,
+  reorderTopRestaurants,
   updateTopRestaurant,
   updateTopRestaurantStatus,
 } from '../../services/api';
 import { getRestaurantLogoUrl } from '../../utils/imageUtils';
+
+const PAGE_SIZE = 20;
+const MAX_TOP_RESTAURANTS = 20;
 
 const emptyForm = {
   restaurant_uid: '',
@@ -80,11 +85,18 @@ const TopRestaurantsManagement = () => {
   const [restaurantSearch, setRestaurantSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [draggedRestaurantId, setDraggedRestaurantId] = useState(null);
+  const [reorderLoading, setReorderLoading] = useState(false);
 
   const selectedRestaurant = useMemo(
     () => restaurantOptions.find((restaurant) => restaurant.restaurant_uid === formData.restaurant_uid),
     [restaurantOptions, formData.restaurant_uid],
   );
+
+  const canReorder =
+    !search.trim() &&
+    status === 'all' &&
+    topRestaurants.length > 1;
 
   useEffect(() => {
     fetchTopRestaurants();
@@ -115,13 +127,13 @@ const TopRestaurantsManagement = () => {
       setError('');
       const response = await getTopRestaurantsAdmin({
         page: targetPage,
-        limit: 10,
+        limit: PAGE_SIZE,
         search: search.trim() || undefined,
         status,
       });
 
       setTopRestaurants(response.data?.data || []);
-      setMeta(response.data?.meta || { page: targetPage, limit: 10, total: 0, totalPages: 1 });
+      setMeta(response.data?.meta || { page: targetPage, limit: PAGE_SIZE, total: 0, totalPages: 1 });
     } catch (err) {
       const message = err.response?.data?.message || err.message || 'Failed to load top restaurants';
       setError(message);
@@ -201,8 +213,8 @@ const TopRestaurantsManagement = () => {
     }
 
     const priority = Number(formData.priority);
-    if (!Number.isInteger(priority) || priority < 1 || priority > 10) {
-      toast.error('Priority must be between 1 and 10');
+    if (!Number.isInteger(priority) || priority < 1 || priority > MAX_TOP_RESTAURANTS) {
+      toast.error(`Priority must be between 1 and ${MAX_TOP_RESTAURANTS}`);
       return false;
     }
 
@@ -246,6 +258,75 @@ const TopRestaurantsManagement = () => {
       fetchTopRestaurants();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update status');
+    }
+  };
+
+  const getPageStartPriority = () => ((meta.page || page) - 1) * (meta.limit || PAGE_SIZE);
+
+  const getDisplayPriority = (index) => getPageStartPriority() + index + 1;
+
+  const applyPagePriorities = (restaurants) => {
+    const pageStartPriority = getPageStartPriority();
+    return restaurants.map((restaurant, index) => ({
+      ...restaurant,
+      priority: pageStartPriority + index + 1,
+    }));
+  };
+
+  const handleDragStart = (event, restaurant) => {
+    if (!canReorder || reorderLoading) return;
+    setDraggedRestaurantId(restaurant.id);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(restaurant.id));
+  };
+
+  const handleDragOver = (event) => {
+    if (!canReorder || reorderLoading || !draggedRestaurantId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (event, targetRestaurant) => {
+    event.preventDefault();
+    if (
+      !canReorder ||
+      reorderLoading ||
+      !draggedRestaurantId ||
+      draggedRestaurantId === targetRestaurant.id
+    ) {
+      setDraggedRestaurantId(null);
+      return;
+    }
+
+    const fromIndex = topRestaurants.findIndex((restaurant) => restaurant.id === draggedRestaurantId);
+    const toIndex = topRestaurants.findIndex((restaurant) => restaurant.id === targetRestaurant.id);
+    if (fromIndex < 0 || toIndex < 0) {
+      setDraggedRestaurantId(null);
+      return;
+    }
+
+    const previousRestaurants = topRestaurants;
+    const nextRestaurants = [...topRestaurants];
+    const [movedRestaurant] = nextRestaurants.splice(fromIndex, 1);
+    nextRestaurants.splice(toIndex, 0, movedRestaurant);
+    const prioritizedRestaurants = applyPagePriorities(nextRestaurants);
+
+    setTopRestaurants(prioritizedRestaurants);
+    setDraggedRestaurantId(null);
+
+    try {
+      setReorderLoading(true);
+      await reorderTopRestaurants(prioritizedRestaurants.map((restaurant) => ({
+        id: restaurant.id,
+        priority: restaurant.priority,
+      })));
+      toast.success('Top restaurant order updated');
+      fetchTopRestaurants();
+    } catch (err) {
+      setTopRestaurants(previousRestaurants);
+      toast.error(err.response?.data?.message || 'Failed to update top restaurant order');
+    } finally {
+      setReorderLoading(false);
     }
   };
 
@@ -331,6 +412,16 @@ const TopRestaurantsManagement = () => {
         </div>
 
         <div className="overflow-hidden rounded-lg bg-white shadow-sm">
+          {!canReorder && topRestaurants.length > 1 && (
+            <div className="border-b border-amber-100 bg-amber-50 px-6 py-3 text-sm text-amber-700">
+              Clear search and status filters to reorder top restaurants.
+            </div>
+          )}
+          {reorderLoading && (
+            <div className="border-b border-blue-100 bg-blue-50 px-6 py-3 text-sm text-blue-700">
+              Saving top restaurant order...
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px]">
               <thead className="border-b border-gray-200 bg-gray-50">
@@ -360,12 +451,34 @@ const TopRestaurantsManagement = () => {
                     </td>
                   </tr>
                 ) : (
-                  topRestaurants.map((restaurant) => (
-                    <tr key={restaurant.id} className="hover:bg-gray-50">
+                  topRestaurants.map((restaurant, index) => (
+                    <tr
+                      key={restaurant.id}
+                      onDragOver={handleDragOver}
+                      onDrop={(event) => handleDrop(event, restaurant)}
+                      className={`${draggedRestaurantId === restaurant.id ? 'bg-red-50/70 opacity-70' : 'hover:bg-gray-50'}`}
+                    >
                       <td className="px-6 py-4">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-sm font-semibold text-red-600">
-                          {restaurant.priority}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            draggable={canReorder && !reorderLoading}
+                            onDragStart={(event) => handleDragStart(event, restaurant)}
+                            onDragEnd={() => setDraggedRestaurantId(null)}
+                            disabled={!canReorder || reorderLoading}
+                            className={`rounded-md p-1.5 transition-colors ${
+                              canReorder && !reorderLoading
+                                ? 'cursor-grab text-gray-400 hover:bg-gray-100 hover:text-gray-700 active:cursor-grabbing'
+                                : 'cursor-not-allowed text-gray-300'
+                            }`}
+                            title={canReorder ? 'Drag to reorder' : 'Clear filters to reorder'}
+                          >
+                            <GripVertical size={18} />
+                          </button>
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-sm font-semibold text-red-600">
+                            {restaurant.priority || getDisplayPriority(index)}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -438,7 +551,7 @@ const TopRestaurantsManagement = () => {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage((current) => Math.max(current - 1, 1))}
-                disabled={page <= 1 || loading}
+                disabled={page <= 1 || loading || reorderLoading}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ChevronLeft size={16} />
@@ -446,7 +559,7 @@ const TopRestaurantsManagement = () => {
               </button>
               <button
                 onClick={() => setPage((current) => Math.min(current + 1, meta.totalPages || 1))}
-                disabled={page >= (meta.totalPages || 1) || loading}
+                disabled={page >= (meta.totalPages || 1) || loading || reorderLoading}
                 className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
@@ -517,7 +630,7 @@ const TopRestaurantsManagement = () => {
                   onChange={(event) => setFormData((current) => ({ ...current, priority: event.target.value }))}
                   className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
                 >
-                  {Array.from({ length: 10 }, (_, index) => {
+                  {Array.from({ length: MAX_TOP_RESTAURANTS }, (_, index) => {
                     const value = String(index + 1);
                     return (
                       <option key={value} value={value}>
