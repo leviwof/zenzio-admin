@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ProvidersCardView from './ProvidersCardView';
 import PlanPricingEditor, {
@@ -33,6 +34,7 @@ import {
   getHomeFoodDeliveries,
   getHomeFoodKitchenMenus,
   getHomeFoodPlans,
+  getHomeFoodProviderMenus,
   getHomeFoodProviderSettings,
   getHomeFoodProviders,
   getHomeFoodSubscriptions,
@@ -66,7 +68,6 @@ const mealSlotAvailability = (slot) => {
     dinner: selected.includes('dinner'),
   };
 };
-
 const unwrapItems = (response) => response?.data?.items || response?.data?.data?.items || [];
 const date = (value) => value ? new Date(value).toLocaleDateString('en-IN') : '—';
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
@@ -218,6 +219,291 @@ const updateWeeklyMenu = (weeklyMenu, day, meal, value) => {
   return next;
 };
 
+const getWeeklyMenuPrimaryUids = (weeklyMenu, day, meal) => {
+  const value = weeklyMenu?.[day]?.[meal];
+  if (value && typeof value === 'object' && !Array.isArray(value)) return [...(value.primaryMenuUids || [])];
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  return [];
+};
+
+const getWeeklyMenuAlternateUids = (weeklyMenu, day, meal) => {
+  const value = weeklyMenu?.[day]?.[meal];
+  if (value && typeof value === 'object' && !Array.isArray(value)) return [...(value.alternateMenuUids || [])];
+  return [];
+};
+
+const updateWeeklyMenuForMeal = (weeklyMenu, day, meal, field, menuUids) => {
+  const clone = JSON.parse(JSON.stringify(weeklyMenu || {}));
+  const cleanUids = [...new Set((menuUids || []).map(String).filter(Boolean))];
+  const dayKey = String(day);
+  const mealKey = String(meal);
+  const nextPrimary =
+    field === 'primaryMenuUids'
+      ? cleanUids
+      : getWeeklyMenuPrimaryUids(clone, dayKey, mealKey);
+  const nextAlternate =
+    field === 'alternateMenuUids'
+      ? cleanUids
+      : getWeeklyMenuAlternateUids(clone, dayKey, mealKey);
+
+  if (!clone[dayKey]) clone[dayKey] = {};
+
+  if (!nextPrimary.length && !nextAlternate.length) {
+    delete clone[dayKey][mealKey];
+    if (Object.keys(clone[dayKey]).length === 0) delete clone[dayKey];
+    return clone;
+  }
+
+  clone[dayKey][mealKey] = {
+    primaryMenuUids: nextPrimary,
+    alternateMenuUids: nextAlternate,
+  };
+
+  return clone;
+};
+
+const normalizePlanWeeklyMenu = (weeklyMenu) => {
+  const clone = JSON.parse(JSON.stringify(weeklyMenu || {}));
+  const normalized = {};
+
+  for (const [day, meals] of Object.entries(clone)) {
+    if (!meals || typeof meals !== 'object' || Array.isArray(meals)) continue;
+    const dayKey = String(day).toUpperCase();
+    const normalizedMeals = {};
+
+    for (const [meal, value] of Object.entries(meals)) {
+      const mealKey = String(meal).toUpperCase();
+      if (!mealTypes.includes(mealKey)) continue;
+
+      if (Array.isArray(value)) {
+        normalizedMeals[mealKey] = {
+          primaryMenuUids: [...new Set(value.map(String).filter(Boolean))],
+          alternateMenuUids: [],
+        };
+        continue;
+      }
+
+      if (typeof value === 'string') {
+        normalizedMeals[mealKey] = {
+          primaryMenuUids: [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))],
+          alternateMenuUids: [],
+        };
+        continue;
+      }
+
+      if (value && typeof value === 'object') {
+        normalizedMeals[mealKey] = {
+          primaryMenuUids: Array.isArray(value.primaryMenuUids)
+            ? [...new Set(value.primaryMenuUids.map(String).filter(Boolean))]
+            : [],
+          alternateMenuUids: Array.isArray(value.alternateMenuUids)
+            ? [...new Set(value.alternateMenuUids.map(String).filter(Boolean))]
+            : [],
+        };
+      }
+    }
+
+    if (Object.keys(normalizedMeals).length) normalized[dayKey] = normalizedMeals;
+  }
+
+  return normalized;
+};
+
+const getMealAssignments = (weeklyMenu, day, meal) => {
+  const primary = getWeeklyMenuPrimaryUids(weeklyMenu, day, meal).map((menuUid) => ({
+    menuUid,
+    type: 'PRIMARY',
+  }));
+  const alternate = getWeeklyMenuAlternateUids(weeklyMenu, day, meal).map((menuUid) => ({
+    menuUid,
+    type: 'ALTERNATE',
+  }));
+  return [...primary, ...alternate];
+};
+
+const setMealAssignments = (weeklyMenu, day, meal, assignments) => {
+  const primaryMenuUids = assignments
+    .filter((entry) => entry.type === 'PRIMARY')
+    .map((entry) => entry.menuUid);
+  const alternateMenuUids = assignments
+    .filter((entry) => entry.type === 'ALTERNATE')
+    .map((entry) => entry.menuUid);
+
+  let next = updateWeeklyMenuForMeal(weeklyMenu, day, meal, 'primaryMenuUids', primaryMenuUids);
+  next = updateWeeklyMenuForMeal(next, day, meal, 'alternateMenuUids', alternateMenuUids);
+  return next;
+};
+
+const menuFoodTypeMatchesPlan = (menu, foodType) => {
+  const planFoodType = String(foodType || 'BOTH').toUpperCase();
+  if (planFoodType === 'BOTH') return true;
+  return String(menu.foodType || menu.food_type || '').toUpperCase() === planFoodType;
+};
+
+const menuMatchesMeal = (menu, meal) => {
+  const mealUpper = String(meal || '').toUpperCase();
+  const mealTypes = Array.isArray(menu.mealTypes)
+    ? menu.mealTypes
+    : [menu.mealType].filter(Boolean);
+  return mealTypes.map((value) => String(value).toUpperCase()).includes(mealUpper);
+};
+
+function MenuMultiSelect({ options, value, onChange, disabled, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const triggerRef = useRef(null);
+  const [style, setStyle] = useState({});
+  const [draftSelected, setDraftSelected] = useState(() => [...new Set((value || []).map(String).filter(Boolean))]);
+  const selected = new Set((open ? draftSelected : (value || [])).map(String));
+  const selectedOptions = options.filter((option) => selected.has(option.uid));
+  const filteredOptions = options.filter((option) =>
+    option.name.toLowerCase().includes(search.trim().toLowerCase()),
+  );
+
+  const toggle = (uid) => {
+    const next = new Set(draftSelected);
+    if (next.has(uid)) next.delete(uid);
+    else next.add(uid);
+    setDraftSelected([...next]);
+  };
+
+  const remove = (uid) => {
+    const base = open ? draftSelected : (value || []);
+    const next = new Set(base.map(String));
+    next.delete(uid);
+    const nextValue = [...next];
+    setDraftSelected(nextValue);
+    onChange(nextValue);
+  };
+
+  const openDropdown = () => {
+    if (disabled || !triggerRef.current) return;
+    setDraftSelected([...new Set((value || []).map(String).filter(Boolean))]);
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 16;
+    const spaceAbove = rect.top - 16;
+    const preferUp = spaceBelow < 350 && spaceAbove > spaceBelow;
+    const maxH = Math.min(420, preferUp ? spaceAbove : spaceBelow);
+    setStyle({
+      position: 'fixed',
+      left: rect.left,
+      width: Math.max(rect.width, 280),
+      ...(preferUp
+        ? { bottom: window.innerHeight - rect.top + 8 }
+        : { top: rect.bottom + 8 }),
+      maxHeight: Math.max(200, maxH),
+    });
+    setOpen(true);
+    setSearch('');
+  };
+
+  const close = () => {
+    setOpen(false);
+    setSearch('');
+  };
+
+  const done = () => {
+    onChange([...new Set(draftSelected.map(String).filter(Boolean))]);
+    close();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onResize = () => close();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [open]);
+
+  const inputClass = 'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100';
+
+  const dropdown = open && !disabled && (
+    <>
+      <div className="fixed inset-0 z-40" onClick={close} />
+      <div
+        className="z-50 flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+        style={style}
+      >
+        <div className="flex items-center gap-2 border-b border-slate-100 p-2">
+          <input
+            autoFocus
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search dishes..."
+            className={inputClass}
+          />
+          <button type="button" onClick={close} className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto py-1">
+          {filteredOptions.length ? filteredOptions.map((option) => {
+            const isSelected = selected.has(option.uid);
+            const isNonVeg = String(option.foodType || '').toUpperCase() === 'NON_VEG';
+            const mealLabel = Array.isArray(option.mealTypes) ? option.mealTypes.join(', ') : option.mealType || '';
+            return (
+              <div
+                key={option.uid}
+                onClick={() => toggle(option.uid)}
+                className={`flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-indigo-50 ${isSelected ? 'bg-indigo-50/70' : ''}`}
+              >
+                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300'}`}>
+                  {isSelected && <span className="text-xs font-bold">&#10003;</span>}
+                </span>
+                {option.images?.[0] ? (
+                  <img src={option.images[0]} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                ) : (
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+                    <ChefHat size={16} />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-slate-800">{option.name}</div>
+                  {mealLabel && <div className="truncate text-[11px] text-slate-400">{mealLabel}</div>}
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                  isNonVeg ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
+                }`}>
+                  {isNonVeg ? 'Non-Veg' : 'Veg'}
+                </span>
+              </div>
+            );
+          }) : (
+            <p className="px-3 py-10 text-center text-xs text-slate-400">No matching dishes</p>
+          )}
+        </div>
+        <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-3 py-2">
+          <span className="text-xs text-slate-500">{selected.size} selected</span>
+          <button type="button" onClick={done} className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">Done</button>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="relative">
+      <div
+        ref={triggerRef}
+        onClick={openDropdown}
+        className={`min-h-[44px] w-full rounded-xl border bg-white px-3 py-2 text-left text-sm outline-none transition hover:border-indigo-300 ${disabled ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400' : 'cursor-pointer border-slate-200'}`}
+      >
+        {selectedOptions.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {selectedOptions.map((option) => (
+              <span key={option.uid} className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1 text-sm font-medium text-indigo-700" onClick={(e) => e.stopPropagation()}>
+                {option.name}
+                <button type="button" onClick={(e) => { e.stopPropagation(); remove(option.uid); }} className="text-indigo-400 hover:text-indigo-700">&times;</button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-slate-400">{placeholder}</span>
+        )}
+      </div>
+      {createPortal(dropdown, document.body)}
+    </div>
+  );
+}
+
 export default function HomeFoodsManagement() {
   const location = useLocation();
   const section = location.pathname.split('/').filter(Boolean).pop() || 'providers';
@@ -305,6 +591,13 @@ export default function HomeFoodsManagement() {
       setMeta(response.data?.meta || {});
       setWeeklyMenuProviders([]);
       if (section === 'plans') {
+        console.debug('[HomeFoods][PlanList] Edit Plan API response', {
+          count: unwrapItems(response).length,
+          weeklyMenus: unwrapItems(response).map((plan) => ({
+            id: plan.id,
+            weekly_menu: plan.weekly_menu,
+          })),
+        });
         setSelectedPlanIds((current) => {
           const visibleIds = new Set(unwrapItems(response).map((item) => item.id));
           return current.filter((id) => visibleIds.has(id));
@@ -1694,10 +1987,10 @@ function EditProviderSettingsForm({ item, onClose, onSaved }) {
 
 function PlanForm({ item, onClose, onSaved }) {
   const [providers, setProviders] = useState([]);
-  const [selectedMenuDay, setSelectedMenuDay] = useState(
-    Object.keys(item?.weekly_menu || {})[0] || 'MONDAY',
-  );
+  const [providerMenus, setProviderMenus] = useState([]);
+  const [providerMenusLoading, setProviderMenusLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [assignmentEditor, setAssignmentEditor] = useState(null);
   const { dialog: confirmDialog, confirmLoading, confirm, handleConfirm, handleCancel } = useConfirm();
   const [form, setForm] = useState({
     provider_uid: item?.provider_uid || '',
@@ -1705,17 +1998,47 @@ function PlanForm({ item, onClose, onSaved }) {
     planOptions: normalizePlanOptions(item || { plan_type: 'MONTHLY', duration_days: 30, price: 0 }),
     food_type: item?.food_type || 'BOTH',
     meal_types: item?.meal_types || ['LUNCH'],
-    weekly_menu: item?.weekly_menu || {},
+    weekly_menu: normalizePlanWeeklyMenu(item?.weekly_menu || item?.weeklyMenu || {}),
     is_active: item?.is_active ?? true,
   });
   useEffect(() => { getHomeFoodProviders({ limit: 100 }).then((response) => setProviders(unwrapItems(response))).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!form.provider_uid) {
+      setProviderMenus([]);
+      return;
+    }
+    setProviderMenusLoading(true);
+    getHomeFoodProviderMenus(form.provider_uid)
+      .then((response) => {
+        const menus = Array.isArray(response.data?.data) ? response.data.data : [];
+        setProviderMenus(menus.map((menu) => ({
+          uid: menu.uid || menu.menuUid,
+          name: menu.name,
+          mealType: menu.mealType,
+          mealTypes: Array.isArray(menu.mealTypes) ? menu.mealTypes : [menu.mealType].filter(Boolean),
+          foodType: menu.foodType || menu.food_type || 'BOTH',
+          images: Array.isArray(menu.images) ? menu.images : [],
+        })).filter((menu) => menu.uid && menu.name));
+      })
+      .catch(() => {
+        setProviderMenus([]);
+        toast.error('Could not load provider menus');
+      })
+      .finally(() => setProviderMenusLoading(false));
+  }, [form.provider_uid]);
+
   const selectedProvider = providers.find((provider) => provider.provider_uid === form.provider_uid);
   const availableDays = selectedProvider?.working_days?.length
     ? selectedProvider.working_days
     : workingDays;
-  const activeDay = availableDays.includes(selectedMenuDay)
-    ? selectedMenuDay
-    : availableDays[0];
+
+  const getFilteredMenus = (meal) => providerMenus.filter((menu) =>
+    menuMatchesMeal(menu, meal) && menuFoodTypeMatchesPlan(menu, form.food_type),
+  );
+  const menuMap = useMemo(
+    () => new Map(providerMenus.map((menu) => [menu.uid, menu])),
+    [providerMenus],
+  );
 
   const toggleMeal = (meal) => setForm((current) => ({
     ...current,
@@ -1723,6 +2046,73 @@ function PlanForm({ item, onClose, onSaved }) {
       ? current.meal_types.filter((value) => value !== meal)
       : [...current.meal_types, meal],
   }));
+
+  const openAddAssignment = (day, meal) => {
+    setAssignmentEditor({
+      day,
+      meal,
+      editMenuUid: null,
+      menuUid: '',
+      type: 'PRIMARY',
+      search: '',
+    });
+  };
+
+  const openEditAssignment = (day, meal, assignment) => {
+    setAssignmentEditor({
+      day,
+      meal,
+      editMenuUid: assignment.menuUid,
+      menuUid: assignment.menuUid,
+      type: assignment.type,
+      search: '',
+    });
+  };
+
+  const removeAssignment = (day, meal, menuUid) => {
+    setForm((current) => {
+      const nextAssignments = getMealAssignments(current.weekly_menu, day, meal)
+        .filter((entry) => entry.menuUid !== menuUid);
+      return {
+        ...current,
+        weekly_menu: setMealAssignments(current.weekly_menu, day, meal, nextAssignments),
+      };
+    });
+  };
+
+  const saveAssignment = () => {
+    if (!assignmentEditor?.menuUid) {
+      toast.error('Select a dish');
+      return;
+    }
+    setForm((current) => {
+      const existing = getMealAssignments(
+        current.weekly_menu,
+        assignmentEditor.day,
+        assignmentEditor.meal,
+      );
+      const withoutCurrent = existing.filter((entry) => entry.menuUid !== assignmentEditor.editMenuUid);
+      const duplicate = withoutCurrent.some((entry) => entry.menuUid === assignmentEditor.menuUid);
+      if (duplicate) {
+        toast.error('Dish already assigned for this meal');
+        return current;
+      }
+      const nextAssignments = [
+        ...withoutCurrent,
+        { menuUid: assignmentEditor.menuUid, type: assignmentEditor.type },
+      ];
+      return {
+        ...current,
+        weekly_menu: setMealAssignments(
+          current.weekly_menu,
+          assignmentEditor.day,
+          assignmentEditor.meal,
+          nextAssignments,
+        ),
+      };
+    });
+    setAssignmentEditor(null);
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -1741,12 +2131,27 @@ function PlanForm({ item, onClose, onSaved }) {
         ...form,
         ...buildPlanOptionsPayload(form.planOptions),
       };
+      console.debug('[HomeFoods][PlanForm] Payload before save', {
+        provider_uid: payload.provider_uid,
+        plan_id: item?.id || null,
+        weekly_menu: payload.weekly_menu,
+      });
       if (item) {
         const updatePayload = { ...payload };
         delete updatePayload.provider_uid;
-        await updateHomeFoodPlan(item.id, updatePayload);
+        const updateResponse = await updateHomeFoodPlan(item.id, updatePayload);
+        console.debug('[HomeFoods][PlanForm] Update response', {
+          plan_id: item.id,
+          weekly_menu: updateResponse?.data?.data?.weekly_menu,
+        });
       }
-      else await createHomeFoodPlan(payload);
+      else {
+        const createResponse = await createHomeFoodPlan(payload);
+        console.debug('[HomeFoods][PlanForm] Create response', {
+          plan_id: createResponse?.data?.data?.id,
+          weekly_menu: createResponse?.data?.data?.weekly_menu,
+        });
+      }
       toast.success('Plan saved with its weekly menu');
       onSaved();
     } catch (error) {
@@ -1758,9 +2163,8 @@ function PlanForm({ item, onClose, onSaved }) {
   };
 
   return <Modal title={item ? 'Edit Plan' : 'Create Plan'} onClose={onClose}><form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
-    <Field label="Existing Provider"><select disabled={Boolean(item)} value={form.provider_uid} onChange={(e) => { setForm({ ...form, provider_uid: e.target.value, weekly_menu: {} }); const provider = providers.find((entry) => entry.provider_uid === e.target.value); setSelectedMenuDay(provider?.working_days?.[0] || 'MONDAY'); }} className={inputClass} required><option value="">Select provider</option>{providers.map((provider) => <option key={provider.provider_uid} value={provider.provider_uid}>{provider.restaurant_name}</option>)}</select></Field>
+    <Field label="Existing Provider"><select disabled={Boolean(item)} value={form.provider_uid} onChange={(e) => { setForm({ ...form, provider_uid: e.target.value, weekly_menu: {} }); }} className={inputClass} required><option value="">Select provider</option>{providers.map((provider) => <option key={provider.provider_uid} value={provider.provider_uid}>{provider.restaurant_name}</option>)}</select></Field>
     <Field label="Plan Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} required /></Field>
-    <Field label="Food Type"><select value={form.food_type} onChange={(e) => setForm({ ...form, food_type: e.target.value })} className={inputClass}><option value="VEG">Veg</option><option value="NON_VEG">Non-Veg</option><option value="BOTH">Both</option></select></Field>
     <Field label="Status"><select value={String(form.is_active)} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
     <div className="md:col-span-2"><Field label="Plan Pricing"><PlanPricingEditor value={form.planOptions} onChange={(planOptions) => setForm({ ...form, planOptions })} inputClass={inputClass} /></Field></div>
     <div className="md:col-span-2"><Field label="Meal Types"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs"><input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => toggleMeal(meal)} />{meal}</label>)}</div></Field></div>
@@ -1778,35 +2182,92 @@ function PlanForm({ item, onClose, onSaved }) {
         <div className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
           {!form.provider_uid ? (
             <p className="py-4 text-center text-sm text-slate-400">Select an existing provider first.</p>
+          ) : providerMenusLoading ? (
+            <p className="py-4 text-center text-sm text-slate-400">Loading provider menus...</p>
           ) : (
-            <>
-              <Field label="Day">
-                <select value={activeDay} onChange={(e) => setSelectedMenuDay(e.target.value)} className={inputClass}>
-                  {availableDays.map((day) => <option key={day}>{day}</option>)}
-                </select>
-              </Field>
-              <div className="grid gap-3 rounded-xl border bg-white p-3 md:grid-cols-2">
-                {form.meal_types.map((meal) => (
-                  <Field key={`${activeDay}-${meal}`} label={`${meal} Dishes`}>
-                    <input
-                      value={form.weekly_menu?.[activeDay]?.[meal] || ''}
-                      onChange={(e) => setForm({
-                        ...form,
-                        weekly_menu: updateWeeklyMenu(
-                          form.weekly_menu,
-                          activeDay,
-                          meal,
-                          e.target.value,
-                        ),
-                      })}
-                      className={inputClass}
-                      placeholder={`e.g. ${meal === 'LUNCH' ? 'Rice, curry, curd' : 'Plan dishes'}`}
-                    />
-                  </Field>
-                ))}
-                {!form.meal_types.length && <p className="text-xs text-slate-400">Select meal types above.</p>}
-              </div>
-            </>
+            <div className="space-y-4">
+              {availableDays.map((day) => (
+                <div key={day} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <div className="border-b border-slate-100 bg-slate-50 px-4 py-2.5">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-600">{day}</p>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {form.meal_types.map((meal) => {
+                      const options = getFilteredMenus(meal);
+                      const assignments = getMealAssignments(form.weekly_menu, day, meal)
+                        .map((assignment) => ({ ...assignment, menu: menuMap.get(assignment.menuUid) }))
+                        .filter((assignment) => assignment.menu)
+                        .sort((a, b) => a.menu.name.localeCompare(b.menu.name));
+                      return (
+                        <div key={`${day}-${meal}`} className="space-y-2 p-3">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-600">{meal} Menu Assignment</label>
+                            <button
+                              type="button"
+                              disabled={!options.length}
+                              onClick={() => openAddAssignment(day, meal)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Plus size={12} />
+                              Add Dish
+                            </button>
+                          </div>
+                          {assignments.length ? (
+                            <div className="overflow-hidden rounded-lg border border-slate-200">
+                              <table className="min-w-full text-left text-xs">
+                                <thead className="bg-slate-50 text-slate-500">
+                                  <tr>
+                                    <th className="px-3 py-2 font-semibold">Dish</th>
+                                    <th className="px-3 py-2 font-semibold">Type</th>
+                                    <th className="px-3 py-2 font-semibold">Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                  {assignments.map(({ menuUid, type, menu }) => {
+                                    const isNonVeg = String(menu.foodType || '').toUpperCase() === 'NON_VEG';
+                                    return (
+                                      <tr key={`${day}-${meal}-${menuUid}`}>
+                                        <td className="px-3 py-2">
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-medium text-slate-700">{menu.name}</span>
+                                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isNonVeg ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                              {isNonVeg ? 'Non-Veg' : 'Veg'}
+                                            </span>
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${type === 'PRIMARY' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'}`}>
+                                            {type}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <div className="flex gap-2">
+                                            <button type="button" onClick={() => openEditAssignment(day, meal, { menuUid, type })} className="rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">Edit</button>
+                                            <button type="button" onClick={() => removeAssignment(day, meal, menuUid)} className="rounded border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50">Delete</button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <p className="rounded-lg border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-400">No dishes assigned for {meal.toLowerCase()}.</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {!form.meal_types.length && <p className="p-4 text-center text-xs text-slate-400">Select meal types above.</p>}
+                  </div>
+                </div>
+              ))}
+              {!providerMenus.length && (
+                <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  No active menus found for this provider. Add provider menu items first.
+                </p>
+              )}
+            </div>
           )}
         </div>
       </Field>
@@ -1816,6 +2277,59 @@ function PlanForm({ item, onClose, onSaved }) {
       <div className="flex gap-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm">Cancel</button><button disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save Plan'}</button></div>
     </div>
   </form>
+  {assignmentEditor && (
+    <Modal
+      title={`${assignmentEditor.editMenuUid ? 'Edit' : 'Add'} Dish — ${assignmentEditor.day} ${assignmentEditor.meal}`}
+      onClose={() => setAssignmentEditor(null)}
+    >
+      <div className="space-y-4">
+        <Field label="Search Dish">
+          <input
+            value={assignmentEditor.search}
+            onChange={(event) => setAssignmentEditor((current) => ({ ...current, search: event.target.value }))}
+            className={inputClass}
+            placeholder="Type dish name"
+          />
+        </Field>
+        <Field label="Dish">
+          <select
+            value={assignmentEditor.menuUid}
+            onChange={(event) => setAssignmentEditor((current) => ({ ...current, menuUid: event.target.value }))}
+            className={inputClass}
+          >
+            <option value="">Select dish</option>
+            {getFilteredMenus(assignmentEditor.meal)
+              .filter((menu) => menu.name.toLowerCase().includes(assignmentEditor.search.trim().toLowerCase()))
+              .filter((menu) => {
+                const assignments = getMealAssignments(form.weekly_menu, assignmentEditor.day, assignmentEditor.meal);
+                const isAssigned = assignments.some((entry) => entry.menuUid === menu.uid);
+                return !isAssigned || menu.uid === assignmentEditor.editMenuUid;
+              })
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((menu) => (
+                <option key={menu.uid} value={menu.uid}>
+                  {menu.name} ({String(menu.foodType || '').replace('_', ' ')})
+                </option>
+              ))}
+          </select>
+        </Field>
+        <Field label="Type">
+          <select
+            value={assignmentEditor.type}
+            onChange={(event) => setAssignmentEditor((current) => ({ ...current, type: event.target.value }))}
+            className={inputClass}
+          >
+            <option value="PRIMARY">Primary</option>
+            <option value="ALTERNATE">Alternate</option>
+          </select>
+        </Field>
+        <div className="flex justify-end gap-2 border-t pt-3">
+          <button type="button" onClick={() => setAssignmentEditor(null)} className="rounded-xl border px-4 py-2 text-sm">Cancel</button>
+          <button type="button" onClick={saveAssignment} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Save</button>
+        </div>
+      </div>
+    </Modal>
+  )}
   <ConfirmDialog dialog={confirmDialog} confirmLoading={confirmLoading} onConfirm={handleConfirm} onCancel={handleCancel} />
 </Modal>;
 }
