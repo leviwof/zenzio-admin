@@ -1697,7 +1697,6 @@ function PlanForm({ item, onClose, onSaved }) {
     meal_types: item?.meal_types || ['LUNCH'],
     weekly_menu: item?.weekly_menu || {},
     is_active: item?.is_active ?? true,
-    food_type: item?.food_type || 'BOTH',
   });
   useEffect(() => { getHomeFoodProviders({ limit: 100 }).then((response) => setProviders(unwrapItems(response))).catch(() => {}); }, []);
   const selectedProvider = providers.find((provider) => provider.provider_uid === form.provider_uid);

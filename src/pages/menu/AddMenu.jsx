@@ -44,7 +44,22 @@ const AddMenu = () => {
     const [restaurantSearch, setRestaurantSearch] = useState('');
     const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
     const [cuisineDropdownOpen, setCuisineDropdownOpen] = useState(false);
+    const [mealDropdownOpen, setMealDropdownOpen] = useState(false);
     const [variants, setVariants] = useState([]);
+
+    const mealOptions = [
+        { key: 'breakfast', label: 'Breakfast' },
+        { key: 'lunch', label: 'Lunch' },
+        { key: 'snacks', label: 'Snacks' },
+        { key: 'dinner', label: 'Dinner' },
+    ];
+
+    const defaultMealAvailability = {
+        breakfast: true,
+        lunch: true,
+        snacks: true,
+        dinner: true,
+    };
 
     const [formData, setFormData] = useState({
         restaurant_uid: lockedRestaurantUid || '',
@@ -56,6 +71,7 @@ const AddMenu = () => {
         food_type: 'Veg',
         cuisine_type: '',
         isActive: true,
+        meal_availability: defaultMealAvailability,
     });
 
     const foodTypes = ['Veg', 'Non-Veg', 'Vegan', 'Egg'];
@@ -195,6 +211,27 @@ const AddMenu = () => {
         setVariants(prev => prev.filter((_, currentIndex) => currentIndex !== index));
     };
 
+    const handleMealAvailabilityChange = (mealKey) => {
+        setFormData(prev => ({
+            ...prev,
+            meal_availability: {
+                ...defaultMealAvailability,
+                ...(prev.meal_availability || {}),
+                [mealKey]: !(prev.meal_availability?.[mealKey] ?? true),
+            },
+        }));
+    };
+
+    const getMealAvailabilityLabel = () => {
+        const selectedMeals = mealOptions
+            .filter(meal => formData.meal_availability?.[meal.key] !== false)
+            .map(meal => meal.label);
+
+        if (selectedMeals.length === mealOptions.length) return 'All day';
+        if (selectedMeals.length === 0) return 'No meal slots selected';
+        return selectedMeals.join(', ');
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -234,6 +271,10 @@ const AddMenu = () => {
                     cuisine_type: formData.cuisine_type || '',
                     isActive: formData.isActive,
                     is_available: true,
+                    meal_availability: {
+                        ...defaultMealAvailability,
+                        ...(formData.meal_availability || {}),
+                    },
                     variants: variantPayload,
                 });
                 const createdMenu = response.data?.data?.restaurant_menu || response.data?.restaurant_menu || response.data?.data || response.data;
@@ -252,6 +293,10 @@ const AddMenu = () => {
                 submitData.append('food_type', formData.food_type || 'Veg');
                 submitData.append('cuisine_type', formData.cuisine_type || '');
                 submitData.append('isActive', formData.isActive ? '1' : '0');
+                submitData.append('meal_availability', JSON.stringify({
+                    ...defaultMealAvailability,
+                    ...(formData.meal_availability || {}),
+                }));
                 submitData.append('variants', JSON.stringify(variantPayload));
 
                 if (imageFile) {
@@ -777,6 +822,53 @@ const AddMenu = () => {
                                 />
                             </label>
                         )}
+                    </div>
+
+                    { }
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
+                                <Tag className="w-5 h-5 text-orange-600" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-semibold text-gray-900">Meal Availability</h2>
+                                <p className="text-sm text-gray-500">Choose when this item can be ordered</p>
+                            </div>
+                        </div>
+
+                        <div className="relative">
+                            <button
+                                type="button"
+                                disabled={!hasRestaurantSelected}
+                                onClick={() => setMealDropdownOpen(!mealDropdownOpen)}
+                                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-left disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                <span className="text-base text-gray-900">{getMealAvailabilityLabel()}</span>
+                                <ChevronDown size={20} className={`text-gray-500 transition-transform ${mealDropdownOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {mealDropdownOpen && (
+                                <>
+                                    <div className="fixed inset-0 z-20" onClick={() => setMealDropdownOpen(false)}></div>
+                                    <div className="absolute top-full left-0 mt-2 w-full bg-white border border-gray-200 rounded-xl shadow-xl z-30 overflow-hidden">
+                                        {mealOptions.map((meal) => (
+                                            <label
+                                                key={meal.key}
+                                                className="flex items-center justify-between px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0"
+                                            >
+                                                <span className="text-sm font-medium text-gray-700">{meal.label}</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.meal_availability?.[meal.key] !== false}
+                                                    onChange={() => handleMealAvailabilityChange(meal.key)}
+                                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                />
+                                            </label>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
 
                     { }
