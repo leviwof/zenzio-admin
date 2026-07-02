@@ -75,6 +75,144 @@ const getStoredDiscountAmount = (order = {}) =>
       0,
   ) || 0;
 
+const toNumber = (value, fallback = 0) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const parseJsonObject = (value) => {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const formatCurrencyText = (value) => `\u20b9${toNumber(value).toFixed(0)}`;
+
+const normalizeOfferTypeLabel = (value = "") =>
+  String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const getFreeItems = (discount = {}) =>
+  Array.isArray(discount.freeItems)
+    ? discount.freeItems
+    : Array.isArray(discount.free_items)
+      ? discount.free_items
+      : [];
+
+const getFreeItemValue = (freeItems = []) =>
+  freeItems.reduce(
+    (sum, item) => sum + toNumber(item?.qty ?? item?.quantity ?? 1, 1) * toNumber(item?.price ?? item?.value),
+    0,
+  );
+
+const getFreeItemName = (freeItems = []) =>
+  freeItems
+    .map((item) => item?.name || item?.menu_name || item?.menuName || item?.title)
+    .filter(Boolean)
+    .join(", ");
+
+const getBuyXGetYLabel = (discount = {}) => {
+  const text = [
+    discount.message,
+    discount.title,
+    discount.offerName,
+    discount.code,
+  ].filter(Boolean).join(" ");
+  const match = text.match(/buy\s*(\d+)\D+get\s*(\d+)/i);
+  return match ? `Buy ${match[1]} Get ${match[2]}` : "Buy X Get Y";
+};
+
+const buildDiscountExportInfo = (order = {}) => {
+  const discount = parseJsonObject(order.applied_discount || order.appliedDiscount);
+  const freeItems = getFreeItems(discount);
+  const freeItemValue = getFreeItemValue(freeItems);
+  const freeItemName = getFreeItemName(freeItems);
+  const offerType = discount.offerType || discount.offer_type || order.offerType || order.offer_type || "";
+  const discountType = discount.discountType || discount.discount_type || order.discountType || "";
+  const offerName =
+    discount.title ||
+    discount.offerName ||
+    discount.offer_name ||
+    order.offerName ||
+    order.offer_name ||
+    discount.code ||
+    order.offer_code ||
+    order.coupon_code ||
+    "";
+  const discountValue = toNumber(discount.discountValue ?? discount.discount_value ?? order.discountValue);
+  const storedDiscountAmount = getStoredDiscountAmount(order);
+  const actualBenefit = Math.max(
+    toNumber(discount.discountAmount),
+    toNumber(discount.discount_amount),
+    toNumber(discount.billingDiscountAmount),
+    toNumber(discount.billing_discount_amount),
+    freeItemValue,
+    storedDiscountAmount,
+  );
+
+  if (!offerName && !offerType && actualBenefit <= 0) {
+    return {
+      offerName: "",
+      offerType: "",
+      discountDetails: "",
+      discountAmount: 0,
+      freeItemName: "",
+      freeItemValue: 0,
+    };
+  }
+
+  const normalizedOfferType = String(offerType || discountType || "").toUpperCase();
+  const normalizedDiscountType = String(discountType || "").toUpperCase();
+  let discountDetails = actualBenefit > 0 ? formatCurrencyText(actualBenefit) : "";
+
+  if (
+    ["PERCENTAGE_DISCOUNT", "PLATFORM_CAMPAIGN", "FESTIVAL_OFFER"].includes(normalizedOfferType) ||
+    normalizedDiscountType === "PERCENTAGE"
+  ) {
+    discountDetails = discountValue > 0
+      ? `${discountValue}% (${formatCurrencyText(actualBenefit)})`
+      : formatCurrencyText(actualBenefit);
+  } else if (normalizedOfferType === "FIXED_AMOUNT_DISCOUNT" || normalizedDiscountType === "FLAT") {
+    discountDetails = formatCurrencyText(actualBenefit);
+  } else if (normalizedOfferType === "BUY_ONE_GET_ONE" || normalizedDiscountType === "BOGO") {
+    discountDetails = `BOGO (Free Item Value: ${formatCurrencyText(freeItemValue || actualBenefit)})`;
+  } else if (normalizedOfferType === "BUY_X_GET_Y" || normalizedDiscountType === "BUY_X_GET_Y") {
+    discountDetails = `${getBuyXGetYLabel(discount)} (Free Item Value: ${formatCurrencyText(freeItemValue || actualBenefit)})`;
+  } else if (
+    ["FREE_ITEM_CART_VALUE", "FREE_ITEM_CATEGORY", "FREE_ITEM_OFFER"].includes(normalizedOfferType) ||
+    ["FREE_ITEM_CART", "FREE_ITEM_CATEGORY", "FREE_ITEM"].includes(normalizedDiscountType)
+  ) {
+    discountDetails = `Free Item (${formatCurrencyText(freeItemValue || actualBenefit)})`;
+  } else if (normalizedOfferType === "CART_VALUE_OFFER") {
+    if (freeItems.length > 0) {
+      discountDetails = `Free Item (${formatCurrencyText(freeItemValue || actualBenefit)})`;
+    } else if (normalizedDiscountType === "PERCENTAGE" || discountValue > 0) {
+      discountDetails = `${discountValue}% (${formatCurrencyText(actualBenefit)})`;
+    } else {
+      discountDetails = formatCurrencyText(actualBenefit);
+    }
+  }
+
+  return {
+    offerName,
+    offerType: normalizeOfferTypeLabel(offerType || discountType || discount.source || "Offer"),
+    discountDetails,
+    discountAmount: actualBenefit,
+    freeItemName,
+    freeItemValue,
+  };
+};
+
 
 const resolveDisplayStatus = (order) => {
   const rs = (order?.restaurantStatus || "").toUpperCase();
@@ -914,7 +1052,12 @@ const OrdersList = () => {
         "Food Tax 5% on Final Item Price",
         "Delivery Charges",
         "Packing Charges",
-        "Discount (Offer)",
+        "Offer Name",
+        "Offer Type",
+        "Discount Details",
+        "Discount Amount",
+        "Free Item Name",
+        "Free Item Value",
         "Total Order Value",
         "18% GST on Commission + Delivery + Packing",
         "Payment Method",
@@ -936,7 +1079,7 @@ const OrdersList = () => {
         const foodTax = getStoredTaxAmount(o);
         const deliveryCharges = Number(o.final_delivery_charge ?? o.delivery_fee ?? 0);
         const packingCharges = Number(o.packing_charge ?? 0);
-        const discount = getStoredDiscountAmount(o);
+        const discountInfo = buildDiscountExportInfo(o);
         const totalOrderValue = getStoredOrderTotal(o);
         const gst18 = Math.round((commission + deliveryCharges + packingCharges) * GST_RATE * 100) / 100;
 
@@ -956,7 +1099,12 @@ const OrdersList = () => {
           foodTax,
           deliveryCharges,
           packingCharges,
-          discount,
+          discountInfo.offerName || "-",
+          discountInfo.offerType || "-",
+          discountInfo.discountDetails || "-",
+          discountInfo.discountAmount,
+          discountInfo.freeItemName || "-",
+          discountInfo.freeItemValue || "",
           totalOrderValue,
           gst18,
           paymentMethod,
@@ -971,7 +1119,8 @@ const OrdersList = () => {
       ws["!cols"] = [
         { wch: 18 }, { wch: 22 }, { wch: 24 }, { wch: 40 }, { wch: 12 },
         { wch: 45 }, { wch: 18 }, { wch: 28 }, { wch: 24 }, { wch: 28 },
-        { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 42 },
+        { wch: 18 }, { wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 28 },
+        { wch: 18 }, { wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 42 },
         { wch: 20 }, { wch: 22 },
       ];
 
@@ -993,8 +1142,8 @@ const OrdersList = () => {
         };
       }
 
-      // Currency format for numeric columns (cols 6–14, 0-indexed)
-      const currencyCols = [6, 7, 8, 9, 10, 11, 12, 13, 14];
+      // Currency format for numeric amount columns (0-indexed)
+      const currencyCols = [6, 7, 8, 9, 10, 11, 15, 17, 18, 19];
       for (let R = 1; R <= rows.length; R++) {
         for (let C = 0; C <= headerRange.e.c; C++) {
           const cellAddr = XLSX.utils.encode_cell({ r: R, c: C });
