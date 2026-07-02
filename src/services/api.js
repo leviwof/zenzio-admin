@@ -791,6 +791,8 @@ export const updateTopRestaurant = (id, data) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/top-restaurants/admin/${id}`, data);
 export const updateTopRestaurantStatus = (id, isActive) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.patch(`/top-restaurants/admin/${id}/status`, { is_active: isActive });
+export const reorderTopRestaurants = (items) =>
+  isRestaurantAdmin() ? rejectRestrictedApi() : api.patch('/top-restaurants/admin/reorder', { items });
 export const deleteTopRestaurant = (id) =>
   isRestaurantAdmin() ? rejectRestrictedApi() : api.delete(`/top-restaurants/admin/${id}`);
 
