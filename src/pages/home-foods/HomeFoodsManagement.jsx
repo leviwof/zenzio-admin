@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ProvidersCardView from './ProvidersCardView';
+import PlanPricingEditor, {
+  PLAN_OPTION_LABELS,
+  buildPlanOptionsPayload,
+  normalizePlanOptions,
+  planOptionsLabel,
+  validatePlanOptions,
+} from './PlanPricingEditor';
 import toast from 'react-hot-toast';
 import {
   Activity, AlertTriangle, CalendarDays, Camera, ChefHat, CircleDollarSign,
@@ -47,14 +54,7 @@ const sections = {
 };
 
 const mealTypes = ['BREAKFAST', 'LUNCH', 'SNACKS', 'DINNER'];
-const planTypes = ['TRIAL', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'HALF_YEARLY'];
-const planDurationDays = {
-  TRIAL: 1,
-  WEEKLY: 7,
-  MONTHLY: 30,
-  QUARTERLY: 90,
-  HALF_YEARLY: 180,
-};
+const planTypes = ['DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'];
 const deliveryStatuses = ['PENDING', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'MISSED', 'SKIPPED', 'CANCELLED'];
 const workingDays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 const mealSlotAvailability = (slot) => {
@@ -479,7 +479,7 @@ export default function HomeFoodsManagement() {
 
   const headers = useMemo(() => ({
     providers: ['Restaurant', 'Status', 'Mode', 'Capacity', 'Active Subscribers', 'Radius', 'Meal Types', 'Created', 'Actions'],
-    plans: ['Select', 'Plan', 'Type', 'Restaurant', 'Duration', 'Price', 'Food Type', 'Meal Types', 'Plan Menu', 'Status', 'Actions'],
+    plans: ['Select', 'Plan', 'Plan Pricing', 'Restaurant', 'Food Type', 'Meal Types', 'Plan Menu', 'Status', 'Actions'],
     subscriptions: ['Subscription', 'Customer', 'Phone', 'Restaurant', 'Plan', 'Amount', 'Status', 'Payment', 'Dates', 'Actions'],
     deliveries: ['Delivery', 'Subscription', 'Customer', 'Restaurant', 'Meal', 'Date', 'Status', 'Actions'],
     menus: ['Image', 'Title', 'Provider', 'Description', 'Week Days', 'Meal Slot', 'Actions'],
@@ -1028,9 +1028,18 @@ function Row({ section, item, onEdit, selected, onSelectPlan, onDelivery, onCanc
           </span>
         )}
       </td>
-      <td className="px-4 py-3 text-xs">{item.plan_type}</td>
-      <td className="px-4 py-3 text-sm">{item.restaurant_name || item.provider_uid}</td><td className="px-4 py-3 text-sm">{item.duration_days} days</td>
-      <td className="px-4 py-3 text-sm font-semibold">{money(item.price)}</td>
+      <td className="px-4 py-3 text-xs">
+        <div className="space-y-1">
+          {normalizePlanOptions(item).map((option, index) => (
+            <div key={`${option.type}-${index}`} className="whitespace-nowrap">
+              <span className="font-semibold text-slate-700">{PLAN_OPTION_LABELS[option.type] || option.type}</span>
+              <span className="text-slate-400"> - {option.duration} days - </span>
+              <span className="font-semibold text-indigo-600">{money(option.price)}</span>
+            </div>
+          ))}
+        </div>
+      </td>
+      <td className="px-4 py-3 text-sm">{item.restaurant_name || item.provider_uid}</td>
       <td className="px-4 py-3">
         <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${item.food_type === 'NON_VEG' ? 'bg-red-50 text-red-700' : item.food_type === 'VEG' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
           {item.food_type === 'NON_VEG' ? 'Non-Veg' : item.food_type === 'VEG' ? 'Veg' : 'Both'}
@@ -1220,7 +1229,7 @@ function PageFilters({ section, filters, setFilters, total, menuProviders = [] }
         {section === 'plans' && (
           <select value={filters.plan_type} onChange={(event) => set('plan_type', event.target.value)} className={inputClass}>
             <option value="">All plan types</option>
-            {planTypes.map((value) => <option key={value}>{value}</option>)}
+            {planTypes.map((value) => <option key={value} value={value}>{PLAN_OPTION_LABELS[value] || value}</option>)}
           </select>
         )}
         {section === 'plans' && (
@@ -1497,7 +1506,7 @@ function EditProviderSettingsForm({ item, onClose, onSaved }) {
   const [providerPlans, setProviderPlans] = useState([]);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [planSaving, setPlanSaving] = useState(false);
-  const [planEditor, setPlanEditor] = useState({ name: '', plan_type: 'MONTHLY', duration_days: 30, price: 0, meal_types: ['LUNCH'], is_active: true });
+  const [planEditor, setPlanEditor] = useState({ name: '', planOptions: [{ type: 'MONTHLY', duration: 30, price: 0 }], meal_types: ['LUNCH'], is_active: true });
   const [form, setForm] = useState({
     provider_uid: item.provider_uid,
     is_active: item.is_active ?? true,
@@ -1530,7 +1539,7 @@ function EditProviderSettingsForm({ item, onClose, onSaved }) {
     if (providerPlans.length && !providerPlans.some((p) => p.id === editingPlanId)) {
       const p = providerPlans[0];
       setEditingPlanId(p.id);
-      setPlanEditor({ name: p.name || '', plan_type: p.plan_type, duration_days: Number(p.duration_days), price: Number(p.price), meal_types: p.meal_types || [], is_active: p.is_active });
+      setPlanEditor({ name: p.name || '', planOptions: normalizePlanOptions(p), meal_types: p.meal_types || [], is_active: p.is_active });
     }
     if (!providerPlans.length) setEditingPlanId(null);
   }, [providerPlans, editingPlanId]);
@@ -1560,11 +1569,16 @@ function EditProviderSettingsForm({ item, onClose, onSaved }) {
 
   const saveProviderPlan = async () => {
     if (!planEditor.name.trim() || !planEditor.meal_types.length) { toast.error('Plan name and meal types required'); return; }
+    const optionError = validatePlanOptions(planEditor.planOptions);
+    if (optionError) { toast.error(optionError); return; }
     if (!editingPlanId) return;
     setPlanSaving(true);
     try {
       await saveHomeFoodProviderSettings(providerPayload());
-      await updateHomeFoodPlan(editingPlanId, planEditor);
+      await updateHomeFoodPlan(editingPlanId, {
+        ...planEditor,
+        ...buildPlanOptionsPayload(planEditor.planOptions),
+      });
       await loadProviderPlans(form.provider_uid);
       toast.success('Plan updated');
     } catch (error) { toast.error(error.response?.data?.message || 'Could not save plan'); }
@@ -1645,16 +1659,14 @@ function EditProviderSettingsForm({ item, onClose, onSaved }) {
               {providerPlans.length > 0 ? (
                 <>
                   <Field label="Select Plan">
-                    <select value={editingPlanId || ''} onChange={(e) => { const p = providerPlans.find((x) => x.id === e.target.value); if (p) { setEditingPlanId(p.id); setPlanEditor({ name: p.name, plan_type: p.plan_type, duration_days: Number(p.duration_days), price: Number(p.price), meal_types: p.meal_types || [], is_active: p.is_active }); } }} className={inputClass}>
-                      {providerPlans.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.plan_type} — {money(p.price)}</option>)}
+                    <select value={editingPlanId || ''} onChange={(e) => { const p = providerPlans.find((x) => x.id === e.target.value); if (p) { setEditingPlanId(p.id); setPlanEditor({ name: p.name, planOptions: normalizePlanOptions(p), meal_types: p.meal_types || [], is_active: p.is_active }); } }} className={inputClass}>
+                      {providerPlans.map((p) => <option key={p.id} value={p.id}>{p.name} - {planOptionsLabel(p, money)}</option>)}
                     </select>
                   </Field>
                   {editingPlanId && (
                     <div className="grid gap-3 md:grid-cols-2 rounded-xl border border-indigo-100 bg-white p-3">
                       <Field label="Plan Name"><input value={planEditor.name} onChange={(e) => setPlanEditor({ ...planEditor, name: e.target.value })} className={inputClass} /></Field>
-                      <Field label="Plan Type"><select value={planEditor.plan_type} onChange={(e) => setPlanEditor({ ...planEditor, plan_type: e.target.value, duration_days: planDurationDays[e.target.value] })} className={inputClass}>{planTypes.map((t) => <option key={t}>{t}</option>)}</select></Field>
-                      <Field label="Duration Days"><input type="number" min="1" value={planEditor.duration_days} onChange={(e) => setPlanEditor({ ...planEditor, duration_days: Number(e.target.value) })} className={inputClass} /></Field>
-                      <Field label="Price (₹)"><input type="number" min="0" step="0.01" value={planEditor.price} onChange={(e) => setPlanEditor({ ...planEditor, price: Number(e.target.value) })} className={inputClass} /></Field>
+                      <div className="md:col-span-2"><Field label="Plan Pricing"><PlanPricingEditor value={planEditor.planOptions} onChange={(planOptions) => setPlanEditor({ ...planEditor, planOptions })} inputClass={inputClass} compact /></Field></div>
                       <div className="md:col-span-2"><Field label="Meals"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer"><input type="checkbox" checked={planEditor.meal_types.includes(meal)} onChange={() => setPlanEditor({ ...planEditor, meal_types: planEditor.meal_types.includes(meal) ? planEditor.meal_types.filter((m) => m !== meal) : [...planEditor.meal_types, meal] })} />{meal}</label>)}</div></Field></div>
                       <Field label="Status"><select value={String(planEditor.is_active)} onChange={(e) => setPlanEditor({ ...planEditor, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
                       <div className="flex items-end"><button type="button" disabled={planSaving} onClick={saveProviderPlan} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{planSaving ? 'Saving…' : 'Save Plan'}</button></div>
@@ -1690,14 +1702,11 @@ function PlanForm({ item, onClose, onSaved }) {
   const [form, setForm] = useState({
     provider_uid: item?.provider_uid || '',
     name: item?.name || '',
-    plan_type: item?.plan_type || 'MONTHLY',
-    duration_days: Number(item?.duration_days || 30),
-    price: Number(item?.price || 0),
+    planOptions: normalizePlanOptions(item || { plan_type: 'MONTHLY', duration_days: 30, price: 0 }),
     food_type: item?.food_type || 'BOTH',
     meal_types: item?.meal_types || ['LUNCH'],
     weekly_menu: item?.weekly_menu || {},
     is_active: item?.is_active ?? true,
-    food_type: item?.food_type || 'BOTH',
   });
   useEffect(() => { getHomeFoodProviders({ limit: 100 }).then((response) => setProviders(unwrapItems(response))).catch(() => {}); }, []);
   const selectedProvider = providers.find((provider) => provider.provider_uid === form.provider_uid);
@@ -1721,14 +1730,23 @@ function PlanForm({ item, onClose, onSaved }) {
       toast.error('Select at least one meal type');
       return;
     }
+    const optionError = validatePlanOptions(form.planOptions);
+    if (optionError) {
+      toast.error(optionError);
+      return;
+    }
     setSaving(true);
     try {
+      const payload = {
+        ...form,
+        ...buildPlanOptionsPayload(form.planOptions),
+      };
       if (item) {
-        const updatePayload = { ...form };
+        const updatePayload = { ...payload };
         delete updatePayload.provider_uid;
         await updateHomeFoodPlan(item.id, updatePayload);
       }
-      else await createHomeFoodPlan(form);
+      else await createHomeFoodPlan(payload);
       toast.success('Plan saved with its weekly menu');
       onSaved();
     } catch (error) {
@@ -1742,11 +1760,9 @@ function PlanForm({ item, onClose, onSaved }) {
   return <Modal title={item ? 'Edit Plan' : 'Create Plan'} onClose={onClose}><form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
     <Field label="Existing Provider"><select disabled={Boolean(item)} value={form.provider_uid} onChange={(e) => { setForm({ ...form, provider_uid: e.target.value, weekly_menu: {} }); const provider = providers.find((entry) => entry.provider_uid === e.target.value); setSelectedMenuDay(provider?.working_days?.[0] || 'MONDAY'); }} className={inputClass} required><option value="">Select provider</option>{providers.map((provider) => <option key={provider.provider_uid} value={provider.provider_uid}>{provider.restaurant_name}</option>)}</select></Field>
     <Field label="Plan Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} required /></Field>
-    <Field label="Plan Type"><select value={form.plan_type} onChange={(e) => setForm({ ...form, plan_type: e.target.value, duration_days: planDurationDays[e.target.value] })} className={inputClass}>{planTypes.map((type) => <option key={type}>{type}</option>)}</select></Field>
-    <Field label="Duration Days"><input type="number" min="1" value={form.duration_days} onChange={(e) => setForm({ ...form, duration_days: Number(e.target.value) })} className={inputClass} /></Field>
-    <Field label="Price"><input type="number" min="0" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className={inputClass} /></Field>
     <Field label="Food Type"><select value={form.food_type} onChange={(e) => setForm({ ...form, food_type: e.target.value })} className={inputClass}><option value="VEG">Veg</option><option value="NON_VEG">Non-Veg</option><option value="BOTH">Both</option></select></Field>
     <Field label="Status"><select value={String(form.is_active)} onChange={(e) => setForm({ ...form, is_active: e.target.value === 'true' })} className={inputClass}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
+    <div className="md:col-span-2"><Field label="Plan Pricing"><PlanPricingEditor value={form.planOptions} onChange={(planOptions) => setForm({ ...form, planOptions })} inputClass={inputClass} /></Field></div>
     <div className="md:col-span-2"><Field label="Meal Types"><div className="flex flex-wrap gap-2">{mealTypes.map((meal) => <label key={meal} className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs"><input type="checkbox" checked={form.meal_types.includes(meal)} onChange={() => toggleMeal(meal)} />{meal}</label>)}</div></Field></div>
     <div className="md:col-span-2">
       <Field label="Food Type">

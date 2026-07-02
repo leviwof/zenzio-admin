@@ -15,12 +15,16 @@ import {
   activateHomeFoodProvider,
   deactivateHomeFoodProvider,
 } from '../../services/api';
+import PlanPricingEditor, {
+  PLAN_OPTION_LABELS,
+  buildPlanOptionsPayload,
+  normalizePlanOptions,
+  validatePlanOptions,
+} from './PlanPricingEditor';
 
 const MEAL_TYPES  = ['BREAKFAST', 'LUNCH', 'SNACKS', 'DINNER'];
 const DAYS_ORDER  = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
 const DAY_ABBR    = { MONDAY:'Mon', TUESDAY:'Tue', WEDNESDAY:'Wed', THURSDAY:'Thu', FRIDAY:'Fri', SATURDAY:'Sat', SUNDAY:'Sun' };
-const PLAN_TYPES  = ['TRIAL', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'HALF_YEARLY'];
-const PLAN_DURATION_DAYS = { TRIAL: 1, WEEKLY: 7, MONTHLY: 30, QUARTERLY: 90, HALF_YEARLY: 180 };
 
 const fmt   = (v) => v ? new Date(v).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
 const money = (v) => `₹${Number(v || 0).toLocaleString('en-IN')}`;
@@ -161,9 +165,7 @@ export default function ProviderDetails() {
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [planForm, setPlanForm] = useState({
     name: '',
-    plan_type: 'MONTHLY',
-    duration_days: 30,
-    price: 0,
+    planOptions: [{ type: 'MONTHLY', duration: 30, price: 0 }],
     food_type: 'BOTH',
     meal_types: ['LUNCH'],
     is_active: true,
@@ -239,9 +241,7 @@ export default function ProviderDetails() {
     setEditingPlanId(plan.id);
     setPlanForm({
       name: plan.name || '',
-      plan_type: plan.plan_type || 'MONTHLY',
-      duration_days: Number(plan.duration_days || PLAN_DURATION_DAYS[plan.plan_type] || 30),
-      price: Number(plan.price || 0),
+      planOptions: normalizePlanOptions(plan),
       food_type: plan.food_type || 'BOTH',
       meal_types: Array.isArray(plan.meal_types) && plan.meal_types.length ? plan.meal_types : ['LUNCH'],
       is_active: plan.is_active ?? true,
@@ -253,9 +253,7 @@ export default function ProviderDetails() {
     setEditingPlanId(null);
     setPlanForm({
       name: '',
-      plan_type: 'MONTHLY',
-      duration_days: 30,
-      price: 0,
+      planOptions: [{ type: 'MONTHLY', duration: 30, price: 0 }],
       food_type: 'BOTH',
       meal_types: ['LUNCH'],
       is_active: true,
@@ -281,14 +279,18 @@ export default function ProviderDetails() {
       toast.error('Select at least one meal type');
       return;
     }
+    const optionError = validatePlanOptions(planForm.planOptions);
+    if (optionError) {
+      toast.error(optionError);
+      return;
+    }
 
     setPlanSaving(true);
     try {
       await updateHomeFoodPlan(editingPlanId, {
         ...planForm,
+        ...buildPlanOptionsPayload(planForm.planOptions),
         name: planForm.name.trim(),
-        duration_days: Number(planForm.duration_days),
-        price: Number(planForm.price),
       });
       toast.success('Plan updated');
       cancelEditPlan();
@@ -561,13 +563,15 @@ export default function ProviderDetails() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm font-semibold text-slate-800 truncate">{plan.name}</span>
-                      <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">{plan.plan_type}</span>
+                      <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                        {normalizePlanOptions(plan).length} option{normalizePlanOptions(plan).length === 1 ? '' : 's'}
+                      </span>
                       <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${plan.food_type === 'NON_VEG' ? 'bg-red-50 text-red-700' : plan.food_type === 'VEG' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                         {plan.food_type === 'NON_VEG' ? 'Non-Veg' : plan.food_type === 'VEG' ? 'Veg' : 'Both'}
                       </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <span className="text-sm font-bold text-slate-900">{money(plan.price)}</span>
+                      <span className="text-sm font-bold text-slate-900">{money(normalizePlanOptions(plan)[0]?.price)}</span>
                       <button
                         type="button"
                         onClick={() => startEditPlan(plan)}
@@ -586,7 +590,7 @@ export default function ProviderDetails() {
                     </div>
                   </div>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    {plan.duration_days} days &middot; {(plan.meal_types || []).join(', ')}
+                    {normalizePlanOptions(plan).map((option) => `${PLAN_OPTION_LABELS[option.type] || option.type}: ${option.duration} days / ${money(option.price)}`).join(' | ')} &middot; {(plan.meal_types || []).join(', ')}
                     {!plan.is_active && <span className="ml-2 text-red-400">Inactive</span>}
                   </p>
                   {editingPlanId === plan.id && (
@@ -594,21 +598,11 @@ export default function ProviderDetails() {
                       <Field label="Plan Name">
                         <input value={planForm.name} onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })} className={inputCls} />
                       </Field>
-                      <Field label="Plan Type">
-                        <select
-                          value={planForm.plan_type}
-                          onChange={(e) => setPlanForm({ ...planForm, plan_type: e.target.value, duration_days: PLAN_DURATION_DAYS[e.target.value] || planForm.duration_days })}
-                          className={inputCls}
-                        >
-                          {PLAN_TYPES.map((type) => <option key={type}>{type}</option>)}
-                        </select>
-                      </Field>
-                      <Field label="Duration Days">
-                        <input type="number" min="1" value={planForm.duration_days} onChange={(e) => setPlanForm({ ...planForm, duration_days: Number(e.target.value) })} className={inputCls} />
-                      </Field>
-                      <Field label="Price">
-                        <input type="number" min="0" step="0.01" value={planForm.price} onChange={(e) => setPlanForm({ ...planForm, price: Number(e.target.value) })} className={inputCls} />
-                      </Field>
+                      <div className="md:col-span-2">
+                        <Field label="Plan Pricing">
+                          <PlanPricingEditor value={planForm.planOptions} onChange={(planOptions) => setPlanForm({ ...planForm, planOptions })} inputClass={inputCls} compact />
+                        </Field>
+                      </div>
                       <Field label="Food Type">
                         <select value={planForm.food_type} onChange={(e) => setPlanForm({ ...planForm, food_type: e.target.value })} className={inputCls}>
                           <option value="VEG">Veg</option>
